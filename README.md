@@ -37,7 +37,9 @@ pnpm lint
 
    The container listens on `127.0.0.1:3000` and keeps its config and SQLite
    database in `./data`. After editing `data/config.yaml`, restart:
-   `docker compose restart`.
+   `docker compose restart`. Note that `docker compose restart` re-reads
+   `data/config.yaml`, but a changed `SMTP_PASS` in `.env` requires
+   `docker compose up -d` to take effect.
 
 2. Add one block per site to your Caddyfile (Caddy terminates TLS and routes by
    hostname; the app picks the site from the `Host` header):
