@@ -3,12 +3,15 @@ RUN corepack enable
 
 FROM base AS deps
 WORKDIR /app
-# pnpm's build-approval step invokes node-gyp for better-sqlite3 (it has
-# "gypfile": true) even though the published package ships only prebuilt
-# binaries in prebuilds/ — node-gyp still needs python3/make/g++ present to
-# get through its bootstrap. The prebuilt binaries themselves require glibc
-# >= 2.38, so the base image is Debian trixie (glibc 2.41), not bookworm
-# (glibc 2.36, too old — causes an ERR_DLOPEN_FAILED at runtime).
+# better-sqlite3 ships a binding.gyp and sets "gypfile": false (npm's signal
+# to skip auto-building) with no install/postinstall script. pnpm's native-
+# build detection keys off the binding.gyp file regardless and runs an
+# implicit `node-gyp rebuild` during install anyway — it only touches stamp
+# files (the real runtime binary comes from prebuilds/), but node-gyp still
+# needs python3/make/g++ present to get through its bootstrap, or install
+# fails outright. Those prebuilt binaries require glibc >= 2.38, so the base
+# image is Debian trixie (glibc 2.41), not bookworm (glibc 2.36, too old —
+# causes an ERR_DLOPEN_FAILED at runtime).
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
