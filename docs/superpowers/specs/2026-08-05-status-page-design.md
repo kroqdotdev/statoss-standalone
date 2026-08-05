@@ -24,10 +24,10 @@ alerts:
   smtp:
     host: smtp.example.com
     port: 587
-    user: alerts@example.com
-    from: alerts@example.com
-    to: kroqdotdev@users.noreply.github.com
-  # SMTP password is provided via the SMTP_PASS environment variable
+    user: smtp-user@example.com
+    from: status@example.com
+    to: alerts@example.com
+  # SMTP password is provided via the SMTP_PASS environment variable (gitignored .env)
 sites:
   - name: webhooks.cc
     host: status.webhooks.cc # hostname this site's page is served under
