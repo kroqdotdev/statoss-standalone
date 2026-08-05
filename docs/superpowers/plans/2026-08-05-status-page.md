@@ -30,11 +30,13 @@
 ### Task 1: Scaffold Next.js project + tooling
 
 **Files:**
+
 - Create: Next.js scaffold (via create-next-app: `package.json`, `next.config.ts`, `tsconfig.json`, `eslint.config.mjs`, `src/app/*`, etc.)
 - Create: `.prettierrc`, `.prettierignore`, `vitest.config.ts`, `config.yaml`
 - Modify: `next.config.ts`, `eslint.config.mjs`, `package.json` (scripts), `.gitignore`
 
 **Interfaces:**
+
 - Consumes: nothing (first task)
 - Produces: a building, linting, testable Next.js app; `config.yaml` at repo root; deps `yaml`, `zod`, `better-sqlite3`, `nodemailer` installed for later tasks.
 
@@ -75,11 +77,11 @@ pnpm add -D vitest @types/better-sqlite3 @types/nodemailer prettier eslint-confi
 Replace `next.config.ts` with:
 
 ```ts
-import type { NextConfig } from 'next';
+import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
-  serverExternalPackages: ['better-sqlite3'],
+  output: "standalone",
+  serverExternalPackages: ["better-sqlite3"],
 };
 
 export default nextConfig;
@@ -104,10 +106,10 @@ pnpm-lock.yaml
 Replace `eslint.config.mjs` with (keeps the scaffold's Next presets, adds prettier last so it disables conflicting style rules):
 
 ```js
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { FlatCompat } from '@eslint/eslintrc';
-import eslintConfigPrettier from 'eslint-config-prettier';
+import { dirname } from "path";
+import { fileURLToPath } from "url";
+import { FlatCompat } from "@eslint/eslintrc";
+import eslintConfigPrettier from "eslint-config-prettier";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -115,9 +117,9 @@ const __dirname = dirname(__filename);
 const compat = new FlatCompat({ baseDirectory: __dirname });
 
 const eslintConfig = [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
   eslintConfigPrettier,
-  { ignores: ['.next/**', 'node_modules/**'] },
+  { ignores: [".next/**", "node_modules/**"] },
 ];
 
 export default eslintConfig;
@@ -130,12 +132,12 @@ export default eslintConfig;
 Create `vitest.config.ts`:
 
 ```ts
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
+    environment: "node",
+    include: ["src/**/*.test.ts"],
   },
 });
 ```
@@ -203,10 +205,12 @@ git commit -m "chore: scaffold Next.js app with pnpm, tailwind, eslint, prettier
 ### Task 2: Config loading and host resolution
 
 **Files:**
+
 - Create: `src/lib/config.ts`
 - Test: `src/lib/config.test.ts`
 
 **Interfaces:**
+
 - Consumes: `config.yaml` shape from Task 1; deps `yaml`, `zod`.
 - Produces:
   - `type AppConfig = { checkIntervalSeconds: number; alerts?: { smtp: SmtpConfig }; sites: SiteConfig[] }`
@@ -221,8 +225,8 @@ git commit -m "chore: scaffold Next.js app with pnpm, tailwind, eslint, prettier
 - [ ] **Step 1: Write the failing tests** — create `src/lib/config.test.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest';
-import { findSiteByHost, parseConfig } from './config';
+import { describe, expect, it } from "vitest";
+import { findSiteByHost, parseConfig } from "./config";
 
 const VALID = `
 sites:
@@ -236,8 +240,8 @@ sites:
         expectStatus: 200
 `;
 
-describe('parseConfig', () => {
-  it('parses a valid config and applies defaults', () => {
+describe("parseConfig", () => {
+  it("parses a valid config and applies defaults", () => {
     const config = parseConfig(VALID);
     expect(config.checkIntervalSeconds).toBe(60);
     expect(config.alerts).toBeUndefined();
@@ -246,7 +250,7 @@ describe('parseConfig', () => {
     expect(config.sites[0].checkpoints[1].expectStatus).toBe(200);
   });
 
-  it('parses an alerts block', () => {
+  it("parses an alerts block", () => {
     const config = parseConfig(
       VALID +
         `
@@ -259,38 +263,42 @@ alerts:
     to: alerts@example.com
 `,
     );
-    expect(config.alerts?.smtp.host).toBe('smtp.example.com');
+    expect(config.alerts?.smtp.host).toBe("smtp.example.com");
     expect(config.alerts?.smtp.port).toBe(587);
   });
 
-  it('rejects a config with no sites', () => {
-    expect(() => parseConfig('sites: []')).toThrow(/sites/);
+  it("rejects a config with no sites", () => {
+    expect(() => parseConfig("sites: []")).toThrow(/sites/);
   });
 
-  it('rejects an invalid checkpoint url with a useful path', () => {
-    const bad = VALID.replace('https://webhooks.cc', 'not-a-url');
+  it("rejects an invalid checkpoint url with a useful path", () => {
+    const bad = VALID.replace("https://webhooks.cc", "not-a-url");
     expect(() => parseConfig(bad)).toThrow(/sites\.0\.checkpoints\.0\.url/);
   });
 
-  it('rejects a missing site host', () => {
-    const bad = VALID.replace('host: status.webhooks.cc', 'host: ""');
+  it("rejects a missing site host", () => {
+    const bad = VALID.replace("host: status.webhooks.cc", 'host: ""');
     expect(() => parseConfig(bad)).toThrow(/host/);
   });
 });
 
-describe('findSiteByHost', () => {
+describe("findSiteByHost", () => {
   const config = parseConfig(VALID);
 
-  it('matches exact host', () => {
-    expect(findSiteByHost(config, 'status.webhooks.cc')?.name).toBe('webhooks.cc');
+  it("matches exact host", () => {
+    expect(findSiteByHost(config, "status.webhooks.cc")?.name).toBe(
+      "webhooks.cc",
+    );
   });
 
-  it('strips port and ignores case', () => {
-    expect(findSiteByHost(config, 'STATUS.webhooks.CC:3000')?.name).toBe('webhooks.cc');
+  it("strips port and ignores case", () => {
+    expect(findSiteByHost(config, "STATUS.webhooks.CC:3000")?.name).toBe(
+      "webhooks.cc",
+    );
   });
 
-  it('returns undefined for unknown or missing host', () => {
-    expect(findSiteByHost(config, 'other.example.com')).toBeUndefined();
+  it("returns undefined for unknown or missing host", () => {
+    expect(findSiteByHost(config, "other.example.com")).toBeUndefined();
     expect(findSiteByHost(config, null)).toBeUndefined();
   });
 });
@@ -304,9 +312,9 @@ Expected: FAIL — cannot resolve `./config`.
 - [ ] **Step 3: Implement** — create `src/lib/config.ts`:
 
 ```ts
-import { readFileSync } from 'node:fs';
-import { parse } from 'yaml';
-import { z } from 'zod';
+import { readFileSync } from "node:fs";
+import { parse } from "yaml";
+import { z } from "zod";
 
 const checkpointSchema = z.object({
   name: z.string().min(1),
@@ -337,23 +345,25 @@ const configSchema = z.object({
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
-export type SiteConfig = AppConfig['sites'][number];
-export type CheckpointConfig = SiteConfig['checkpoints'][number];
-export type SmtpConfig = NonNullable<AppConfig['alerts']>['smtp'];
+export type SiteConfig = AppConfig["sites"][number];
+export type CheckpointConfig = SiteConfig["checkpoints"][number];
+export type SmtpConfig = NonNullable<AppConfig["alerts"]>["smtp"];
 
 export function parseConfig(yamlText: string): AppConfig {
   const result = configSchema.safeParse(parse(yamlText));
   if (!result.success) {
     const details = result.error.issues
-      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-      .join('; ');
+      .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+      .join("; ");
     throw new Error(`Invalid config: ${details}`);
   }
   return result.data;
 }
 
-export function loadConfig(path = process.env.CONFIG_PATH ?? './config.yaml'): AppConfig {
-  return parseConfig(readFileSync(path, 'utf8'));
+export function loadConfig(
+  path = process.env.CONFIG_PATH ?? "./config.yaml",
+): AppConfig {
+  return parseConfig(readFileSync(path, "utf8"));
 }
 
 const globals = globalThis as { __statusConfig?: AppConfig };
@@ -368,7 +378,7 @@ export function findSiteByHost(
   hostHeader: string | null,
 ): SiteConfig | undefined {
   if (!hostHeader) return undefined;
-  const host = hostHeader.split(':')[0].toLowerCase();
+  const host = hostHeader.split(":")[0].toLowerCase();
   return config.sites.find((site) => site.host.toLowerCase() === host);
 }
 ```
@@ -393,10 +403,12 @@ git commit -m "feat: config loading with zod validation and host resolution"
 ### Task 3: SQLite layer
 
 **Files:**
+
 - Create: `src/lib/db.ts`
 - Test: `src/lib/db.test.ts`
 
 **Interfaces:**
+
 - Consumes: `better-sqlite3`.
 - Produces:
   - `openDb(path?: string): Database.Database` — `DB_PATH` ?? `./data/status.db`; creates parent dir (skipped for `:memory:`), WAL mode, creates schema
@@ -412,19 +424,19 @@ git commit -m "feat: config loading with zod validation and host resolution"
 - [ ] **Step 1: Write the failing tests** — create `src/lib/db.test.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest';
-import { getState, insertCheck, openDb, pruneOldChecks, setState } from './db';
+import { describe, expect, it } from "vitest";
+import { getState, insertCheck, openDb, pruneOldChecks, setState } from "./db";
 
 function memDb() {
-  return openDb(':memory:');
+  return openDb(":memory:");
 }
 
-describe('checks', () => {
-  it('inserts and stores check rows', () => {
+describe("checks", () => {
+  it("inserts and stores check rows", () => {
     const db = memDb();
     insertCheck(db, {
-      site: 'webhooks.cc',
-      checkpoint: 'Main site',
+      site: "webhooks.cc",
+      checkpoint: "Main site",
       ts: 1000,
       ok: 1,
       statusCode: 200,
@@ -432,15 +444,15 @@ describe('checks', () => {
       error: null,
     });
     insertCheck(db, {
-      site: 'webhooks.cc',
-      checkpoint: 'Main site',
+      site: "webhooks.cc",
+      checkpoint: "Main site",
       ts: 2000,
       ok: 0,
       statusCode: null,
       latencyMs: 10000,
-      error: 'timeout',
+      error: "timeout",
     });
-    const rows = db.prepare('SELECT * FROM checks ORDER BY ts').all() as Array<{
+    const rows = db.prepare("SELECT * FROM checks ORDER BY ts").all() as Array<{
       ok: number;
       status_code: number | null;
       error: string | null;
@@ -449,15 +461,15 @@ describe('checks', () => {
     expect(rows[0].ok).toBe(1);
     expect(rows[0].status_code).toBe(200);
     expect(rows[1].ok).toBe(0);
-    expect(rows[1].error).toBe('timeout');
+    expect(rows[1].error).toBe("timeout");
   });
 
-  it('prunes only rows older than the cutoff', () => {
+  it("prunes only rows older than the cutoff", () => {
     const db = memDb();
     for (const ts of [100, 200, 300]) {
       insertCheck(db, {
-        site: 's',
-        checkpoint: 'c',
+        site: "s",
+        checkpoint: "c",
         ts,
         ok: 1,
         statusCode: 200,
@@ -467,35 +479,51 @@ describe('checks', () => {
     }
     const deleted = pruneOldChecks(db, 250);
     expect(deleted).toBe(2);
-    const remaining = db.prepare('SELECT ts FROM checks').all() as Array<{ ts: number }>;
+    const remaining = db.prepare("SELECT ts FROM checks").all() as Array<{
+      ts: number;
+    }>;
     expect(remaining.map((r) => r.ts)).toEqual([300]);
   });
 });
 
-describe('checkpoint_state', () => {
-  it('returns undefined for unknown checkpoints', () => {
-    expect(getState(memDb(), 's', 'c')).toBeUndefined();
+describe("checkpoint_state", () => {
+  it("returns undefined for unknown checkpoints", () => {
+    expect(getState(memDb(), "s", "c")).toBeUndefined();
   });
 
-  it('round-trips and upserts state', () => {
+  it("round-trips and upserts state", () => {
     const db = memDb();
-    setState(db, { site: 's', checkpoint: 'c', status: 'up', consecutiveFails: 0, since: 500 });
-    expect(getState(db, 's', 'c')).toEqual({
-      site: 's',
-      checkpoint: 'c',
-      status: 'up',
+    setState(db, {
+      site: "s",
+      checkpoint: "c",
+      status: "up",
       consecutiveFails: 0,
       since: 500,
     });
-    setState(db, { site: 's', checkpoint: 'c', status: 'down', consecutiveFails: 2, since: 900 });
-    expect(getState(db, 's', 'c')).toEqual({
-      site: 's',
-      checkpoint: 'c',
-      status: 'down',
+    expect(getState(db, "s", "c")).toEqual({
+      site: "s",
+      checkpoint: "c",
+      status: "up",
+      consecutiveFails: 0,
+      since: 500,
+    });
+    setState(db, {
+      site: "s",
+      checkpoint: "c",
+      status: "down",
       consecutiveFails: 2,
       since: 900,
     });
-    expect(db.prepare('SELECT COUNT(*) AS n FROM checkpoint_state').get()).toEqual({ n: 1 });
+    expect(getState(db, "s", "c")).toEqual({
+      site: "s",
+      checkpoint: "c",
+      status: "down",
+      consecutiveFails: 2,
+      since: 900,
+    });
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM checkpoint_state").get(),
+    ).toEqual({ n: 1 });
   });
 });
 ```
@@ -508,9 +536,9 @@ Expected: FAIL — cannot resolve `./db`.
 - [ ] **Step 3: Implement** — create `src/lib/db.ts`:
 
 ```ts
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import Database from 'better-sqlite3';
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import Database from "better-sqlite3";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS checks (
@@ -548,17 +576,19 @@ export interface CheckRow {
 export interface StateRow {
   site: string;
   checkpoint: string;
-  status: 'up' | 'down';
+  status: "up" | "down";
   consecutiveFails: number;
   since: number;
 }
 
-export function openDb(path = process.env.DB_PATH ?? './data/status.db'): Database.Database {
-  if (path !== ':memory:') {
+export function openDb(
+  path = process.env.DB_PATH ?? "./data/status.db",
+): Database.Database {
+  if (path !== ":memory:") {
     mkdirSync(dirname(path), { recursive: true });
   }
   const db = new Database(path);
-  db.pragma('journal_mode = WAL');
+  db.pragma("journal_mode = WAL");
   db.exec(SCHEMA);
   return db;
 }
@@ -574,7 +604,15 @@ export function insertCheck(db: Database.Database, row: CheckRow): void {
   db.prepare(
     `INSERT INTO checks (site, checkpoint, ts, ok, status_code, latency_ms, error)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(row.site, row.checkpoint, row.ts, row.ok, row.statusCode, row.latencyMs, row.error);
+  ).run(
+    row.site,
+    row.checkpoint,
+    row.ts,
+    row.ok,
+    row.statusCode,
+    row.latencyMs,
+    row.error,
+  );
 }
 
 export function getState(
@@ -598,11 +636,17 @@ export function setState(db: Database.Database, state: StateRow): void {
        status = excluded.status,
        consecutive_fails = excluded.consecutive_fails,
        since = excluded.since`,
-  ).run(state.site, state.checkpoint, state.status, state.consecutiveFails, state.since);
+  ).run(
+    state.site,
+    state.checkpoint,
+    state.status,
+    state.consecutiveFails,
+    state.since,
+  );
 }
 
 export function pruneOldChecks(db: Database.Database, before: number): number {
-  return db.prepare('DELETE FROM checks WHERE ts < ?').run(before).changes;
+  return db.prepare("DELETE FROM checks WHERE ts < ?").run(before).changes;
 }
 ```
 
@@ -624,10 +668,12 @@ git commit -m "feat: sqlite layer with checks and checkpoint_state tables"
 ### Task 4: HTTP check function
 
 **Files:**
+
 - Create: `src/lib/checker.ts`
 - Test: `src/lib/checker.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing project-internal (global `fetch`).
 - Produces:
   - `type CheckOutcome = { ok: boolean; statusCode: number | null; latencyMs: number; error: string | null }`
@@ -636,30 +682,31 @@ git commit -m "feat: sqlite layer with checks and checkpoint_state tables"
 - [ ] **Step 1: Write the failing tests** — create `src/lib/checker.test.ts`:
 
 ```ts
-import { createServer, type Server } from 'node:http';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runCheck } from './checker';
+import { createServer, type Server } from "node:http";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runCheck } from "./checker";
 
 let server: Server;
 let base: string;
 
 beforeAll(async () => {
   server = createServer((req, res) => {
-    if (req.url === '/ok') {
-      res.writeHead(200).end('ok');
-    } else if (req.url === '/err') {
-      res.writeHead(500).end('boom');
-    } else if (req.url === '/redirect') {
-      res.writeHead(302, { Location: '/ok' }).end();
-    } else if (req.url === '/slow') {
-      setTimeout(() => res.writeHead(200).end('late'), 500);
+    if (req.url === "/ok") {
+      res.writeHead(200).end("ok");
+    } else if (req.url === "/err") {
+      res.writeHead(500).end("boom");
+    } else if (req.url === "/redirect") {
+      res.writeHead(302, { Location: "/ok" }).end();
+    } else if (req.url === "/slow") {
+      setTimeout(() => res.writeHead(200).end("late"), 500);
     } else {
       res.writeHead(404).end();
     }
   });
   await new Promise<void>((resolve) => server.listen(0, resolve));
   const address = server.address();
-  if (address === null || typeof address === 'string') throw new Error('no port');
+  if (address === null || typeof address === "string")
+    throw new Error("no port");
   base = `http://127.0.0.1:${address.port}`;
 });
 
@@ -667,8 +714,8 @@ afterAll(() => {
   server.close();
 });
 
-describe('runCheck', () => {
-  it('passes on 2xx and records status and latency', async () => {
+describe("runCheck", () => {
+  it("passes on 2xx and records status and latency", async () => {
     const outcome = await runCheck(`${base}/ok`);
     expect(outcome.ok).toBe(true);
     expect(outcome.statusCode).toBe(200);
@@ -676,40 +723,40 @@ describe('runCheck', () => {
     expect(outcome.error).toBeNull();
   });
 
-  it('fails on non-2xx with an error message', async () => {
+  it("fails on non-2xx with an error message", async () => {
     const outcome = await runCheck(`${base}/err`);
     expect(outcome.ok).toBe(false);
     expect(outcome.statusCode).toBe(500);
     expect(outcome.error).toMatch(/500/);
   });
 
-  it('passes when expectStatus matches a non-2xx', async () => {
+  it("passes when expectStatus matches a non-2xx", async () => {
     const outcome = await runCheck(`${base}/err`, 500);
     expect(outcome.ok).toBe(true);
     expect(outcome.error).toBeNull();
   });
 
-  it('follows redirects by default', async () => {
+  it("follows redirects by default", async () => {
     const outcome = await runCheck(`${base}/redirect`);
     expect(outcome.ok).toBe(true);
     expect(outcome.statusCode).toBe(200);
   });
 
-  it('asserts the redirect itself when expectStatus is 3xx', async () => {
+  it("asserts the redirect itself when expectStatus is 3xx", async () => {
     const outcome = await runCheck(`${base}/redirect`, 302);
     expect(outcome.ok).toBe(true);
     expect(outcome.statusCode).toBe(302);
   });
 
-  it('fails with a timeout error when the response is too slow', async () => {
+  it("fails with a timeout error when the response is too slow", async () => {
     const outcome = await runCheck(`${base}/slow`, undefined, 100);
     expect(outcome.ok).toBe(false);
     expect(outcome.statusCode).toBeNull();
-    expect(outcome.error).toBe('timeout');
+    expect(outcome.error).toBe("timeout");
   });
 
-  it('fails with an error on connection refused', async () => {
-    const outcome = await runCheck('http://127.0.0.1:1/ok', undefined, 1000);
+  it("fails with an error on connection refused", async () => {
+    const outcome = await runCheck("http://127.0.0.1:1/ok", undefined, 1000);
     expect(outcome.ok).toBe(false);
     expect(outcome.statusCode).toBeNull();
     expect(outcome.error).toBeTruthy();
@@ -738,16 +785,19 @@ export async function runCheck(
   timeoutMs = 10_000,
 ): Promise<CheckOutcome> {
   const start = Date.now();
-  const expectsRedirect = expectStatus !== undefined && expectStatus >= 300 && expectStatus < 400;
+  const expectsRedirect =
+    expectStatus !== undefined && expectStatus >= 300 && expectStatus < 400;
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(timeoutMs),
-      redirect: expectsRedirect ? 'manual' : 'follow',
-      cache: 'no-store',
+      redirect: expectsRedirect ? "manual" : "follow",
+      cache: "no-store",
     });
     const latencyMs = Date.now() - start;
     const ok =
-      expectStatus !== undefined ? res.status === expectStatus : res.status >= 200 && res.status < 300;
+      expectStatus !== undefined
+        ? res.status === expectStatus
+        : res.status >= 200 && res.status < 300;
     return {
       ok,
       statusCode: res.status,
@@ -757,8 +807,13 @@ export async function runCheck(
   } catch (err) {
     const latencyMs = Date.now() - start;
     const isTimeout =
-      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    const message = isTimeout ? 'timeout' : err instanceof Error ? err.message : String(err);
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError");
+    const message = isTimeout
+      ? "timeout"
+      : err instanceof Error
+        ? err.message
+        : String(err);
     return { ok: false, statusCode: null, latencyMs, error: message };
   }
 }
@@ -782,10 +837,12 @@ git commit -m "feat: http checkpoint check with timeout and expectStatus"
 ### Task 5: State machine
 
 **Files:**
+
 - Create: `src/lib/state.ts`
 - Test: `src/lib/state.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing project-internal (pure logic).
 - Produces:
   - `type Transition = 'went-down' | 'recovered' | null`
@@ -797,71 +854,83 @@ git commit -m "feat: http checkpoint check with timeout and expectStatus"
 - [ ] **Step 1: Write the failing tests** — create `src/lib/state.test.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest';
-import { applyResult, overallStatus, type CheckpointState } from './state';
+import { describe, expect, it } from "vitest";
+import { applyResult, overallStatus, type CheckpointState } from "./state";
 
-const UP: CheckpointState = { status: 'up', consecutiveFails: 0, since: 100 };
+const UP: CheckpointState = { status: "up", consecutiveFails: 0, since: 100 };
 
-describe('applyResult', () => {
-  it('starts unknown checkpoints as up without a transition', () => {
+describe("applyResult", () => {
+  it("starts unknown checkpoints as up without a transition", () => {
     const { next, transition } = applyResult(undefined, true, 1000);
-    expect(next).toEqual({ status: 'up', consecutiveFails: 0, since: 1000 });
+    expect(next).toEqual({ status: "up", consecutiveFails: 0, since: 1000 });
     expect(transition).toBeNull();
   });
 
-  it('keeps status up after a single failure', () => {
+  it("keeps status up after a single failure", () => {
     const { next, transition } = applyResult(UP, false, 2000);
-    expect(next).toEqual({ status: 'up', consecutiveFails: 1, since: 100 });
+    expect(next).toEqual({ status: "up", consecutiveFails: 1, since: 100 });
     expect(transition).toBeNull();
   });
 
-  it('goes down on the second consecutive failure', () => {
+  it("goes down on the second consecutive failure", () => {
     const afterOne = applyResult(UP, false, 2000).next;
     const { next, transition } = applyResult(afterOne, false, 3000);
-    expect(next).toEqual({ status: 'down', consecutiveFails: 2, since: 3000 });
-    expect(transition).toBe('went-down');
+    expect(next).toEqual({ status: "down", consecutiveFails: 2, since: 3000 });
+    expect(transition).toBe("went-down");
   });
 
-  it('stays down without re-firing the transition', () => {
-    const down: CheckpointState = { status: 'down', consecutiveFails: 2, since: 3000 };
+  it("stays down without re-firing the transition", () => {
+    const down: CheckpointState = {
+      status: "down",
+      consecutiveFails: 2,
+      since: 3000,
+    };
     const { next, transition } = applyResult(down, false, 4000);
-    expect(next).toEqual({ status: 'down', consecutiveFails: 3, since: 3000 });
+    expect(next).toEqual({ status: "down", consecutiveFails: 3, since: 3000 });
     expect(transition).toBeNull();
   });
 
-  it('recovers on the first success', () => {
-    const down: CheckpointState = { status: 'down', consecutiveFails: 5, since: 3000 };
+  it("recovers on the first success", () => {
+    const down: CheckpointState = {
+      status: "down",
+      consecutiveFails: 5,
+      since: 3000,
+    };
     const { next, transition } = applyResult(down, true, 9000);
-    expect(next).toEqual({ status: 'up', consecutiveFails: 0, since: 9000 });
-    expect(transition).toBe('recovered');
+    expect(next).toEqual({ status: "up", consecutiveFails: 0, since: 9000 });
+    expect(transition).toBe("recovered");
   });
 
-  it('resets the fail counter on success while up', () => {
-    const flaky: CheckpointState = { status: 'up', consecutiveFails: 1, since: 100 };
+  it("resets the fail counter on success while up", () => {
+    const flaky: CheckpointState = {
+      status: "up",
+      consecutiveFails: 1,
+      since: 100,
+    };
     const { next, transition } = applyResult(flaky, true, 5000);
-    expect(next).toEqual({ status: 'up', consecutiveFails: 0, since: 100 });
+    expect(next).toEqual({ status: "up", consecutiveFails: 0, since: 100 });
     expect(transition).toBeNull();
   });
 
-  it('first-ever check failing does not immediately alert', () => {
+  it("first-ever check failing does not immediately alert", () => {
     const { next, transition } = applyResult(undefined, false, 1000);
-    expect(next).toEqual({ status: 'up', consecutiveFails: 1, since: 1000 });
+    expect(next).toEqual({ status: "up", consecutiveFails: 1, since: 1000 });
     expect(transition).toBeNull();
   });
 });
 
-describe('overallStatus', () => {
-  it('is operational when every checkpoint is up (or there are none)', () => {
-    expect(overallStatus(['up', 'up'])).toBe('operational');
-    expect(overallStatus([])).toBe('operational');
+describe("overallStatus", () => {
+  it("is operational when every checkpoint is up (or there are none)", () => {
+    expect(overallStatus(["up", "up"])).toBe("operational");
+    expect(overallStatus([])).toBe("operational");
   });
 
-  it('is partial when some are down', () => {
-    expect(overallStatus(['up', 'down'])).toBe('partial');
+  it("is partial when some are down", () => {
+    expect(overallStatus(["up", "down"])).toBe("partial");
   });
 
-  it('is major when all are down', () => {
-    expect(overallStatus(['down', 'down'])).toBe('major');
+  it("is major when all are down", () => {
+    expect(overallStatus(["down", "down"])).toBe("major");
   });
 });
 ```
@@ -874,10 +943,10 @@ Expected: FAIL — cannot resolve `./state`.
 - [ ] **Step 3: Implement** — create `src/lib/state.ts`:
 
 ```ts
-export type Transition = 'went-down' | 'recovered' | null;
+export type Transition = "went-down" | "recovered" | null;
 
 export interface CheckpointState {
-  status: 'up' | 'down';
+  status: "up" | "down";
   consecutiveFails: number;
   since: number;
 }
@@ -889,34 +958,44 @@ export function applyResult(
   ok: boolean,
   now: number,
 ): { next: CheckpointState; transition: Transition } {
-  const current: CheckpointState = prev ?? { status: 'up', consecutiveFails: 0, since: now };
+  const current: CheckpointState = prev ?? {
+    status: "up",
+    consecutiveFails: 0,
+    since: now,
+  };
 
   if (ok) {
-    const recovered = current.status === 'down';
+    const recovered = current.status === "down";
     return {
-      next: { status: 'up', consecutiveFails: 0, since: recovered ? now : current.since },
-      transition: recovered ? 'recovered' : null,
+      next: {
+        status: "up",
+        consecutiveFails: 0,
+        since: recovered ? now : current.since,
+      },
+      transition: recovered ? "recovered" : null,
     };
   }
 
   const fails = current.consecutiveFails + 1;
-  const goesDown = current.status === 'up' && fails >= DOWN_AFTER_CONSECUTIVE_FAILS;
+  const goesDown =
+    current.status === "up" && fails >= DOWN_AFTER_CONSECUTIVE_FAILS;
   return {
     next: {
-      status: goesDown ? 'down' : current.status,
+      status: goesDown ? "down" : current.status,
       consecutiveFails: fails,
       since: goesDown ? now : current.since,
     },
-    transition: goesDown ? 'went-down' : null,
+    transition: goesDown ? "went-down" : null,
   };
 }
 
 export function overallStatus(
-  statuses: Array<'up' | 'down'>,
-): 'operational' | 'partial' | 'major' {
-  if (statuses.length === 0 || statuses.every((status) => status === 'up')) return 'operational';
-  if (statuses.every((status) => status === 'down')) return 'major';
-  return 'partial';
+  statuses: Array<"up" | "down">,
+): "operational" | "partial" | "major" {
+  if (statuses.length === 0 || statuses.every((status) => status === "up"))
+    return "operational";
+  if (statuses.every((status) => status === "down")) return "major";
+  return "partial";
 }
 ```
 
@@ -938,10 +1017,12 @@ git commit -m "feat: checkpoint state machine and overall status"
 ### Task 6: Email alerts
 
 **Files:**
+
 - Create: `src/lib/alerts.ts`
 - Test: `src/lib/alerts.test.ts`
 
 **Interfaces:**
+
 - Consumes: `SmtpConfig` from `src/lib/config.ts`; `nodemailer`; `SMTP_PASS` env var.
 - Produces:
   - `type AlertEvent = { site: string; checkpoint: string; url: string; transition: 'went-down' | 'recovered'; error?: string | null; downSince?: number; now: number }`
@@ -954,80 +1035,89 @@ git commit -m "feat: checkpoint state machine and overall status"
 - [ ] **Step 1: Write the failing tests** — create `src/lib/alerts.test.ts`:
 
 ```ts
-import { describe, expect, it, vi } from 'vitest';
-import { buildAlertEmail, formatDuration, sendAlert, type Mail } from './alerts';
-import type { SmtpConfig } from './config';
+import { describe, expect, it, vi } from "vitest";
+import {
+  buildAlertEmail,
+  formatDuration,
+  sendAlert,
+  type Mail,
+} from "./alerts";
+import type { SmtpConfig } from "./config";
 
 const SMTP: SmtpConfig = {
-  host: 'mail.example.com',
+  host: "mail.example.com",
   port: 587,
-  user: 'postmaster@example.com',
-  from: 'status@example.com',
-  to: 'alerts@example.com',
+  user: "postmaster@example.com",
+  from: "status@example.com",
+  to: "alerts@example.com",
 };
 
-describe('formatDuration', () => {
-  it('formats minutes and hours', () => {
-    expect(formatDuration(3 * 60_000)).toBe('3 min');
-    expect(formatDuration(125 * 60_000)).toBe('2 h 5 min');
+describe("formatDuration", () => {
+  it("formats minutes and hours", () => {
+    expect(formatDuration(3 * 60_000)).toBe("3 min");
+    expect(formatDuration(125 * 60_000)).toBe("2 h 5 min");
   });
 });
 
-describe('buildAlertEmail', () => {
-  it('describes a down transition with the error', () => {
+describe("buildAlertEmail", () => {
+  it("describes a down transition with the error", () => {
     const { subject, text } = buildAlertEmail({
-      site: 'webhooks.cc',
-      checkpoint: 'Redirector',
-      url: 'https://go.webhooks.cc',
-      transition: 'went-down',
-      error: 'timeout',
+      site: "webhooks.cc",
+      checkpoint: "Redirector",
+      url: "https://go.webhooks.cc",
+      transition: "went-down",
+      error: "timeout",
       now: 1_700_000_000_000,
     });
-    expect(subject).toContain('webhooks.cc');
-    expect(subject).toContain('Redirector');
-    expect(subject).toContain('DOWN');
-    expect(text).toContain('https://go.webhooks.cc');
-    expect(text).toContain('timeout');
+    expect(subject).toContain("webhooks.cc");
+    expect(subject).toContain("Redirector");
+    expect(subject).toContain("DOWN");
+    expect(text).toContain("https://go.webhooks.cc");
+    expect(text).toContain("timeout");
   });
 
-  it('describes a recovery with the outage duration', () => {
+  it("describes a recovery with the outage duration", () => {
     const now = 1_700_000_000_000;
     const { subject, text } = buildAlertEmail({
-      site: 'webhooks.cc',
-      checkpoint: 'Main site',
-      url: 'https://webhooks.cc',
-      transition: 'recovered',
+      site: "webhooks.cc",
+      checkpoint: "Main site",
+      url: "https://webhooks.cc",
+      transition: "recovered",
       downSince: now - 10 * 60_000,
       now,
     });
-    expect(subject).toContain('recovered');
-    expect(text).toContain('10 min');
+    expect(subject).toContain("recovered");
+    expect(text).toContain("10 min");
   });
 });
 
-describe('sendAlert', () => {
+describe("sendAlert", () => {
   const event = {
-    site: 's',
-    checkpoint: 'c',
-    url: 'https://example.com',
-    transition: 'went-down' as const,
-    error: 'boom',
+    site: "s",
+    checkpoint: "c",
+    url: "https://example.com",
+    transition: "went-down" as const,
+    error: "boom",
     now: 0,
   };
 
-  it('sends via the injected transport with configured from/to', async () => {
-    const send = vi.fn<(mail: Mail) => Promise<unknown>>().mockResolvedValue(undefined);
+  it("sends via the injected transport with configured from/to", async () => {
+    const send = vi
+      .fn<(mail: Mail) => Promise<unknown>>()
+      .mockResolvedValue(undefined);
     await sendAlert(SMTP, event, send);
     expect(send).toHaveBeenCalledOnce();
     const mail = send.mock.calls[0][0];
-    expect(mail.from).toBe('status@example.com');
-    expect(mail.to).toBe('alerts@example.com');
-    expect(mail.subject).toContain('DOWN');
+    expect(mail.from).toBe("status@example.com");
+    expect(mail.to).toBe("alerts@example.com");
+    expect(mail.subject).toContain("DOWN");
   });
 
-  it('never throws when the transport fails', async () => {
-    const send = vi.fn<(mail: Mail) => Promise<unknown>>().mockRejectedValue(new Error('smtp down'));
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  it("never throws when the transport fails", async () => {
+    const send = vi
+      .fn<(mail: Mail) => Promise<unknown>>()
+      .mockRejectedValue(new Error("smtp down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(sendAlert(SMTP, event, send)).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
@@ -1043,14 +1133,14 @@ Expected: FAIL — cannot resolve `./alerts`.
 - [ ] **Step 3: Implement** — create `src/lib/alerts.ts`:
 
 ```ts
-import nodemailer from 'nodemailer';
-import type { SmtpConfig } from './config';
+import nodemailer from "nodemailer";
+import type { SmtpConfig } from "./config";
 
 export interface AlertEvent {
   site: string;
   checkpoint: string;
   url: string;
-  transition: 'went-down' | 'recovered';
+  transition: "went-down" | "recovered";
   error?: string | null;
   downSince?: number;
   now: number;
@@ -1071,15 +1161,21 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(mins / 60)} h ${mins % 60} min`;
 }
 
-export function buildAlertEmail(event: AlertEvent): { subject: string; text: string } {
+export function buildAlertEmail(event: AlertEvent): {
+  subject: string;
+  text: string;
+} {
   const timestamp = new Date(event.now).toISOString();
-  if (event.transition === 'went-down') {
+  if (event.transition === "went-down") {
     return {
       subject: `🔴 ${event.site}: ${event.checkpoint} is DOWN`,
-      text: `${event.checkpoint} (${event.url}) is failing.\n\nError: ${event.error ?? 'unknown'}\nTime: ${timestamp}`,
+      text: `${event.checkpoint} (${event.url}) is failing.\n\nError: ${event.error ?? "unknown"}\nTime: ${timestamp}`,
     };
   }
-  const duration = event.downSince !== undefined ? formatDuration(event.now - event.downSince) : 'unknown';
+  const duration =
+    event.downSince !== undefined
+      ? formatDuration(event.now - event.downSince)
+      : "unknown";
   return {
     subject: `🟢 ${event.site}: ${event.checkpoint} recovered`,
     text: `${event.checkpoint} (${event.url}) is back up.\n\nDowntime: ${duration}\nTime: ${timestamp}`,
@@ -1101,11 +1197,15 @@ export async function sendAlert(
   event: AlertEvent,
   send: SendMail = smtpSend(smtp),
 ): Promise<void> {
-  const mail: Mail = { from: smtp.from, to: smtp.to, ...buildAlertEmail(event) };
+  const mail: Mail = {
+    from: smtp.from,
+    to: smtp.to,
+    ...buildAlertEmail(event),
+  };
   try {
     await send(mail);
   } catch (err) {
-    console.error('[alerts] failed to send email', err);
+    console.error("[alerts] failed to send email", err);
   }
 }
 ```
@@ -1128,10 +1228,12 @@ git commit -m "feat: email alerts for down/recovered transitions"
 ### Task 7: Scheduler and instrumentation
 
 **Files:**
+
 - Create: `src/lib/scheduler.ts`, `src/instrumentation.ts`
 - Test: `src/lib/scheduler.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AppConfig`/`getConfig` (Task 2); `getDb`, `insertCheck`, `getState`, `setState`, `pruneOldChecks` (Task 3); `runCheck`, `CheckOutcome` (Task 4); `applyResult` (Task 5); `sendAlert`, `AlertEvent` (Task 6).
 - Produces:
   - `type SchedulerDeps = { config: AppConfig; db: Database.Database; check: (url: string, expectStatus?: number) => Promise<CheckOutcome>; alert: (event: AlertEvent) => Promise<void>; now: () => number }`
@@ -1142,21 +1244,21 @@ git commit -m "feat: email alerts for down/recovered transitions"
 - [ ] **Step 1: Write the failing tests** — create `src/lib/scheduler.test.ts`:
 
 ```ts
-import { describe, expect, it, vi } from 'vitest';
-import type { AppConfig } from './config';
-import { getState, openDb } from './db';
-import { tick, type SchedulerDeps } from './scheduler';
+import { describe, expect, it, vi } from "vitest";
+import type { AppConfig } from "./config";
+import { getState, openDb } from "./db";
+import { tick, type SchedulerDeps } from "./scheduler";
 
 const CONFIG: AppConfig = {
   checkIntervalSeconds: 60,
   alerts: {
-    smtp: { host: 'h', port: 587, user: 'u', from: 'f@x.com', to: 't@x.com' },
+    smtp: { host: "h", port: 587, user: "u", from: "f@x.com", to: "t@x.com" },
   },
   sites: [
     {
-      name: 'webhooks.cc',
-      host: 'status.webhooks.cc',
-      checkpoints: [{ name: 'Main site', url: 'https://webhooks.cc' }],
+      name: "webhooks.cc",
+      host: "status.webhooks.cc",
+      checkpoints: [{ name: "Main site", url: "https://webhooks.cc" }],
     },
   ],
 };
@@ -1169,14 +1271,14 @@ function makeDeps(outcomes: Array<{ ok: boolean }>): SchedulerDeps & {
   const alertSpy = vi.fn().mockResolvedValue(undefined);
   return {
     config: CONFIG,
-    db: openDb(':memory:'),
+    db: openDb(":memory:"),
     check: vi.fn().mockImplementation(() => {
       const outcome = outcomes[Math.min(call++, outcomes.length - 1)];
       return Promise.resolve({
         ok: outcome.ok,
         statusCode: outcome.ok ? 200 : 500,
         latencyMs: 50,
-        error: outcome.ok ? null : 'unexpected status 500',
+        error: outcome.ok ? null : "unexpected status 500",
       });
     }),
     alert: alertSpy,
@@ -1185,60 +1287,60 @@ function makeDeps(outcomes: Array<{ ok: boolean }>): SchedulerDeps & {
   };
 }
 
-describe('tick', () => {
-  it('records a check row and an up state on success', async () => {
+describe("tick", () => {
+  it("records a check row and an up state on success", async () => {
     const deps = makeDeps([{ ok: true }]);
     await tick(deps);
-    const rows = deps.db.prepare('SELECT * FROM checks').all();
+    const rows = deps.db.prepare("SELECT * FROM checks").all();
     expect(rows).toHaveLength(1);
-    expect(getState(deps.db, 'webhooks.cc', 'Main site')?.status).toBe('up');
+    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("up");
     expect(deps.alertSpy).not.toHaveBeenCalled();
   });
 
-  it('alerts once after two consecutive failures', async () => {
+  it("alerts once after two consecutive failures", async () => {
     const deps = makeDeps([{ ok: false }]);
     await tick(deps);
     expect(deps.alertSpy).not.toHaveBeenCalled();
     await tick(deps);
     expect(deps.alertSpy).toHaveBeenCalledOnce();
     expect(deps.alertSpy.mock.calls[0][0]).toMatchObject({
-      site: 'webhooks.cc',
-      checkpoint: 'Main site',
-      transition: 'went-down',
-      error: 'unexpected status 500',
+      site: "webhooks.cc",
+      checkpoint: "Main site",
+      transition: "went-down",
+      error: "unexpected status 500",
     });
     await tick(deps);
     expect(deps.alertSpy).toHaveBeenCalledOnce();
-    expect(getState(deps.db, 'webhooks.cc', 'Main site')?.status).toBe('down');
+    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("down");
   });
 
-  it('alerts recovery with the downSince timestamp', async () => {
+  it("alerts recovery with the downSince timestamp", async () => {
     const deps = makeDeps([{ ok: false }, { ok: false }, { ok: true }]);
     await tick(deps);
     await tick(deps);
-    const downSince = getState(deps.db, 'webhooks.cc', 'Main site')?.since;
+    const downSince = getState(deps.db, "webhooks.cc", "Main site")?.since;
     await tick(deps);
     expect(deps.alertSpy).toHaveBeenCalledTimes(2);
     expect(deps.alertSpy.mock.calls[1][0]).toMatchObject({
-      transition: 'recovered',
+      transition: "recovered",
       downSince,
     });
-    expect(getState(deps.db, 'webhooks.cc', 'Main site')?.status).toBe('up');
+    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("up");
   });
 
-  it('does not alert when config has no alerts block', async () => {
+  it("does not alert when config has no alerts block", async () => {
     const deps = makeDeps([{ ok: false }]);
     deps.config = { ...CONFIG, alerts: undefined };
     await tick(deps);
     await tick(deps);
     expect(deps.alertSpy).not.toHaveBeenCalled();
-    expect(getState(deps.db, 'webhooks.cc', 'Main site')?.status).toBe('down');
+    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("down");
   });
 
-  it('survives an alert function that rejects', async () => {
+  it("survives an alert function that rejects", async () => {
     const deps = makeDeps([{ ok: false }]);
-    deps.alert = vi.fn().mockRejectedValue(new Error('smtp down'));
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    deps.alert = vi.fn().mockRejectedValue(new Error("smtp down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await tick(deps);
     await expect(tick(deps)).resolves.toBeUndefined();
     errorSpy.mockRestore();
@@ -1254,12 +1356,12 @@ Expected: FAIL — cannot resolve `./scheduler`.
 - [ ] **Step 3: Implement** — create `src/lib/scheduler.ts`:
 
 ```ts
-import type Database from 'better-sqlite3';
-import { sendAlert, type AlertEvent } from './alerts';
-import { runCheck, type CheckOutcome } from './checker';
-import { getConfig, type AppConfig } from './config';
-import { getDb, getState, insertCheck, pruneOldChecks, setState } from './db';
-import { applyResult } from './state';
+import type Database from "better-sqlite3";
+import { sendAlert, type AlertEvent } from "./alerts";
+import { runCheck, type CheckOutcome } from "./checker";
+import { getConfig, type AppConfig } from "./config";
+import { getDb, getState, insertCheck, pruneOldChecks, setState } from "./db";
+import { applyResult } from "./state";
 
 const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -1298,11 +1400,11 @@ export async function tick(deps: SchedulerDeps): Promise<void> {
               url: cp.url,
               transition,
               error: outcome.error,
-              downSince: transition === 'recovered' ? prev?.since : undefined,
+              downSince: transition === "recovered" ? prev?.since : undefined,
               now: ts,
             });
           } catch (err) {
-            console.error('[scheduler] alert failed', err);
+            console.error("[scheduler] alert failed", err);
           }
         }
       }),
@@ -1327,7 +1429,7 @@ export function startScheduler(): void {
     now: Date.now,
   };
 
-  let lastPruneDay = '';
+  let lastPruneDay = "";
   const run = async () => {
     try {
       await tick(deps);
@@ -1335,10 +1437,11 @@ export function startScheduler(): void {
       if (day !== lastPruneDay) {
         lastPruneDay = day;
         const deleted = pruneOldChecks(db, Date.now() - RETENTION_MS);
-        if (deleted > 0) console.log(`[scheduler] pruned ${deleted} old check rows`);
+        if (deleted > 0)
+          console.log(`[scheduler] pruned ${deleted} old check rows`);
       }
     } catch (err) {
-      console.error('[scheduler] tick failed', err);
+      console.error("[scheduler] tick failed", err);
     }
   };
 
@@ -1354,8 +1457,8 @@ export function startScheduler(): void {
 
 ```ts
 export async function register() {
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { startScheduler } = await import('./lib/scheduler');
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { startScheduler } = await import("./lib/scheduler");
     startScheduler();
   }
 }
@@ -1390,10 +1493,12 @@ git commit -m "feat: scheduler loop wired into next instrumentation"
 ### Task 8: Read queries for the page
 
 **Files:**
+
 - Create: `src/lib/queries.ts`
 - Test: `src/lib/queries.test.ts`
 
 **Interfaces:**
+
 - Consumes: db handle + `insertCheck` (Task 3).
 - Produces:
   - `type DayUptime = { date: string; total: number; up: number; uptimePct: number | null }` — `date` is UTC `YYYY-MM-DD`; `uptimePct` is rounded to 1 decimal, `null` when no data that day
@@ -1404,37 +1509,42 @@ git commit -m "feat: scheduler loop wired into next instrumentation"
 - [ ] **Step 1: Write the failing tests** — create `src/lib/queries.test.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest';
-import { insertCheck, openDb } from './db';
-import { dailyUptime, latencySeries } from './queries';
+import { describe, expect, it } from "vitest";
+import { insertCheck, openDb } from "./db";
+import { dailyUptime, latencySeries } from "./queries";
 
 const DAY = 24 * 60 * 60 * 1000;
 // 2024-01-10T12:00:00Z — fixed "now" so dates are deterministic
 const NOW = Date.UTC(2024, 0, 10, 12, 0, 0);
 
-function seed(db: ReturnType<typeof openDb>, ts: number, ok: 0 | 1, latencyMs: number | null) {
+function seed(
+  db: ReturnType<typeof openDb>,
+  ts: number,
+  ok: 0 | 1,
+  latencyMs: number | null,
+) {
   insertCheck(db, {
-    site: 's',
-    checkpoint: 'c',
+    site: "s",
+    checkpoint: "c",
     ts,
     ok,
     statusCode: ok ? 200 : 500,
     latencyMs,
-    error: ok ? null : 'unexpected status 500',
+    error: ok ? null : "unexpected status 500",
   });
 }
 
-describe('dailyUptime', () => {
-  it('returns one entry per day, oldest first, ending today', () => {
-    const days = dailyUptime(openDb(':memory:'), 's', 'c', 90, NOW);
+describe("dailyUptime", () => {
+  it("returns one entry per day, oldest first, ending today", () => {
+    const days = dailyUptime(openDb(":memory:"), "s", "c", 90, NOW);
     expect(days).toHaveLength(90);
-    expect(days[89].date).toBe('2024-01-10');
-    expect(days[0].date).toBe('2023-10-13');
+    expect(days[89].date).toBe("2024-01-10");
+    expect(days[0].date).toBe("2023-10-13");
     expect(days.every((d) => d.uptimePct === null)).toBe(true);
   });
 
-  it('computes per-day percentages and leaves gap days null', () => {
-    const db = openDb(':memory:');
+  it("computes per-day percentages and leaves gap days null", () => {
+    const db = openDb(":memory:");
     // 2024-01-09 (yesterday): 3 ok, 1 fail => 75%
     const yesterdayNoon = Date.UTC(2024, 0, 9, 12, 0, 0);
     seed(db, yesterdayNoon, 1, 100);
@@ -1444,50 +1554,54 @@ describe('dailyUptime', () => {
     // 2024-01-10 (today): 1 ok => 100%
     seed(db, NOW - 60_000, 1, 100);
 
-    const days = dailyUptime(db, 's', 'c', 3, NOW);
-    expect(days.map((d) => d.date)).toEqual(['2024-01-08', '2024-01-09', '2024-01-10']);
+    const days = dailyUptime(db, "s", "c", 3, NOW);
+    expect(days.map((d) => d.date)).toEqual([
+      "2024-01-08",
+      "2024-01-09",
+      "2024-01-10",
+    ]);
     expect(days[0].uptimePct).toBeNull();
     expect(days[1]).toMatchObject({ total: 4, up: 3, uptimePct: 75 });
     expect(days[2]).toMatchObject({ total: 1, up: 1, uptimePct: 100 });
   });
 
-  it('scopes to the requested checkpoint', () => {
-    const db = openDb(':memory:');
+  it("scopes to the requested checkpoint", () => {
+    const db = openDb(":memory:");
     seed(db, NOW - 60_000, 0, null);
     insertCheck(db, {
-      site: 's',
-      checkpoint: 'other',
+      site: "s",
+      checkpoint: "other",
       ts: NOW - 60_000,
       ok: 1,
       statusCode: 200,
       latencyMs: 5,
       error: null,
     });
-    const days = dailyUptime(db, 's', 'other', 1, NOW);
+    const days = dailyUptime(db, "s", "other", 1, NOW);
     expect(days[0]).toMatchObject({ total: 1, up: 1, uptimePct: 100 });
   });
 });
 
-describe('latencySeries', () => {
-  it('averages successful checks into 5-minute buckets, ordered by time', () => {
-    const db = openDb(':memory:');
+describe("latencySeries", () => {
+  it("averages successful checks into 5-minute buckets, ordered by time", () => {
+    const db = openDb(":memory:");
     const bucket = Math.floor((NOW - 60 * 60_000) / 300_000) * 300_000;
     seed(db, bucket + 1000, 1, 100);
     seed(db, bucket + 2000, 1, 300);
     seed(db, bucket + 3000, 0, 10_000); // failed: excluded
     seed(db, bucket + 300_000 + 1000, 1, 50);
 
-    const points = latencySeries(db, 's', 'c', NOW - DAY, NOW);
+    const points = latencySeries(db, "s", "c", NOW - DAY, NOW);
     expect(points).toEqual([
       { ts: bucket, latencyMs: 200 },
       { ts: bucket + 300_000, latencyMs: 50 },
     ]);
   });
 
-  it('excludes points outside the window', () => {
-    const db = openDb(':memory:');
+  it("excludes points outside the window", () => {
+    const db = openDb(":memory:");
     seed(db, NOW - 2 * DAY, 1, 100);
-    expect(latencySeries(db, 's', 'c', NOW - DAY, NOW)).toEqual([]);
+    expect(latencySeries(db, "s", "c", NOW - DAY, NOW)).toEqual([]);
   });
 });
 ```
@@ -1500,7 +1614,7 @@ Expected: FAIL — cannot resolve `./queries`.
 - [ ] **Step 3: Implement** — create `src/lib/queries.ts`:
 
 ```ts
-import type Database from 'better-sqlite3';
+import type Database from "better-sqlite3";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BUCKET_MS = 5 * 60 * 1000;
@@ -1538,7 +1652,11 @@ export function dailyUptime(
        WHERE site = ? AND checkpoint = ? AND ts >= ?
        GROUP BY date`,
     )
-    .all(site, checkpoint, since) as Array<{ date: string; total: number; up: number }>;
+    .all(site, checkpoint, since) as Array<{
+    date: string;
+    total: number;
+    up: number;
+  }>;
   const byDate = new Map(rows.map((row) => [row.date, row]));
 
   const result: DayUptime[] = [];
@@ -1599,20 +1717,22 @@ git commit -m "feat: daily uptime and latency queries"
 ### Task 9: Status page UI
 
 **Files:**
+
 - Create: `src/components/StatusBanner.tsx`, `src/components/UptimeBars.tsx`, `src/components/LatencyChart.tsx`, `src/components/CheckpointCard.tsx`, `src/components/AutoRefresh.tsx`, `src/app/not-found.tsx`
 - Modify: `src/app/page.tsx` (replace scaffold), `src/app/layout.tsx` (metadata title)
 
 **Interfaces:**
+
 - Consumes: `getConfig`, `findSiteByHost` (Task 2); `getDb`, `getState` (Task 3); `overallStatus` (Task 5); `dailyUptime`, `latencySeries`, `DayUptime`, `LatencyPoint` (Task 8).
 - Produces: the public page. No new library interfaces.
 
 - [ ] **Step 1: Create `src/components/AutoRefresh.tsx`**
 
 ```tsx
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export function AutoRefresh({ intervalMs = 60_000 }: { intervalMs?: number }) {
   const router = useRouter();
@@ -1628,15 +1748,19 @@ export function AutoRefresh({ intervalMs = 60_000 }: { intervalMs?: number }) {
 
 ```tsx
 const STYLES = {
-  operational: { bg: 'bg-emerald-500', label: 'All systems operational' },
-  partial: { bg: 'bg-amber-500', label: 'Partial outage' },
-  major: { bg: 'bg-red-600', label: 'Major outage' },
+  operational: { bg: "bg-emerald-500", label: "All systems operational" },
+  partial: { bg: "bg-amber-500", label: "Partial outage" },
+  major: { bg: "bg-red-600", label: "Major outage" },
 } as const;
 
 export function StatusBanner({ status }: { status: keyof typeof STYLES }) {
   const { bg, label } = STYLES[status];
   return (
-    <div className={`${bg} rounded-lg px-4 py-3 text-lg font-semibold text-white`}>{label}</div>
+    <div
+      className={`${bg} rounded-lg px-4 py-3 text-lg font-semibold text-white`}
+    >
+      {label}
+    </div>
   );
 }
 ```
@@ -1644,20 +1768,23 @@ export function StatusBanner({ status }: { status: keyof typeof STYLES }) {
 - [ ] **Step 3: Create `src/components/UptimeBars.tsx`**
 
 ```tsx
-import type { DayUptime } from '@/lib/queries';
+import type { DayUptime } from "@/lib/queries";
 
 function barColor(pct: number | null): string {
-  if (pct === null) return 'bg-neutral-200 dark:bg-neutral-700';
-  if (pct >= 99) return 'bg-emerald-500';
-  if (pct >= 90) return 'bg-amber-400';
-  return 'bg-red-500';
+  if (pct === null) return "bg-neutral-200 dark:bg-neutral-700";
+  if (pct >= 99) return "bg-emerald-500";
+  if (pct >= 90) return "bg-amber-400";
+  return "bg-red-500";
 }
 
 export function UptimeBars({ days }: { days: DayUptime[] }) {
   const measured = days.filter((d) => d.uptimePct !== null);
   const overall =
     measured.length > 0
-      ? (measured.reduce((sum, d) => sum + (d.uptimePct ?? 0), 0) / measured.length).toFixed(2)
+      ? (
+          measured.reduce((sum, d) => sum + (d.uptimePct ?? 0), 0) /
+          measured.length
+        ).toFixed(2)
       : null;
   return (
     <div>
@@ -1665,13 +1792,15 @@ export function UptimeBars({ days }: { days: DayUptime[] }) {
         {days.map((d) => (
           <div
             key={d.date}
-            title={`${d.date}: ${d.uptimePct === null ? 'no data' : `${d.uptimePct}%`}`}
+            title={`${d.date}: ${d.uptimePct === null ? "no data" : `${d.uptimePct}%`}`}
             className={`h-8 min-w-0 flex-1 rounded-sm ${barColor(d.uptimePct)}`}
           />
         ))}
       </div>
       <p className="mt-1 text-xs text-neutral-500">
-        {overall === null ? 'No data yet' : `${overall}% uptime over the last 90 days`}
+        {overall === null
+          ? "No data yet"
+          : `${overall}% uptime over the last 90 days`}
       </p>
     </div>
   );
@@ -1681,7 +1810,7 @@ export function UptimeBars({ days }: { days: DayUptime[] }) {
 - [ ] **Step 4: Create `src/components/LatencyChart.tsx`**
 
 ```tsx
-import type { LatencyPoint } from '@/lib/queries';
+import type { LatencyPoint } from "@/lib/queries";
 
 export function LatencyChart({
   points,
@@ -1699,12 +1828,20 @@ export function LatencyChart({
   const H = 80;
   const PAD = 2;
   const max = Math.max(...points.map((p) => p.latencyMs), 1);
-  const x = (ts: number) => PAD + ((ts - sinceMs) / (untilMs - sinceMs)) * (W - 2 * PAD);
+  const x = (ts: number) =>
+    PAD + ((ts - sinceMs) / (untilMs - sinceMs)) * (W - 2 * PAD);
   const y = (ms: number) => H - PAD - (ms / max) * (H - 2 * PAD);
-  const path = points.map((p) => `${x(p.ts).toFixed(1)},${y(p.latencyMs).toFixed(1)}`).join(' ');
+  const path = points
+    .map((p) => `${x(p.ts).toFixed(1)},${y(p.latencyMs).toFixed(1)}`)
+    .join(" ");
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Response time, last 24 hours">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        role="img"
+        aria-label="Response time, last 24 hours"
+      >
         <polyline
           points={path}
           fill="none"
@@ -1713,7 +1850,9 @@ export function LatencyChart({
           className="text-sky-500"
         />
       </svg>
-      <p className="text-xs text-neutral-500">Last 24 hours · max {Math.round(max)} ms</p>
+      <p className="text-xs text-neutral-500">
+        Last 24 hours · max {Math.round(max)} ms
+      </p>
     </div>
   );
 }
@@ -1722,13 +1861,13 @@ export function LatencyChart({
 - [ ] **Step 5: Create `src/components/CheckpointCard.tsx`**
 
 ```tsx
-import { LatencyChart } from './LatencyChart';
-import { UptimeBars } from './UptimeBars';
-import type { DayUptime, LatencyPoint } from '@/lib/queries';
+import { LatencyChart } from "./LatencyChart";
+import { UptimeBars } from "./UptimeBars";
+import type { DayUptime, LatencyPoint } from "@/lib/queries";
 
 export interface CheckpointView {
   name: string;
-  status: 'up' | 'down';
+  status: "up" | "down";
   days: DayUptime[];
   latency: LatencyPoint[];
 }
@@ -1742,18 +1881,24 @@ export function CheckpointCard({
   sinceMs: number;
   untilMs: number;
 }) {
-  const up = checkpoint.status === 'up';
+  const up = checkpoint.status === "up";
   return (
     <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-medium">{checkpoint.name}</h2>
-        <span className={`text-sm font-semibold ${up ? 'text-emerald-600' : 'text-red-600'}`}>
-          {up ? 'Operational' : 'Down'}
+        <span
+          className={`text-sm font-semibold ${up ? "text-emerald-600" : "text-red-600"}`}
+        >
+          {up ? "Operational" : "Down"}
         </span>
       </div>
       <UptimeBars days={checkpoint.days} />
       <div className="mt-4">
-        <LatencyChart points={checkpoint.latency} sinceMs={sinceMs} untilMs={untilMs} />
+        <LatencyChart
+          points={checkpoint.latency}
+          sinceMs={sinceMs}
+          untilMs={untilMs}
+        />
       </div>
     </section>
   );
@@ -1763,22 +1908,25 @@ export function CheckpointCard({
 - [ ] **Step 6: Replace `src/app/page.tsx`**
 
 ```tsx
-import { headers } from 'next/headers';
-import { notFound } from 'next/navigation';
-import { AutoRefresh } from '@/components/AutoRefresh';
-import { CheckpointCard, type CheckpointView } from '@/components/CheckpointCard';
-import { StatusBanner } from '@/components/StatusBanner';
-import { findSiteByHost, getConfig } from '@/lib/config';
-import { getDb, getState } from '@/lib/db';
-import { dailyUptime, latencySeries } from '@/lib/queries';
-import { overallStatus } from '@/lib/state';
+import { headers } from "next/headers";
+import { notFound } from "next/navigation";
+import { AutoRefresh } from "@/components/AutoRefresh";
+import {
+  CheckpointCard,
+  type CheckpointView,
+} from "@/components/CheckpointCard";
+import { StatusBanner } from "@/components/StatusBanner";
+import { findSiteByHost, getConfig } from "@/lib/config";
+import { getDb, getState } from "@/lib/db";
+import { dailyUptime, latencySeries } from "@/lib/queries";
+import { overallStatus } from "@/lib/state";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default async function StatusPage() {
-  const host = (await headers()).get('host');
+  const host = (await headers()).get("host");
   const site = findSiteByHost(getConfig(), host);
   if (!site) notFound();
 
@@ -1788,7 +1936,7 @@ export default async function StatusPage() {
 
   const checkpoints: CheckpointView[] = site.checkpoints.map((cp) => ({
     name: cp.name,
-    status: getState(db, site.name, cp.name)?.status ?? 'up',
+    status: getState(db, site.name, cp.name)?.status ?? "up",
     days: dailyUptime(db, site.name, cp.name, 90, now),
     latency: latencySeries(db, site.name, cp.name, sinceMs, now),
   }));
@@ -1797,10 +1945,17 @@ export default async function StatusPage() {
     <main className="mx-auto max-w-3xl px-4 py-10">
       <AutoRefresh />
       <h1 className="mb-6 text-2xl font-bold">{site.name} status</h1>
-      <StatusBanner status={overallStatus(checkpoints.map((cp) => cp.status))} />
+      <StatusBanner
+        status={overallStatus(checkpoints.map((cp) => cp.status))}
+      />
       <div className="mt-6 flex flex-col gap-4">
         {checkpoints.map((cp) => (
-          <CheckpointCard key={cp.name} checkpoint={cp} sinceMs={sinceMs} untilMs={now} />
+          <CheckpointCard
+            key={cp.name}
+            checkpoint={cp}
+            sinceMs={sinceMs}
+            untilMs={now}
+          />
         ))}
       </div>
       <p className="mt-8 text-xs text-neutral-400">
@@ -1820,7 +1975,9 @@ export default function NotFound() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <h1 className="text-2xl font-bold">Not found</h1>
-      <p className="mt-2 text-neutral-500">No status page is configured for this hostname.</p>
+      <p className="mt-2 text-neutral-500">
+        No status page is configured for this hostname.
+      </p>
     </main>
   );
 }
@@ -1830,8 +1987,8 @@ In `src/app/layout.tsx`, set the metadata to:
 
 ```ts
 export const metadata: Metadata = {
-  title: 'Status',
-  description: 'Service status and uptime',
+  title: "Status",
+  description: "Service status and uptime",
 };
 ```
 
@@ -1863,9 +2020,11 @@ git commit -m "feat: per-hostname status page with uptime bars and latency chart
 ### Task 10: Docker, Compose, and deployment docs
 
 **Files:**
+
 - Create: `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `README.md`
 
 **Interfaces:**
+
 - Consumes: the standalone Next build (Task 1 config), `CONFIG_PATH`/`DB_PATH` env vars (Tasks 2–3), `SMTP_PASS`.
 - Produces: a deployable container listening on `:3000` with `/data` volume for config + database.
 
@@ -1922,7 +2081,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - '127.0.0.1:3000:3000'
+      - "127.0.0.1:3000:3000"
     environment:
       - SMTP_PASS=${SMTP_PASS}
     volumes:
