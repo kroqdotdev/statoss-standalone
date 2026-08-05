@@ -14,3 +14,5 @@ sites:
         url: https://webhooks.cc
       - name: Redirector
         url: https://go.webhooks.cc
+        # root of the redirector has no route; 404 means the service is up
+        expectStatus: 404

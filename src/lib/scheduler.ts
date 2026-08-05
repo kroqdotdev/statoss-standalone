@@ -62,6 +62,12 @@ export function startScheduler(): void {
 
   const config = getConfig();
   const db = getDb();
+
+  if (config.alerts && !process.env.SMTP_PASS) {
+    console.warn(
+      "[scheduler] alerts are configured but SMTP_PASS is not set — alert emails will fail",
+    );
+  }
   const deps: SchedulerDeps = {
     config,
     db,
