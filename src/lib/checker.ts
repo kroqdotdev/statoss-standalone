@@ -24,6 +24,8 @@ export async function runCheck(
       expectStatus !== undefined
         ? res.status === expectStatus
         : res.status >= 200 && res.status < 300;
+    // Cancel response body to release socket back to keep-alive pool
+    void res.body?.cancel().catch(() => {});
     return {
       ok,
       statusCode: res.status,
