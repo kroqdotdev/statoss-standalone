@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# status-page
 
-## Getting Started
+Self-hosted status page for multiple sites. One Next.js app + SQLite; an embedded
+checker hits every configured checkpoint on an interval, records uptime and latency,
+and emails on state changes. Each site is served on its own hostname.
 
-First, run the development server:
+## Configuration
+
+Sites, checkpoints, and SMTP settings live in `config.yaml` (see the file in this
+repo for the format). The SMTP password is read from the `SMTP_PASS` environment
+variable — locally from the gitignored `.env` file.
+
+- A checkpoint passes on a 2xx response (or exactly `expectStatus` if set).
+- A checkpoint is marked down after 2 consecutive failures and up on the first success.
+- One email per transition (down / recovered).
+
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm dev        # http://localhost:3000 — send a Host header to select a site:
+                # curl -H 'Host: status.webhooks.cc' http://localhost:3000/
+pnpm test
+pnpm lint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Deployment (VPS with Caddy)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. On the VPS, clone the repo and create the data directory:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   ```bash
+   mkdir -p data
+   cp config.yaml data/config.yaml     # edit as needed on the server
+   echo 'SMTP_PASS=...' > .env
+   docker compose up -d --build
+   ```
 
-## Learn More
+   The container listens on `127.0.0.1:3000` and keeps its config and SQLite
+   database in `./data`. After editing `data/config.yaml`, restart:
+   `docker compose restart`.
 
-To learn more about Next.js, take a look at the following resources:
+2. Add one block per site to your Caddyfile (Caddy terminates TLS and routes by
+   hostname; the app picks the site from the `Host` header):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   ```
+   status.webhooks.cc {
+       reverse_proxy 127.0.0.1:3000
+   }
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   Reload Caddy: `sudo systemctl reload caddy` (or `caddy reload`).
 
-## Deploy on Vercel
+3. Point DNS for each `status.<domain>` at the VPS.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Adding a site or checkpoint
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Edit `data/config.yaml` (add the site with its `host` and checkpoints), restart the
+container, then add the matching Caddyfile block and DNS record.
