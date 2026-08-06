@@ -12,7 +12,5 @@ sites:
     checkpoints:
       - name: Main site
         url: https://webhooks.cc
-      - name: Redirector
-        url: https://go.webhooks.cc
-        # root of the redirector has no route; 404 means the service is up
-        expectStatus: 404
+      - name: Webhook receiver
+        url: https://go.webhooks.cc/health
