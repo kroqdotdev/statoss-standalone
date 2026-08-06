@@ -1,0 +1,28 @@
+# Copy this file to config.yaml and change the values.
+# The application reads the file from CONFIG_PATH (default: ./config.yaml).
+
+# The number of seconds between checks. Minimum: 10.
+checkIntervalSeconds: 60
+
+# Optional. Remove this block to disable email alerts.
+# Set the SMTP password in the SMTP_PASS environment variable.
+alerts:
+  smtp:
+    host: smtp.example.com
+    port: 587
+    user: smtp-user@example.com
+    from: status@example.com
+    to: alerts@example.com
+
+# Each site gets its own status page on its own hostname.
+sites:
+  - name: example.com
+    host: status.example.com # the hostname that serves this status page
+    checkpoints:
+      - name: Main site
+        url: https://example.com
+      - name: API health
+        url: https://api.example.com/health
+        # Optional. The check passes only on this exact HTTP status.
+        # Without this value, the check passes on each 2xx status.
+        # expectStatus: 200
