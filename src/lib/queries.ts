@@ -106,6 +106,8 @@ export interface FailureRun {
   timeouts: number;
   /** Distinct stored error strings, in no particular order. */
   errors: string[];
+  /** Time of the first successful check after the run, or null if none yet. */
+  recoveredTs: number | null;
   /** True when the run includes the checkpoint's most recent check. */
   ongoing: boolean;
 }
@@ -127,6 +129,8 @@ export function failureRuns(
       `SELECT MAX(ts) AS ts FROM checks WHERE site = ? AND checkpoint = ?`,
     )
     .get(site, checkpoint) as { ts: number | null };
+  // `grp` counts successful checks so far, so every failed check between two
+  // successes shares a value, and the success that ends a run has grp + 1.
   const rows = db
     .prepare(
       `WITH ordered AS (
@@ -134,15 +138,22 @@ export function failureRuns(
                 SUM(ok) OVER (ORDER BY ts ROWS UNBOUNDED PRECEDING) AS grp
          FROM checks
          WHERE site = ? AND checkpoint = ? AND ts >= ? AND ts < ?
+       ),
+       runs AS (
+         SELECT grp,
+                MIN(ts) AS startTs,
+                MAX(ts) AS endTs,
+                COUNT(*) AS checks,
+                SUM(CASE WHEN error = 'timeout' THEN 1 ELSE 0 END) AS timeouts,
+                json_group_array(DISTINCT COALESCE(error, '')) AS errors
+         FROM ordered
+         WHERE ok = 0
+         GROUP BY grp
        )
-       SELECT MIN(ts) AS startTs,
-              MAX(ts) AS endTs,
-              COUNT(*) AS checks,
-              SUM(CASE WHEN error = 'timeout' THEN 1 ELSE 0 END) AS timeouts,
-              json_group_array(DISTINCT COALESCE(error, '')) AS errors
-       FROM ordered
-       WHERE ok = 0
-       GROUP BY grp
+       SELECT runs.*,
+              (SELECT MIN(ts) FROM ordered
+               WHERE ok = 1 AND grp = runs.grp + 1) AS recoveredTs
+       FROM runs
        ORDER BY startTs DESC`,
     )
     .all(site, checkpoint, sinceMs, untilMs) as Array<{
@@ -151,6 +162,7 @@ export function failureRuns(
     checks: number;
     timeouts: number;
     errors: string;
+    recoveredTs: number | null;
   }>;
   return rows.map((row) => ({
     startTs: row.startTs,
@@ -158,6 +170,7 @@ export function failureRuns(
     checks: row.checks,
     timeouts: row.timeouts,
     errors: (JSON.parse(row.errors) as string[]).filter((e) => e !== ""),
+    recoveredTs: row.recoveredTs,
     ongoing: latest.ts !== null && row.endTs === latest.ts,
   }));
 }

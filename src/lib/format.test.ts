@@ -3,6 +3,7 @@ import {
   describeError,
   formatDuration,
   formatPercent,
+  formatSpan,
   formatUtcDateTime,
   pluralize,
 } from "./format";
@@ -17,6 +18,15 @@ describe("formatDuration", () => {
     expect(formatDuration(60 * 60_000)).toBe("1 h");
     expect(formatDuration(48 * 60 * 60_000)).toBe("2 d");
     expect(formatDuration(50 * 60 * 60_000)).toBe("2 d 2 h");
+  });
+});
+
+describe("formatSpan", () => {
+  it("shows seconds under a minute and minutes above", () => {
+    expect(formatSpan(400)).toBe("1 s");
+    expect(formatSpan(42_000)).toBe("42 s");
+    expect(formatSpan(60_000)).toBe("1 min");
+    expect(formatSpan(125 * 60_000)).toBe("2 h 5 min");
   });
 });
 

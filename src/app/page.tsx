@@ -92,7 +92,6 @@ export default async function StatusPage(props: PageProps<"/">) {
           checkpoint={cp}
           range={range}
           now={now}
-          intervalMs={intervalMs}
         />
       ))}
 

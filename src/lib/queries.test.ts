@@ -165,6 +165,7 @@ describe("failureRuns", () => {
       endTs: t0 + 6 * 60_000,
       checks: 3,
       timeouts: 1,
+      recoveredTs: t0 + 7 * 60_000,
       ongoing: false,
     });
     expect([...runs[0].errors].sort()).toEqual([
@@ -177,6 +178,7 @@ describe("failureRuns", () => {
       checks: 1,
       timeouts: 1,
       errors: ["timeout"],
+      recoveredTs: t0 + 2 * 60_000,
       ongoing: false,
     });
   });
@@ -188,7 +190,11 @@ describe("failureRuns", () => {
     fail(db, NOW - 1 * 60_000, "timeout");
     const runs = failureRuns(db, "s", "c", NOW - DAY, NOW + 1);
     expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({ checks: 2, ongoing: true });
+    expect(runs[0]).toMatchObject({
+      checks: 2,
+      recoveredTs: null,
+      ongoing: true,
+    });
   });
 
   it("starts a run at the first check when it fails", () => {

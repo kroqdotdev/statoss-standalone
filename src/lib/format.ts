@@ -64,6 +64,12 @@ export function formatDuration(ms: number): string {
   return restHours === 0 ? `${days} d` : `${days} d ${restHours} h`;
 }
 
+/** Like formatDuration, but spans under a minute show seconds: "42 s". */
+export function formatSpan(ms: number): string {
+  if (ms < MINUTE_MS) return `${Math.max(1, Math.round(ms / 1000))} s`;
+  return formatDuration(ms);
+}
+
 /** "1,438" with a thousands separator. */
 export function formatCount(n: number): string {
   return n.toLocaleString("en-US");

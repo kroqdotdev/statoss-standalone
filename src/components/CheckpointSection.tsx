@@ -23,19 +23,17 @@ function statusLine(cp: CheckpointView, now: number): string {
   const duration = formatDuration(now - cp.since);
   return cp.status === "up"
     ? `Up for ${duration}`
-    : `Down since ${formatUtcDateTime(cp.since, now)}`;
+    : `Down for ${duration}, since ${formatUtcDateTime(cp.since, now)}`;
 }
 
 export function CheckpointSection({
   checkpoint,
   range,
   now,
-  intervalMs,
 }: {
   checkpoint: CheckpointView;
   range: RangeKey;
   now: number;
-  intervalMs: number;
 }) {
   const down = checkpoint.status === "down";
   const pct = formatPercent(checkpoint.summary.up, checkpoint.summary.total);
@@ -62,7 +60,7 @@ export function CheckpointSection({
         summary={checkpoint.summary}
         name={checkpoint.name}
       />
-      <FailureList runs={checkpoint.runs} now={now} intervalMs={intervalMs} />
+      <FailureList runs={checkpoint.runs} now={now} />
     </section>
   );
 }

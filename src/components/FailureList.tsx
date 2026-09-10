@@ -1,6 +1,6 @@
 import {
   describeError,
-  formatDuration,
+  formatSpan,
   formatUtcDateTime,
   pluralize,
 } from "@/lib/format";
@@ -13,23 +13,24 @@ function runLabel(run: FailureRun): string {
   return labels.length > 0 ? labels.join(", ") : "Failed";
 }
 
-function runExtent(run: FailureRun, now: number, intervalMs: number): string {
-  if (run.ongoing) {
-    return `ongoing, ${formatDuration(now - run.startTs)}`;
-  }
-  if (run.checks === 1) return "1 check";
-  const span = run.endTs - run.startTs + intervalMs;
-  return `${pluralize(run.checks, "check")}, ${formatDuration(span)}`;
+/**
+ * How long the checkpoint was not responding: from the first failed check to
+ * the first successful one after it. While the run is still going, the
+ * timer counts from the first failure to now.
+ */
+function runExtent(run: FailureRun, now: number): string {
+  const checks = pluralize(run.checks, "check");
+  if (run.ongoing) return `${formatSpan(now - run.startTs)} so far, ${checks}`;
+  if (run.recoveredTs === null) return checks;
+  return `${formatSpan(run.recoveredTs - run.startTs)}, ${checks}`;
 }
 
 export function FailureList({
   runs,
   now,
-  intervalMs,
 }: {
   runs: FailureRun[];
   now: number;
-  intervalMs: number;
 }) {
   if (runs.length === 0) return null;
   const shown = runs.slice(0, SHOW);
@@ -50,7 +51,7 @@ export function FailureList({
               {formatUtcDateTime(run.startTs, now)}
             </span>
             <span className="col-start-3 row-start-auto text-right text-muted sm:col-start-auto">
-              {runExtent(run, now, intervalMs)}
+              {runExtent(run, now)}
             </span>
           </li>
         ))}
