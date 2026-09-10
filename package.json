@@ -1,7 +1,29 @@
 {
-  "name": "status-page",
+  "name": "statoss-standalone",
   "version": "0.1.0",
+  "description": "Self-hosted status page in one container: uptime checks, SQLite storage, a public page for each site, and email alerts.",
+  "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kroqdotdev/statoss-standalone.git"
+  },
+  "homepage": "https://github.com/kroqdotdev/statoss-standalone#readme",
+  "bugs": {
+    "url": "https://github.com/kroqdotdev/statoss-standalone/issues"
+  },
+  "keywords": [
+    "status-page",
+    "uptime",
+    "monitoring",
+    "self-hosted",
+    "nextjs",
+    "sqlite",
+    "docker"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
