@@ -3,10 +3,11 @@ import { FailureList } from "./FailureList";
 import { formatDuration, formatPercent, formatUtcDateTime } from "@/lib/format";
 import type { Bucket, FailureRun, WindowSummary } from "@/lib/queries";
 import type { RangeKey } from "@/lib/ranges";
+import type { CheckpointStatus } from "@/lib/state";
 
 export interface CheckpointView {
   name: string;
-  status: "up" | "down";
+  status: CheckpointStatus;
   /** When the current status began, or null before the first check. */
   since: number | null;
   buckets: Bucket[];
@@ -17,7 +18,8 @@ export interface CheckpointView {
 }
 
 function statusLine(cp: CheckpointView, now: number): string {
-  if (cp.since === null) return "Waiting for the first check";
+  if (cp.status === "unknown" || cp.since === null)
+    return "Waiting for the first check";
   const duration = formatDuration(now - cp.since);
   return cp.status === "up"
     ? `Up for ${duration}`

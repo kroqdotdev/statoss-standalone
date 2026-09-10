@@ -128,7 +128,20 @@ describe("tick", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await tick(deps);
     await expect(tick(deps)).resolves.toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[scheduler] alert failed",
+      expect.any(Error),
+    );
     errorSpy.mockRestore();
+  });
+
+  it("does not wait for a slow alert before finishing the tick", async () => {
+    const deps = makeDeps([{ ok: false }]);
+    deps.alert = vi.fn(() => new Promise<void>(() => {}));
+    await tick(deps);
+    await expect(tick(deps)).resolves.toBeUndefined();
+    expect(deps.alert).toHaveBeenCalledOnce();
   });
 });
 

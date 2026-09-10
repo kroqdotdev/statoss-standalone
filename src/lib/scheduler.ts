@@ -38,19 +38,18 @@ export async function tick(deps: SchedulerDeps): Promise<void> {
         const { next, transition } = applyResult(prev, outcome.ok, ts);
         setState(db, { site: site.name, checkpoint: cp.name, ...next });
         if (transition !== null && config.alerts) {
-          try {
-            await alert({
-              site: site.name,
-              checkpoint: cp.name,
-              url: cp.url,
-              transition,
-              error: outcome.error,
-              downSince: transition === "recovered" ? prev?.since : undefined,
-              now: ts,
-            });
-          } catch (err) {
+          // Not awaited: a slow SMTP server must not hold up the next tick.
+          alert({
+            site: site.name,
+            checkpoint: cp.name,
+            url: cp.url,
+            transition,
+            error: outcome.error,
+            downSince: transition === "recovered" ? prev?.since : undefined,
+            now: ts,
+          }).catch((err: unknown) => {
             console.error("[scheduler] alert failed", err);
-          }
+          });
         }
       }),
     ),

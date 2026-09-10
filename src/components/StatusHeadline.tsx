@@ -1,5 +1,5 @@
 import type { CheckpointView } from "./CheckpointSection";
-import { failureSummary, formatDuration } from "@/lib/format";
+import { failureSummary, formatDuration, pluralize } from "@/lib/format";
 import type { overallStatus } from "@/lib/state";
 
 type Overall = ReturnType<typeof overallStatus>;
@@ -8,6 +8,7 @@ const DOT: Record<Overall, string> = {
   operational: "text-up",
   partial: "text-timeout",
   major: "text-fail",
+  unknown: "text-rule-strong",
 };
 
 function joinNames(names: string[]): string {
@@ -18,17 +19,29 @@ function joinNames(names: string[]): string {
 function headline(site: string, overall: Overall): string {
   if (overall === "operational") return `${site} is up.`;
   if (overall === "major") return `${site} is down.`;
+  if (overall === "unknown") return `Checking ${site}.`;
   return `Part of ${site} is down.`;
 }
 
 function detail(checkpoints: CheckpointView[], now: number): string {
   const down = checkpoints.filter((cp) => cp.status === "down");
-  const up = checkpoints.length - down.length;
+  const unknown = checkpoints.filter((cp) => cp.status === "unknown").length;
+  const up = checkpoints.length - down.length - unknown;
+  if (unknown === checkpoints.length) {
+    return "The first checks have not finished yet. This page updates on its own.";
+  }
   if (down.length === 0) {
+    const pending =
+      unknown === 0
+        ? ""
+        : ` ${pluralize(unknown, "checkpoint")} not checked yet.`;
     if (checkpoints.length === 1)
       return `${checkpoints[0].name} is responding.`;
-    if (checkpoints.length === 2) return "Both checkpoints are responding.";
-    return `All ${checkpoints.length} checkpoints are responding.`;
+    if (unknown === 0 && checkpoints.length === 2)
+      return "Both checkpoints are responding.";
+    if (unknown === 0)
+      return `All ${checkpoints.length} checkpoints are responding.`;
+    return `${pluralize(up, "checkpoint")} responding.${pending}`;
   }
   const longest = Math.max(...down.map((cp) => now - (cp.since ?? now)));
   const who = joinNames(down.map((cp) => cp.name));

@@ -62,7 +62,7 @@ export default async function StatusPage(props: PageProps<"/">) {
     }));
     return {
       name: cp.name,
-      status: state?.status ?? "up",
+      status: state?.status ?? "unknown",
       since: state?.since ?? null,
       ...data,
     };

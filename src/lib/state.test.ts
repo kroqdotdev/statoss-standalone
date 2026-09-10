@@ -76,4 +76,14 @@ describe("overallStatus", () => {
   it("is major when all are down", () => {
     expect(overallStatus(["down", "down"])).toBe("major");
   });
+
+  it("is unknown until any checkpoint has been checked", () => {
+    expect(overallStatus(["unknown", "unknown"])).toBe("unknown");
+  });
+
+  it("ignores unchecked checkpoints once others are known", () => {
+    expect(overallStatus(["up", "unknown"])).toBe("operational");
+    expect(overallStatus(["down", "unknown"])).toBe("major");
+    expect(overallStatus(["down", "up", "unknown"])).toBe("partial");
+  });
 });

@@ -44,11 +44,21 @@ export function applyResult(
   };
 }
 
+export type CheckpointStatus = "up" | "down" | "unknown";
+
+/**
+ * Rolls checkpoint statuses up into one headline state. A checkpoint is
+ * "unknown" until its first check has run; unknown checkpoints never count
+ * as up, and a site where nothing has been checked yet is "unknown".
+ */
 export function overallStatus(
-  statuses: Array<"up" | "down">,
-): "operational" | "partial" | "major" {
+  statuses: CheckpointStatus[],
+): "operational" | "partial" | "major" | "unknown" {
   if (statuses.length === 0 || statuses.every((status) => status === "up"))
     return "operational";
-  if (statuses.every((status) => status === "down")) return "major";
-  return "partial";
+  if (statuses.every((status) => status === "unknown")) return "unknown";
+  const known = statuses.filter((status) => status !== "unknown");
+  if (known.every((status) => status === "down")) return "major";
+  if (known.some((status) => status === "down")) return "partial";
+  return "operational";
 }
