@@ -3,6 +3,7 @@ import { sendAlert, type AlertEvent } from "./alerts";
 import { runCheck, type CheckOutcome } from "./checker";
 import { getConfig, type AppConfig } from "./config";
 import { getDb, getState, insertCheck, pruneOldChecks, setState } from "./db";
+import { bumpDataVersion } from "./data-version";
 import { applyResult } from "./state";
 
 const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
@@ -17,7 +18,9 @@ export interface SchedulerDeps {
 
 export async function tick(deps: SchedulerDeps): Promise<void> {
   const { config, db, check, alert, now } = deps;
-  await Promise.all(
+  // allSettled, not all: one checkpoint failing to record its result must not
+  // abandon the others mid-flight or release the overlap guard early.
+  const results = await Promise.allSettled(
     config.sites.flatMap((site) =>
       site.checkpoints.map(async (cp) => {
         const outcome = await check(cp.url, cp.expectStatus);
@@ -52,6 +55,38 @@ export async function tick(deps: SchedulerDeps): Promise<void> {
       }),
     ),
   );
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("[scheduler] checkpoint tick failed", result.reason);
+    }
+  }
+  bumpDataVersion();
+}
+
+/**
+ * Wraps `task` so that a call made while a previous call is still running is
+ * skipped instead of overlapping. A tick can take as long as the check
+ * timeout, and two overlapping ticks would race on checkpoint_state and
+ * could alert twice.
+ */
+export function skipWhileRunning(
+  task: () => Promise<void>,
+  onSkip: () => void = () =>
+    console.warn("[scheduler] previous tick still running, skipping"),
+): () => Promise<void> {
+  let running = false;
+  return async () => {
+    if (running) {
+      onSkip();
+      return;
+    }
+    running = true;
+    try {
+      await task();
+    } finally {
+      running = false;
+    }
+  };
 }
 
 const globals = globalThis as { __statusSchedulerStarted?: boolean };
@@ -78,7 +113,7 @@ export function startScheduler(): void {
   };
 
   let lastPruneDay = "";
-  const run = async () => {
+  const run = skipWhileRunning(async () => {
     try {
       await tick(deps);
       const day = new Date().toISOString().slice(0, 10);
@@ -91,7 +126,7 @@ export function startScheduler(): void {
     } catch (err) {
       console.error("[scheduler] tick failed", err);
     }
-  };
+  });
 
   console.log(
     `[scheduler] started: ${config.sites.length} site(s), every ${config.checkIntervalSeconds}s`,

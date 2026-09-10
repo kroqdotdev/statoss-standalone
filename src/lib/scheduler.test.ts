@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "./config";
 import { getState, openDb } from "./db";
-import { tick, type SchedulerDeps } from "./scheduler";
+import { skipWhileRunning, tick, type SchedulerDeps } from "./scheduler";
 
 const CONFIG: AppConfig = {
   checkIntervalSeconds: 60,
@@ -91,6 +91,37 @@ describe("tick", () => {
     expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("down");
   });
 
+  it("finishes the other checkpoints when one throws", async () => {
+    const deps = makeDeps([{ ok: true }]);
+    deps.config = {
+      ...CONFIG,
+      sites: [
+        {
+          ...CONFIG.sites[0],
+          checkpoints: [
+            { name: "Broken", url: "https://broken.example.com" },
+            { name: "Main site", url: "https://webhooks.cc" },
+          ],
+        },
+      ],
+    };
+    const good = deps.check;
+    deps.check = vi.fn((url: string) =>
+      url.includes("broken")
+        ? Promise.reject(new Error("db exploded"))
+        : good(url),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(tick(deps)).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[scheduler] checkpoint tick failed",
+      expect.any(Error),
+    );
+    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("up");
+    expect(getState(deps.db, "webhooks.cc", "Broken")).toBeUndefined();
+    errorSpy.mockRestore();
+  });
+
   it("survives an alert function that rejects", async () => {
     const deps = makeDeps([{ ok: false }]);
     deps.alert = vi.fn().mockRejectedValue(new Error("smtp down"));
@@ -98,5 +129,40 @@ describe("tick", () => {
     await tick(deps);
     await expect(tick(deps)).resolves.toBeUndefined();
     errorSpy.mockRestore();
+  });
+});
+
+describe("skipWhileRunning", () => {
+  it("skips calls that arrive while the task is still running", async () => {
+    let release!: () => void;
+    const task = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const onSkip = vi.fn();
+    const run = skipWhileRunning(task, onSkip);
+
+    const first = run();
+    await run();
+    expect(task).toHaveBeenCalledOnce();
+    expect(onSkip).toHaveBeenCalledOnce();
+
+    release();
+    await first;
+    const third = run();
+    release();
+    await third;
+    expect(task).toHaveBeenCalledTimes(2);
+  });
+
+  it("releases the guard when the task throws", async () => {
+    const task = vi.fn().mockRejectedValueOnce(new Error("boom"));
+    const run = skipWhileRunning(task, () => {});
+    await expect(run()).rejects.toThrow("boom");
+    task.mockResolvedValueOnce(undefined);
+    await run();
+    expect(task).toHaveBeenCalledTimes(2);
   });
 });

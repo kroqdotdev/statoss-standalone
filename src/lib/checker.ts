@@ -5,6 +5,22 @@ export interface CheckOutcome {
   error: string | null;
 }
 
+/**
+ * Node's fetch reports network failures as a bare "fetch failed" and hides the
+ * reason in `cause`. Append the cause's code so the page can say why.
+ */
+function describeFailure(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as { cause?: unknown }).cause;
+  const code =
+    cause instanceof Error
+      ? ((cause as { code?: unknown }).code ?? cause.message)
+      : undefined;
+  return typeof code === "string" && code.length > 0
+    ? `${err.message} (${code})`
+    : err.message;
+}
+
 export async function runCheck(
   url: string,
   expectStatus?: number,
@@ -37,11 +53,7 @@ export async function runCheck(
     const isTimeout =
       err instanceof Error &&
       (err.name === "TimeoutError" || err.name === "AbortError");
-    const message = isTimeout
-      ? "timeout"
-      : err instanceof Error
-        ? err.message
-        : String(err);
+    const message = isTimeout ? "timeout" : describeFailure(err);
     return { ok: false, statusCode: null, latencyMs, error: message };
   }
 }

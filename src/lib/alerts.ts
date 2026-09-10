@@ -1,5 +1,8 @@
 import nodemailer from "nodemailer";
 import type { SmtpConfig } from "./config";
+import { formatDuration } from "./format";
+
+export { formatDuration };
 
 export interface AlertEvent {
   site: string;
@@ -19,12 +22,6 @@ export interface Mail {
 }
 
 export type SendMail = (mail: Mail) => Promise<unknown>;
-
-export function formatDuration(ms: number): string {
-  const mins = Math.round(ms / 60_000);
-  if (mins < 60) return `${mins} min`;
-  return `${Math.floor(mins / 60)} h ${mins % 60} min`;
-}
 
 export function buildAlertEmail(event: AlertEvent): {
   subject: string;
@@ -52,6 +49,8 @@ function smtpSend(smtp: SmtpConfig): SendMail {
     host: smtp.host,
     port: smtp.port,
     secure: smtp.port === 465,
+    // Never fall back to a plain-text session on submission ports.
+    requireTLS: smtp.port !== 465,
     auth: { user: smtp.user, pass: process.env.SMTP_PASS },
   });
   return (mail) => transport.sendMail(mail);

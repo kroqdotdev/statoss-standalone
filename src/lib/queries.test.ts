@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { insertCheck, openDb } from "./db";
-import { dailyUptime, latencySeries } from "./queries";
+import {
+  DEFAULT_RANGE,
+  RANGES,
+  bucketSeries,
+  failureRuns,
+  parseRange,
+  rangeWindow,
+  windowSummary,
+} from "./queries";
 
 const DAY = 24 * 60 * 60 * 1000;
 // 2024-01-10T12:00:00Z — fixed "now" so dates are deterministic
@@ -23,73 +31,178 @@ function seed(
   });
 }
 
-describe("dailyUptime", () => {
-  it("returns one entry per day, oldest first, ending today", () => {
-    const days = dailyUptime(openDb(":memory:"), "s", "c", 90, NOW);
-    expect(days).toHaveLength(90);
-    expect(days[89].date).toBe("2024-01-10");
-    expect(days[0].date).toBe("2023-10-13");
-    expect(days.every((d) => d.uptimePct === null)).toBe(true);
+describe("rangeWindow", () => {
+  it("aligns daily buckets to UTC midnight and ends after now", () => {
+    const { start, end } = rangeWindow(RANGES["90d"], NOW);
+    expect(end).toBe(Date.UTC(2024, 0, 11));
+    expect(start).toBe(Date.UTC(2023, 9, 13));
+    expect((end - start) / DAY).toBe(90);
   });
 
-  it("computes per-day percentages and leaves gap days null", () => {
-    const db = openDb(":memory:");
-    // 2024-01-09 (yesterday): 3 ok, 1 fail => 75%
-    const yesterdayNoon = Date.UTC(2024, 0, 9, 12, 0, 0);
-    seed(db, yesterdayNoon, 1, 100);
-    seed(db, yesterdayNoon + 60_000, 1, 100);
-    seed(db, yesterdayNoon + 120_000, 1, 100);
-    seed(db, yesterdayNoon + 180_000, 0, null);
-    // 2024-01-10 (today): 1 ok => 100%
-    seed(db, NOW - 60_000, 1, 100);
-
-    const days = dailyUptime(db, "s", "c", 3, NOW);
-    expect(days.map((d) => d.date)).toEqual([
-      "2024-01-08",
-      "2024-01-09",
-      "2024-01-10",
-    ]);
-    expect(days[0].uptimePct).toBeNull();
-    expect(days[1]).toMatchObject({ total: 4, up: 3, uptimePct: 75 });
-    expect(days[2]).toMatchObject({ total: 1, up: 1, uptimePct: 100 });
-  });
-
-  it("scopes to the requested checkpoint", () => {
-    const db = openDb(":memory:");
-    seed(db, NOW - 60_000, 0, null);
-    insertCheck(db, {
-      site: "s",
-      checkpoint: "other",
-      ts: NOW - 60_000,
-      ok: 1,
-      statusCode: 200,
-      latencyMs: 5,
-      error: null,
-    });
-    const days = dailyUptime(db, "s", "other", 1, NOW);
-    expect(days[0]).toMatchObject({ total: 1, up: 1, uptimePct: 100 });
+  it("uses 5-minute buckets for 24 hours", () => {
+    const { start, end } = rangeWindow(RANGES["24h"], NOW);
+    expect(end - start).toBe(DAY);
+    expect(end % 300_000).toBe(0);
+    expect(end).toBeGreaterThan(NOW);
   });
 });
 
-describe("latencySeries", () => {
-  it("averages successful checks into 5-minute buckets, ordered by time", () => {
-    const db = openDb(":memory:");
-    const bucket = Math.floor((NOW - 60 * 60_000) / 300_000) * 300_000;
-    seed(db, bucket + 1000, 1, 100);
-    seed(db, bucket + 2000, 1, 300);
-    seed(db, bucket + 3000, 0, 10_000); // failed: excluded
-    seed(db, bucket + 300_000 + 1000, 1, 50);
+describe("parseRange", () => {
+  it("accepts known keys and falls back to the default", () => {
+    expect(parseRange("7d")).toBe("7d");
+    expect(parseRange("1y")).toBe(DEFAULT_RANGE);
+    expect(parseRange(undefined)).toBe(DEFAULT_RANGE);
+    expect(parseRange(["24h"])).toBe(DEFAULT_RANGE);
+  });
+});
 
-    const points = latencySeries(db, "s", "c", NOW - DAY, NOW);
-    expect(points).toEqual([
-      { ts: bucket, latencyMs: 200 },
-      { ts: bucket + 300_000, latencyMs: 50 },
-    ]);
+describe("bucketSeries", () => {
+  it("returns one bucket per slot with counts, timeouts and mean latency", () => {
+    const db = openDb(":memory:");
+    const spec = RANGES["24h"];
+    const { start } = rangeWindow(spec, NOW);
+    const slot = start + 10 * spec.bucketMs;
+    seed(db, slot + 1000, 1, 100);
+    seed(db, slot + 2000, 1, 300);
+    insertCheck(db, {
+      site: "s",
+      checkpoint: "c",
+      ts: slot + 3000,
+      ok: 0,
+      statusCode: null,
+      latencyMs: 10_000,
+      error: "timeout",
+    });
+    seed(db, slot + 4000, 0, 50);
+
+    const buckets = bucketSeries(db, "s", "c", spec, NOW);
+    expect(buckets).toHaveLength(spec.buckets);
+    expect(buckets[0]).toEqual({
+      ts: start,
+      total: 0,
+      up: 0,
+      timeouts: 0,
+      latencyMs: null,
+    });
+    expect(buckets[10]).toEqual({
+      ts: slot,
+      total: 4,
+      up: 2,
+      timeouts: 1,
+      latencyMs: 200,
+    });
   });
 
-  it("excludes points outside the window", () => {
+  it("ignores checks before the window", () => {
     const db = openDb(":memory:");
-    seed(db, NOW - 2 * DAY, 1, 100);
-    expect(latencySeries(db, "s", "c", NOW - DAY, NOW)).toEqual([]);
+    seed(db, rangeWindow(RANGES["24h"], NOW).start - 1, 1, 100);
+    const buckets = bucketSeries(db, "s", "c", RANGES["24h"], NOW);
+    expect(buckets.every((b) => b.total === 0)).toBe(true);
+  });
+});
+
+describe("windowSummary", () => {
+  it("totals checks, successes, timeouts and mean latency", () => {
+    const db = openDb(":memory:");
+    seed(db, NOW - 3000, 1, 100);
+    seed(db, NOW - 2000, 1, 200);
+    insertCheck(db, {
+      site: "s",
+      checkpoint: "c",
+      ts: NOW - 1000,
+      ok: 0,
+      statusCode: null,
+      latencyMs: 10_000,
+      error: "timeout",
+    });
+    expect(windowSummary(db, "s", "c", NOW - DAY, NOW + 1)).toEqual({
+      total: 3,
+      up: 2,
+      timeouts: 1,
+      latencyMs: 150,
+    });
+  });
+
+  it("returns zeros for an empty window", () => {
+    expect(windowSummary(openDb(":memory:"), "s", "c", 0, NOW)).toEqual({
+      total: 0,
+      up: 0,
+      timeouts: 0,
+      latencyMs: null,
+    });
+  });
+});
+
+describe("failureRuns", () => {
+  function fail(db: ReturnType<typeof openDb>, ts: number, error: string) {
+    insertCheck(db, {
+      site: "s",
+      checkpoint: "c",
+      ts,
+      ok: 0,
+      statusCode: error.startsWith("unexpected") ? 503 : null,
+      latencyMs: null,
+      error,
+    });
+  }
+
+  it("groups consecutive failures and lists them newest first", () => {
+    const db = openDb(":memory:");
+    const t0 = NOW - 60 * 60_000;
+    seed(db, t0, 1, 100);
+    fail(db, t0 + 1 * 60_000, "timeout"); // run A: one timeout
+    seed(db, t0 + 2 * 60_000, 1, 100);
+    seed(db, t0 + 3 * 60_000, 1, 100);
+    fail(db, t0 + 4 * 60_000, "unexpected status 503"); // run B: 3 checks
+    fail(db, t0 + 5 * 60_000, "unexpected status 503");
+    fail(db, t0 + 6 * 60_000, "timeout");
+    seed(db, t0 + 7 * 60_000, 1, 100);
+
+    const runs = failureRuns(db, "s", "c", NOW - DAY, NOW + 1);
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toMatchObject({
+      startTs: t0 + 4 * 60_000,
+      endTs: t0 + 6 * 60_000,
+      checks: 3,
+      timeouts: 1,
+      ongoing: false,
+    });
+    expect([...runs[0].errors].sort()).toEqual([
+      "timeout",
+      "unexpected status 503",
+    ]);
+    expect(runs[1]).toMatchObject({
+      startTs: t0 + 60_000,
+      endTs: t0 + 60_000,
+      checks: 1,
+      timeouts: 1,
+      errors: ["timeout"],
+      ongoing: false,
+    });
+  });
+
+  it("marks a run that includes the latest check as ongoing", () => {
+    const db = openDb(":memory:");
+    seed(db, NOW - 3 * 60_000, 1, 100);
+    fail(db, NOW - 2 * 60_000, "timeout");
+    fail(db, NOW - 1 * 60_000, "timeout");
+    const runs = failureRuns(db, "s", "c", NOW - DAY, NOW + 1);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ checks: 2, ongoing: true });
+  });
+
+  it("starts a run at the first check when it fails", () => {
+    const db = openDb(":memory:");
+    fail(db, NOW - 60_000, "fetch failed (ECONNREFUSED)");
+    seed(db, NOW - 30_000, 1, 100);
+    const runs = failureRuns(db, "s", "c", NOW - DAY, NOW + 1);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].errors).toEqual(["fetch failed (ECONNREFUSED)"]);
+  });
+
+  it("returns nothing without failures", () => {
+    const db = openDb(":memory:");
+    seed(db, NOW - 60_000, 1, 100);
+    expect(failureRuns(db, "s", "c", NOW - DAY, NOW + 1)).toEqual([]);
   });
 });

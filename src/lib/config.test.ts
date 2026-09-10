@@ -49,6 +49,28 @@ alerts:
     expect(() => parseConfig(bad)).toThrow(/sites\.0\.checkpoints\.0\.url/);
   });
 
+  it("rejects two checkpoints with the same name in one site", () => {
+    const bad = VALID.replace("name: Redirector", "name: Main site");
+    expect(() => parseConfig(bad)).toThrow(
+      /"Main site" is used more than once/,
+    );
+  });
+
+  it("rejects two sites with the same host, ignoring case", () => {
+    const twoSites =
+      VALID +
+      `
+  - name: other
+    host: STATUS.webhooks.cc
+    checkpoints:
+      - name: Home
+        url: https://other.example.com
+`;
+    expect(() => parseConfig(twoSites)).toThrow(
+      /"status.webhooks.cc" is used by more than one site/,
+    );
+  });
+
   it("rejects a missing site host", () => {
     const bad = VALID.replace("host: status.webhooks.cc", 'host: ""');
     expect(() => parseConfig(bad)).toThrow(/host/);

@@ -11,7 +11,7 @@ Thank you for your interest in this project. This document tells you how to set 
 5. Create a configuration file: `cp config.example.yaml config.yaml`
 6. Run the tests: `pnpm test`
 
-All 44 tests must pass before you start.
+All tests must pass before you start.
 
 ## Make a change
 
@@ -24,7 +24,7 @@ All 44 tests must pass before you start.
 ### Code style
 
 - ESLint and Prettier enforce the style. Run `pnpm format` to format all files.
-- Do not add dependencies without a clear need. The latency chart is plain SVG for this reason.
+- Do not add dependencies without a clear need. The check strip is plain SVG for this reason.
 - Keep each file focused on one responsibility. See the files in `src/lib/` as examples.
 
 ### Commit messages

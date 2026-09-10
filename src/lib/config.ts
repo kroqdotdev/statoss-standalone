@@ -16,19 +16,48 @@ const smtpSchema = z.object({
   to: z.string().min(1),
 });
 
-const configSchema = z.object({
-  checkIntervalSeconds: z.number().int().min(10).default(60),
-  alerts: z.object({ smtp: smtpSchema }).optional(),
-  sites: z
-    .array(
-      z.object({
-        name: z.string().min(1),
-        host: z.string().min(1),
-        checkpoints: z.array(checkpointSchema).min(1),
-      }),
-    )
-    .min(1),
-});
+function duplicates(values: string[]): string[] {
+  const seen = new Set<string>();
+  const dupes = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) dupes.add(value);
+    seen.add(value);
+  }
+  return [...dupes];
+}
+
+const siteSchema = z
+  .object({
+    name: z.string().min(1),
+    host: z.string().min(1),
+    checkpoints: z.array(checkpointSchema).min(1),
+  })
+  .superRefine((site, ctx) => {
+    for (const name of duplicates(site.checkpoints.map((cp) => cp.name))) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["checkpoints"],
+        message: `checkpoint name "${name}" is used more than once`,
+      });
+    }
+  });
+
+const configSchema = z
+  .object({
+    checkIntervalSeconds: z.number().int().min(10).default(60),
+    alerts: z.object({ smtp: smtpSchema }).optional(),
+    sites: z.array(siteSchema).min(1),
+  })
+  .superRefine((config, ctx) => {
+    const hosts = config.sites.map((site) => site.host.toLowerCase());
+    for (const host of duplicates(hosts)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sites"],
+        message: `host "${host}" is used by more than one site`,
+      });
+    }
+  });
 
 export type AppConfig = z.infer<typeof configSchema>;
 export type SiteConfig = AppConfig["sites"][number];

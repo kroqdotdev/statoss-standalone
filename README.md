@@ -4,8 +4,9 @@ A self-hosted status page for your websites.
 
 The application is one Next.js server with an embedded uptime checker and a SQLite database. The checker sends an HTTP request to each configured URL at a set interval. The public page shows the results.
 
-- Uptime bars for the last 90 days, one bar for each day
-- A latency chart for the last 24 hours
+- A check strip for each checkpoint, with a view of the last 24 hours, 7 days, or 90 days
+- Each bar shows the response time of one time slot. A mark on top shows the failed checks in that slot, so one timeout is visible
+- A list of failed checks, grouped into runs, with the reason (timeout, HTTP status, or connection error)
 - One status page for each site, served on its own hostname
 - Optional email alerts when a checkpoint goes down and when it recovers
 - One YAML configuration file, no admin interface, no external services
@@ -15,6 +16,8 @@ The application is one Next.js server with an embedded uptime checker and a SQLi
 You define sites in `config.yaml`. Each site has a hostname and one or more checkpoints. A checkpoint is a URL and an optional expected HTTP status.
 
 The checker runs inside the server process. A check passes on a 2xx response, or on the exact `expectStatus` value if you set one. A checkpoint becomes **down** after 2 failed checks in a row. It becomes **up** again after 1 successful check. The application sends one email for each change of state. The database keeps 90 days of results.
+
+The page shows every failed check, also when the checkpoint stays **up**. The 24-hour view has slots of 5 minutes, the 7-day view has slots of 1 hour, and the 90-day view has slots of 1 day. Move the pointer over the strip, or use the arrow keys, to read the numbers of one slot. All times are UTC.
 
 The server reads the `Host` header of each request. It shows the site with the matching hostname. It returns 404 for all other hostnames.
 
@@ -49,6 +52,8 @@ Run the tests with `pnpm test`. Run the linter with `pnpm lint`.
 5. Build and start the container: `docker compose up -d --build`
 
 The container listens on `127.0.0.1:3000`. It keeps the configuration and the database in `./data`.
+
+The container runs as the `node` user with user ID 1000. The `./data` directory must be writable by that user. If the container cannot write the database, run `sudo chown -R 1000:1000 data` and start it again.
 
 Add one block for each site to your Caddyfile:
 
