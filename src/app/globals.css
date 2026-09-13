@@ -3,7 +3,7 @@
 /*
   Palette. Cool paper in the light, deep green-black in the dark. The signal
   colours carry meaning and nothing else on the page uses them:
-  up (green), timeout (amber), fail (red).
+  up (green), timeout (amber), fail (red), slow (indigo).
 */
 :root {
   --bg: #f5f7f6;
@@ -15,6 +15,8 @@
   --up-soft: #b7d9c6;
   --timeout: #d98e1b;
   --fail: #d24a32;
+  --slow: #5b5fc7;
+  --slow-tint: #e9eafa;
   --none: #e4e9e6;
   --hover: rgba(21, 33, 28, 0.1);
 }
@@ -30,6 +32,8 @@
     --up-soft: #245a40;
     --timeout: #e5a33a;
     --fail: #e4614a;
+    --slow: #9ea2f0;
+    --slow-tint: #1f2140;
     --none: #1b2521;
     --hover: rgba(228, 235, 231, 0.12);
   }
@@ -45,6 +49,8 @@
   --color-up-soft: var(--up-soft);
   --color-timeout: var(--timeout);
   --color-fail: var(--fail);
+  --color-slow: var(--slow);
+  --color-slow-tint: var(--slow-tint);
   --color-none: var(--none);
   --font-sans: var(--font-plex), "IBM Plex Sans", system-ui, sans-serif;
 }

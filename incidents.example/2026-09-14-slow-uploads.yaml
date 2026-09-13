@@ -1,0 +1,14 @@
+# The same fields as the Markdown form, as plain YAML. Without a `resolved`
+# time or a resolved update the incident is open and shown at the top of the
+# page until the file is changed.
+title: Slow uploads
+site: example.com
+started: 2026-09-14T09:00:00Z
+impact: degraded
+updates:
+  - at: 2026-09-14T09:00:00Z
+    status: investigating
+    body: Uploads are taking several times longer than usual.
+  - at: 2026-09-14T09:40:00Z
+    status: monitoring
+    body: Our storage provider reports a degraded region. Uploads are slow but completing.

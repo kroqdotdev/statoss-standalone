@@ -1,28 +1,73 @@
 # Copy this file to config.yaml and change the values.
 # The application reads the file from CONFIG_PATH (default: ./config.yaml).
+# Write ${NAME} anywhere to use the environment variable NAME, so secrets
+# such as webhook URLs can stay out of the file.
 
 # The number of seconds between checks. Minimum: 10.
 checkIntervalSeconds: 60
 
-# Optional. Remove this block to disable email alerts.
-# Set the SMTP password in the SMTP_PASS environment variable.
+# Optional. Remove this block to disable alerts.
 alerts:
+  # Needed for email destinations. The password comes from SMTP_PASS.
   smtp:
     host: smtp.example.com
     port: 587
     user: smtp-user@example.com
     from: status@example.com
-    to: alerts@example.com
+  # Where alerts go, for every site that has no list of its own.
+  # Each entry is one of email, slack, discord, or webhook with a secret.
+  to:
+    - email: alerts@example.com
+    # - slack: https://hooks.slack.com/services/T000/B000/XXXX
+    # - discord: https://discord.com/api/webhooks/000/XXXX
+    # - webhook: https://example.com/statoss
+    #   secret: ${WEBHOOK_SECRET}
+  # Optional. Send "still down" notices this many minutes apart while a
+  # checkpoint stays down. 0 (the default) sends none.
+  repeatMinutes: 0
 
 # Each site gets its own status page on its own hostname.
 sites:
   - name: example.com
     host: status.example.com # the hostname that serves this status page
+    # Optional. Where alerts link to. Default: https://<host>
+    # url: https://status.example.com
+    # Optional. A list of destinations for this site only, or false to
+    # send no alerts for it.
+    # alerts:
+    #   to:
+    #     - email: web-team@example.com
+    #   repeatMinutes: 30
     checkpoints:
       - name: Main site
         url: https://example.com
+        # Optional. Checkpoints with the same group are shown together.
+        group: Web
+        # Optional. A successful response slower than this counts as slow.
+        slowThresholdMs: 1500
       - name: API health
         url: https://api.example.com/health
+        group: API
+        # Optional. GET, HEAD, POST, PUT, PATCH or DELETE. Default: GET.
+        method: GET
+        # Optional. Request headers.
+        headers:
+          Accept: application/json
+          # Authorization: Bearer ${API_TOKEN}
+        # Optional. Request body, sent as-is with POST, PUT, PATCH and DELETE.
+        # body: '{"ping": true}'
         # Optional. The check passes only on this exact HTTP status.
         # Without this value, the check passes on each 2xx status.
         # expectStatus: 200
+        # Optional. Text the response body must contain. With
+        # keywordMode: absent, the check fails when the text is found.
+        keyword: '"status":"ok"'
+        # keywordMode: present
+    # Optional. Planned work. Checks during a window are shown but not
+    # counted, and no alert goes out. Times are UTC unless a zone is given.
+    # maintenance:
+    #   - title: Database upgrade
+    #     start: 2026-09-20T01:00:00Z
+    #     end: 2026-09-20T03:00:00Z
+    #     checkpoints: [API health] # omit for the whole site
+    #     notes: The API answers with 503 for a few minutes.

@@ -27,6 +27,8 @@ interface Props {
   summary: WindowSummary;
   /** The checkpoint name, for assistive technology. */
   name: string;
+  /** Draws the slow line and colours buckets over it. */
+  slowThresholdMs?: number | null;
 }
 
 function bucketLabel(ts: number, range: RangeKey): string {
@@ -38,25 +40,39 @@ function bucketLabel(ts: number, range: RangeKey): string {
     : `${formatUtcClock(ts)} to ${end}`;
 }
 
-function describeBucket(b: Bucket, range: RangeKey): string {
-  const when = bucketLabel(b.ts, range);
-  if (b.total === 0) return `${when}: no checks`;
-  const parts = [pluralize(b.total, "check")];
-  if (b.latencyMs !== null)
-    parts.push(`average ${formatCount(b.latencyMs)} ms`);
-  const failed = failureSummary(b.total - b.up, b.timeouts);
-  parts.push(failed ?? "all passed");
-  return `${when}: ${parts.join(", ")}`;
-}
-
-function describeWindow(s: WindowSummary): string {
-  if (s.total === 0) return "No checks in this window yet";
+function describeCounts(s: {
+  total: number;
+  up: number;
+  timeouts: number;
+  slow: number;
+  maintenance: number;
+  latencyMs: number | null;
+}): string {
   const parts = [pluralize(s.total, "check")];
   if (s.latencyMs !== null)
     parts.push(`average ${formatCount(s.latencyMs)} ms`);
   const failed = failureSummary(s.total - s.up, s.timeouts);
   parts.push(failed ?? "all passed");
+  if (s.slow > 0) parts.push(`${formatCount(s.slow)} slow`);
+  if (s.maintenance > 0)
+    parts.push(`${formatCount(s.maintenance)} during maintenance`);
   return parts.join(", ");
+}
+
+function describeBucket(b: Bucket, range: RangeKey): string {
+  const when = bucketLabel(b.ts, range);
+  if (b.total === 0 && b.maintenance === 0) return `${when}: no checks`;
+  if (b.total === 0)
+    return `${when}: ${pluralize(b.maintenance, "check")} during maintenance, not counted`;
+  return `${when}: ${describeCounts(b)}`;
+}
+
+function describeWindow(s: WindowSummary): string {
+  if (s.total === 0 && s.maintenance === 0)
+    return "No checks in this window yet";
+  if (s.total === 0)
+    return `${pluralize(s.maintenance, "check")} during maintenance, not counted`;
+  return describeCounts(s);
 }
 
 /** Which buckets get an axis label, and what it says. */
@@ -79,12 +95,23 @@ function axisTicks(
   return ticks.filter((t) => t.index / buckets.length < 0.93);
 }
 
-export function CheckStrip({ buckets, range, summary, name }: Props) {
+export function CheckStrip({
+  buckets,
+  range,
+  summary,
+  name,
+  slowThresholdMs = null,
+}: Props) {
   const [active, setActive] = useState<number | null>(null);
   const readoutId = useId();
   const n = buckets.length;
   const scaleMax = Math.max(...buckets.map((b) => b.latencyMs ?? 0), 1);
   const ticks = axisTicks(buckets, range);
+  // The slow line, as a share of the strip's height from the top.
+  const thresholdTop =
+    slowThresholdMs !== null && slowThresholdMs < scaleMax
+      ? H - (slowThresholdMs / scaleMax) * H
+      : null;
 
   const onPointer = (e: PointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -116,6 +143,7 @@ export function CheckStrip({ buckets, range, summary, name }: Props) {
       <div className="mb-2 flex items-baseline justify-between gap-4 text-[13px] leading-snug">
         <p
           id={readoutId}
+          aria-live="polite"
           className={activeBucket === null ? "text-muted" : "text-ink"}
         >
           {readout}
@@ -147,9 +175,26 @@ export function CheckStrip({ buckets, range, summary, name }: Props) {
           aria-hidden="true"
         >
           {buckets.map((b, i) => {
-            if (b.total === 0) return null;
+            if (b.total === 0) {
+              // Maintenance only: a quiet grey stub, nothing counted.
+              if (b.maintenance === 0) return null;
+              return (
+                <rect
+                  key={b.ts}
+                  x={i + 0.1}
+                  width={0.8}
+                  y={H - MIN_BAR * 2}
+                  height={MIN_BAR * 2}
+                  fill="var(--rule-strong)"
+                />
+              );
+            }
             const failed = b.total - b.up;
             const share = failed / b.total;
+            const slow =
+              slowThresholdMs !== null &&
+              b.latencyMs !== null &&
+              b.latencyMs > slowThresholdMs;
             const h =
               b.latencyMs === null
                 ? 0
@@ -168,14 +213,14 @@ export function CheckStrip({ buckets, range, summary, name }: Props) {
                       width={0.8}
                       y={H - h}
                       height={h}
-                      fill="var(--up-soft)"
+                      fill={slow ? "var(--slow-tint)" : "var(--up-soft)"}
                     />
                     <rect
                       x={i + 0.1}
                       width={0.8}
                       y={H - h}
                       height={CAP}
-                      fill="var(--up)"
+                      fill={slow ? "var(--slow)" : "var(--up)"}
                     />
                   </>
                 )}
@@ -197,6 +242,13 @@ export function CheckStrip({ buckets, range, summary, name }: Props) {
             <rect x={active} width={1} y={0} height={H} fill="var(--hover)" />
           )}
         </svg>
+        {thresholdTop !== null && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-slow opacity-70"
+            style={{ top: `${(thresholdTop / H) * 72}px` }}
+          />
+        )}
         <div className="h-px w-full bg-rule-strong" />
         <div className="relative h-5 text-[11px] leading-none text-muted">
           {ticks.map((t) => (
