@@ -1,5 +1,19 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { getState, insertCheck, openDb, pruneOldChecks, setState } from "./db";
+import {
+  autoIncidents,
+  getState,
+  insertCheck,
+  openAutoIncident,
+  openDb,
+  pruneOldChecks,
+  resolveAutoIncident,
+  setState,
+  type StateRow,
+} from "./db";
 
 function memDb() {
   return openDb(":memory:");
@@ -25,17 +39,21 @@ describe("checks", () => {
       statusCode: null,
       latencyMs: 10000,
       error: "timeout",
+      maintenance: 1,
     });
     const rows = db.prepare("SELECT * FROM checks ORDER BY ts").all() as Array<{
       ok: number;
       status_code: number | null;
       error: string | null;
+      maintenance: number;
     }>;
     expect(rows).toHaveLength(2);
     expect(rows[0].ok).toBe(1);
     expect(rows[0].status_code).toBe(200);
+    expect(rows[0].maintenance).toBe(0);
     expect(rows[1].ok).toBe(0);
     expect(rows[1].error).toBe("timeout");
+    expect(rows[1].maintenance).toBe(1);
   });
 
   it("prunes only rows older than the cutoff", () => {
@@ -60,43 +78,111 @@ describe("checks", () => {
   });
 });
 
+describe("migration", () => {
+  it("adds the new columns to a database from the first release", () => {
+    const dir = mkdtempSync(join(tmpdir(), "statoss-"));
+    const path = join(dir, "old.db");
+    const old = new Database(path);
+    old.exec(`
+      CREATE TABLE checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, site TEXT NOT NULL,
+        checkpoint TEXT NOT NULL, ts INTEGER NOT NULL, ok INTEGER NOT NULL,
+        status_code INTEGER, latency_ms INTEGER, error TEXT);
+      CREATE TABLE checkpoint_state (
+        site TEXT NOT NULL, checkpoint TEXT NOT NULL, status TEXT NOT NULL,
+        consecutive_fails INTEGER NOT NULL, since INTEGER NOT NULL,
+        PRIMARY KEY (site, checkpoint));
+      INSERT INTO checks (site, checkpoint, ts, ok) VALUES ('s', 'c', 1, 1);
+      INSERT INTO checkpoint_state VALUES ('s', 'c', 'up', 0, 1);
+    `);
+    old.close();
+    const migrated = openDb(path);
+    expect(getState(migrated, "s", "c")).toEqual({
+      site: "s",
+      checkpoint: "c",
+      status: "up",
+      consecutiveFails: 0,
+      consecutiveSlow: 0,
+      since: 1,
+      lastAlertAt: null,
+    });
+    const row = migrated.prepare("SELECT maintenance FROM checks").get() as {
+      maintenance: number;
+    };
+    expect(row.maintenance).toBe(0);
+    // Opening it again must not try to add the columns twice.
+    openDb(path).close();
+    migrated.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe("checkpoint_state", () => {
+  const up: StateRow = {
+    site: "s",
+    checkpoint: "c",
+    status: "up",
+    consecutiveFails: 0,
+    consecutiveSlow: 0,
+    since: 500,
+    lastAlertAt: null,
+  };
+
   it("returns undefined for unknown checkpoints", () => {
     expect(getState(memDb(), "s", "c")).toBeUndefined();
   });
 
   it("round-trips and upserts state", () => {
     const db = memDb();
-    setState(db, {
-      site: "s",
-      checkpoint: "c",
-      status: "up",
-      consecutiveFails: 0,
-      since: 500,
-    });
-    expect(getState(db, "s", "c")).toEqual({
-      site: "s",
-      checkpoint: "c",
-      status: "up",
-      consecutiveFails: 0,
-      since: 500,
-    });
-    setState(db, {
-      site: "s",
-      checkpoint: "c",
+    setState(db, up);
+    expect(getState(db, "s", "c")).toEqual(up);
+    const down: StateRow = {
+      ...up,
       status: "down",
       consecutiveFails: 2,
       since: 900,
-    });
-    expect(getState(db, "s", "c")).toEqual({
-      site: "s",
-      checkpoint: "c",
-      status: "down",
-      consecutiveFails: 2,
-      since: 900,
-    });
+      lastAlertAt: 900,
+    };
+    setState(db, down);
+    expect(getState(db, "s", "c")).toEqual(down);
     expect(
       db.prepare("SELECT COUNT(*) AS n FROM checkpoint_state").get(),
     ).toEqual({ n: 1 });
+  });
+});
+
+describe("auto incidents", () => {
+  it("opens one outage per checkpoint and resolves it", () => {
+    const db = memDb();
+    const opened = openAutoIncident(db, "s", "c", 1000, "timeout");
+    expect(opened).toMatchObject({ startedAt: 1000, resolvedAt: null });
+    expect(openAutoIncident(db, "s", "c", 2000, "timeout")).toBeNull();
+    expect(resolveAutoIncident(db, "s", "other", 3000)).toBeNull();
+    const resolved = resolveAutoIncident(db, "s", "c", 3000);
+    expect(resolved).toMatchObject({ id: opened?.id, resolvedAt: 3000 });
+    expect(resolveAutoIncident(db, "s", "c", 4000)).toBeNull();
+    expect(autoIncidents(db, "s", 0)).toHaveLength(1);
+  });
+
+  it("lists open outages whatever their age, and closed ones since a time", () => {
+    const db = memDb();
+    openAutoIncident(db, "s", "old", 100, null);
+    resolveAutoIncident(db, "s", "old", 200);
+    openAutoIncident(db, "s", "ancient", 50, null);
+    openAutoIncident(db, "s", "new", 5000, null);
+    resolveAutoIncident(db, "s", "new", 6000);
+    expect(autoIncidents(db, "s", 1000).map((r) => r.checkpoint)).toEqual([
+      "new",
+      "ancient",
+    ]);
+  });
+
+  it("prunes resolved outages with the checks", () => {
+    const db = memDb();
+    openAutoIncident(db, "s", "c", 100, null);
+    resolveAutoIncident(db, "s", "c", 200);
+    openAutoIncident(db, "s", "d", 100, null);
+    expect(pruneOldChecks(db, 500)).toBe(1);
+    expect(autoIncidents(db, "s", 0).map((r) => r.checkpoint)).toEqual(["d"]);
   });
 });

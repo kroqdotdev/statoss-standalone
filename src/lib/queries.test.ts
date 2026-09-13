@@ -11,7 +11,7 @@ import {
 } from "./queries";
 
 const DAY = 24 * 60 * 60 * 1000;
-// 2024-01-10T12:00:00Z — fixed "now" so dates are deterministic
+// 2024-01-10T12:00:00Z: a fixed "now", so dates are deterministic
 const NOW = Date.UTC(2024, 0, 10, 12, 0, 0);
 
 function seed(
@@ -82,6 +82,8 @@ describe("bucketSeries", () => {
       total: 0,
       up: 0,
       timeouts: 0,
+      slow: 0,
+      maintenance: 0,
       latencyMs: null,
     });
     expect(buckets[10]).toEqual({
@@ -89,6 +91,8 @@ describe("bucketSeries", () => {
       total: 4,
       up: 2,
       timeouts: 1,
+      slow: 0,
+      maintenance: 0,
       latencyMs: 200,
     });
   });
@@ -119,6 +123,8 @@ describe("windowSummary", () => {
       total: 3,
       up: 2,
       timeouts: 1,
+      slow: 0,
+      maintenance: 0,
       latencyMs: 150,
     });
   });
@@ -128,8 +134,64 @@ describe("windowSummary", () => {
       total: 0,
       up: 0,
       timeouts: 0,
+      slow: 0,
+      maintenance: 0,
       latencyMs: null,
     });
+  });
+
+  it("counts slow successes against a threshold", () => {
+    const db = openDb(":memory:");
+    seed(db, NOW - 3000, 1, 100);
+    seed(db, NOW - 2000, 1, 900);
+    seed(db, NOW - 1000, 0, 2000);
+    expect(windowSummary(db, "s", "c", NOW - DAY, NOW + 1, 500)).toMatchObject({
+      total: 3,
+      up: 2,
+      slow: 1,
+    });
+    expect(windowSummary(db, "s", "c", NOW - DAY, NOW + 1)).toMatchObject({
+      slow: 0,
+    });
+    const spec = RANGES["24h"];
+    const filled = bucketSeries(db, "s", "c", spec, NOW, 500).filter(
+      (b) => b.total > 0,
+    );
+    expect(filled).toHaveLength(1);
+    expect(filled[0]).toMatchObject({ total: 3, up: 2, slow: 1 });
+  });
+
+  it("keeps maintenance checks apart from the totals", () => {
+    const db = openDb(":memory:");
+    seed(db, NOW - 3000, 1, 100);
+    insertCheck(db, {
+      site: "s",
+      checkpoint: "c",
+      ts: NOW - 2000,
+      ok: 0,
+      statusCode: 500,
+      latencyMs: 30,
+      error: "unexpected status 500",
+      maintenance: 1,
+    });
+    expect(windowSummary(db, "s", "c", NOW - DAY, NOW + 1)).toEqual({
+      total: 1,
+      up: 1,
+      timeouts: 0,
+      slow: 0,
+      maintenance: 1,
+      latencyMs: 100,
+    });
+    const filled = bucketSeries(db, "s", "c", RANGES["24h"], NOW).filter(
+      (b) => b.total > 0 || b.maintenance > 0,
+    );
+    expect(filled).toHaveLength(1);
+    expect(filled[0]).toMatchObject({
+      total: 1,
+      maintenance: 1,
+      latencyMs: 100,
+    });
+    expect(failureRuns(db, "s", "c", NOW - DAY, NOW + 1)).toEqual([]);
   });
 });
 

@@ -7,10 +7,6 @@ import {
   type RangeSpec,
 } from "./ranges";
 
-// ---------------------------------------------------------------------------
-// Granular views. These read the same `checks` table as the functions above,
-// so existing databases need no migration.
-
 export { DEFAULT_RANGE, RANGES, parseRange, type RangeKey, type RangeSpec };
 
 /**
@@ -28,13 +24,27 @@ export function rangeWindow(
 
 export interface Bucket {
   ts: number;
+  /** Checks outside maintenance windows. */
   total: number;
   up: number;
   /** Failed checks whose error was a timeout. */
   timeouts: number;
+  /** Successful checks over the checkpoint's slow threshold. */
+  slow: number;
+  /** Checks that ran inside a maintenance window: shown, not counted. */
+  maintenance: number;
   /** Mean response time of the successful checks, or null without any. */
   latencyMs: number | null;
 }
+
+export const EMPTY_BUCKET: Omit<Bucket, "ts"> = {
+  total: 0,
+  up: 0,
+  timeouts: 0,
+  slow: 0,
+  maintenance: 0,
+  latencyMs: null,
+};
 
 /** One entry per bucket, oldest first. Buckets without checks have total 0. */
 export function bucketSeries(
@@ -43,58 +53,78 @@ export function bucketSeries(
   checkpoint: string,
   spec: RangeSpec,
   now = Date.now(),
+  slowThresholdMs: number | null = null,
 ): Bucket[] {
   const { start, end } = rangeWindow(spec, now);
   const { bucketMs } = spec;
   const rows = db
     .prepare(
       `SELECT (ts / ${bucketMs}) * ${bucketMs} AS ts,
-              COUNT(*) AS total,
-              SUM(ok) AS up,
-              SUM(CASE WHEN ok = 0 AND error = 'timeout' THEN 1 ELSE 0 END) AS timeouts,
-              ROUND(AVG(CASE WHEN ok = 1 THEN latency_ms END)) AS latencyMs
+              SUM(maintenance = 0) AS total,
+              SUM(ok = 1 AND maintenance = 0) AS up,
+              SUM(ok = 0 AND maintenance = 0 AND error = 'timeout') AS timeouts,
+              SUM(ok = 1 AND maintenance = 0 AND ? IS NOT NULL AND latency_ms > ?) AS slow,
+              SUM(maintenance = 1) AS maintenance,
+              ROUND(AVG(CASE WHEN ok = 1 AND maintenance = 0 THEN latency_ms END)) AS latencyMs
        FROM checks
        WHERE site = ? AND checkpoint = ? AND ts >= ? AND ts < ?
        GROUP BY (ts / ${bucketMs}) * ${bucketMs}`,
     )
-    .all(site, checkpoint, start, end) as Bucket[];
+    .all(
+      slowThresholdMs,
+      slowThresholdMs,
+      site,
+      checkpoint,
+      start,
+      end,
+    ) as Bucket[];
   const byTs = new Map(rows.map((row) => [row.ts, row]));
   const result: Bucket[] = [];
   for (let i = 0; i < spec.buckets; i++) {
     const ts = start + i * bucketMs;
-    result.push(
-      byTs.get(ts) ?? { ts, total: 0, up: 0, timeouts: 0, latencyMs: null },
-    );
+    result.push(byTs.get(ts) ?? { ts, ...EMPTY_BUCKET });
   }
   return result;
 }
 
 export interface WindowSummary {
+  /** Checks outside maintenance windows. */
   total: number;
   up: number;
   timeouts: number;
+  slow: number;
+  maintenance: number;
   latencyMs: number | null;
 }
 
-/** Totals over [sinceMs, untilMs). */
+/** Totals over [sinceMs, untilMs). Maintenance checks are counted apart. */
 export function windowSummary(
   db: Database.Database,
   site: string,
   checkpoint: string,
   sinceMs: number,
   untilMs: number,
+  slowThresholdMs: number | null = null,
 ): WindowSummary {
-  const row = db
+  return db
     .prepare(
-      `SELECT COUNT(*) AS total,
-              COALESCE(SUM(ok), 0) AS up,
-              COALESCE(SUM(CASE WHEN ok = 0 AND error = 'timeout' THEN 1 ELSE 0 END), 0) AS timeouts,
-              ROUND(AVG(CASE WHEN ok = 1 THEN latency_ms END)) AS latencyMs
+      `SELECT COALESCE(SUM(maintenance = 0), 0) AS total,
+              COALESCE(SUM(ok = 1 AND maintenance = 0), 0) AS up,
+              COALESCE(SUM(ok = 0 AND maintenance = 0 AND error = 'timeout'), 0) AS timeouts,
+              COALESCE(SUM(ok = 1 AND maintenance = 0 AND ? IS NOT NULL AND latency_ms > ?), 0) AS slow,
+              COALESCE(SUM(maintenance = 1), 0) AS maintenance,
+              ROUND(AVG(CASE WHEN ok = 1 AND maintenance = 0 THEN latency_ms END)) AS latencyMs
        FROM checks
        WHERE site = ? AND checkpoint = ? AND ts >= ? AND ts < ?`,
     )
-    .get(site, checkpoint, sinceMs, untilMs) as WindowSummary;
-  return row;
+    .get(
+      slowThresholdMs,
+      slowThresholdMs,
+      site,
+      checkpoint,
+      sinceMs,
+      untilMs,
+    ) as WindowSummary;
 }
 
 export interface FailureRun {
@@ -115,6 +145,7 @@ export interface FailureRun {
 /**
  * Consecutive failed checks grouped into runs, newest first. A run ends at the
  * next successful check. This shows a single timeout as clearly as an outage.
+ * Checks made during maintenance are left out, so a run never spans a window.
  * Returns every run in the window, so callers can count them exactly.
  */
 export function failureRuns(
@@ -126,7 +157,8 @@ export function failureRuns(
 ): FailureRun[] {
   const latest = db
     .prepare(
-      `SELECT MAX(ts) AS ts FROM checks WHERE site = ? AND checkpoint = ?`,
+      `SELECT MAX(ts) AS ts FROM checks
+       WHERE site = ? AND checkpoint = ? AND maintenance = 0`,
     )
     .get(site, checkpoint) as { ts: number | null };
   // `grp` counts successful checks so far, so every failed check between two
@@ -137,7 +169,7 @@ export function failureRuns(
          SELECT ts, ok, error,
                 SUM(ok) OVER (ORDER BY ts ROWS UNBOUNDED PRECEDING) AS grp
          FROM checks
-         WHERE site = ? AND checkpoint = ? AND ts >= ? AND ts < ?
+         WHERE site = ? AND checkpoint = ? AND ts >= ? AND ts < ? AND maintenance = 0
        ),
        runs AS (
          SELECT grp,

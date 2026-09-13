@@ -52,5 +52,6 @@ next-env.d.ts
 # worktrees
 .worktrees/
 
-# local config (copy of config.example.yaml)
+# local config (copy of config.example.yaml) and incidents
 /config.yaml
+/incidents/

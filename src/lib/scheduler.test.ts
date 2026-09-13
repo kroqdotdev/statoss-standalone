@@ -1,37 +1,49 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AppConfig } from "./config";
-import { getState, openDb } from "./db";
-import { skipWhileRunning, tick, type SchedulerDeps } from "./scheduler";
+import type { CheckOutcome } from "./checker";
+import { parseConfig } from "./config";
+import { autoIncidents, getState, openDb } from "./db";
+import {
+  loadJobs,
+  skipWhileRunning,
+  tick,
+  type Job,
+  type SchedulerDeps,
+} from "./scheduler";
 
-const CONFIG: AppConfig = {
-  checkIntervalSeconds: 60,
-  alerts: {
-    smtp: { host: "h", port: 587, user: "u", from: "f@x.com", to: "t@x.com" },
-  },
-  sites: [
-    {
-      name: "webhooks.cc",
-      host: "status.webhooks.cc",
-      checkpoints: [{ name: "Main site", url: "https://webhooks.cc" }],
-    },
-  ],
-};
+const CONFIG = parseConfig(`
+alerts:
+  smtp:
+    host: h
+    port: 587
+    user: u
+    from: f@x.com
+    to: t@x.com
+sites:
+  - name: webhooks.cc
+    host: status.webhooks.cc
+    checkpoints:
+      - name: Main site
+        url: https://webhooks.cc
+`);
 
-function makeDeps(outcomes: Array<{ ok: boolean }>): SchedulerDeps & {
-  alertSpy: ReturnType<typeof vi.fn>;
-} {
+type Outcome = Partial<CheckOutcome> & { ok: boolean };
+
+function makeDeps(
+  outcomes: Outcome[],
+  config = CONFIG,
+): SchedulerDeps & { alertSpy: ReturnType<typeof vi.fn> } {
   let call = 0;
   let time = 1000;
   const alertSpy = vi.fn().mockResolvedValue(undefined);
   return {
-    config: CONFIG,
+    jobs: loadJobs(config),
     db: openDb(":memory:"),
     check: vi.fn().mockImplementation(() => {
       const outcome = outcomes[Math.min(call++, outcomes.length - 1)];
       return Promise.resolve({
         ok: outcome.ok,
         statusCode: outcome.ok ? 200 : 500,
-        latencyMs: 50,
+        latencyMs: outcome.latencyMs ?? 50,
         error: outcome.ok ? null : "unexpected status 500",
       });
     }),
@@ -41,75 +53,196 @@ function makeDeps(outcomes: Array<{ ok: boolean }>): SchedulerDeps & {
   };
 }
 
+const state = (deps: SchedulerDeps) =>
+  getState(deps.db, "webhooks.cc", "Main site");
+
+describe("loadJobs", () => {
+  it("builds one job per checkpoint with the site's destinations", () => {
+    const jobs = loadJobs(CONFIG);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      site: "webhooks.cc",
+      checkpoint: "Main site",
+      url: "https://webhooks.cc",
+      pageUrl: "https://status.webhooks.cc",
+      spec: { url: "https://webhooks.cc", method: "GET" },
+      slowThresholdMs: null,
+      destinations: [{ email: "t@x.com" }],
+      repeatMinutes: 0,
+    });
+  });
+});
+
 describe("tick", () => {
   it("records a check row and an up state on success", async () => {
     const deps = makeDeps([{ ok: true }]);
     await tick(deps);
     const rows = deps.db.prepare("SELECT * FROM checks").all();
     expect(rows).toHaveLength(1);
-    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("up");
+    expect(state(deps)?.status).toBe("up");
     expect(deps.alertSpy).not.toHaveBeenCalled();
   });
 
-  it("alerts once after two consecutive failures", async () => {
+  it("alerts once after two consecutive failures and opens an incident", async () => {
     const deps = makeDeps([{ ok: false }]);
     await tick(deps);
     expect(deps.alertSpy).not.toHaveBeenCalled();
     await tick(deps);
     expect(deps.alertSpy).toHaveBeenCalledOnce();
-    expect(deps.alertSpy.mock.calls[0][0]).toMatchObject({
+    expect(deps.alertSpy.mock.calls[0][0]).toEqual([{ email: "t@x.com" }]);
+    expect(deps.alertSpy.mock.calls[0][1]).toMatchObject({
       site: "webhooks.cc",
       checkpoint: "Main site",
-      transition: "went-down",
+      pageUrl: "https://status.webhooks.cc",
+      kind: "went-down",
       error: "unexpected status 500",
     });
     await tick(deps);
     expect(deps.alertSpy).toHaveBeenCalledOnce();
-    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("down");
+    expect(state(deps)?.status).toBe("down");
+    const outages = autoIncidents(deps.db, "webhooks.cc", 0);
+    expect(outages).toHaveLength(1);
+    expect(outages[0]).toMatchObject({
+      checkpoint: "Main site",
+      resolvedAt: null,
+      error: "unexpected status 500",
+    });
   });
 
-  it("alerts recovery with the downSince timestamp", async () => {
+  it("alerts recovery with the downSince timestamp and resolves the incident", async () => {
     const deps = makeDeps([{ ok: false }, { ok: false }, { ok: true }]);
     await tick(deps);
     await tick(deps);
-    const downSince = getState(deps.db, "webhooks.cc", "Main site")?.since;
+    const downSince = state(deps)?.since;
     await tick(deps);
     expect(deps.alertSpy).toHaveBeenCalledTimes(2);
-    expect(deps.alertSpy.mock.calls[1][0]).toMatchObject({
-      transition: "recovered",
+    expect(deps.alertSpy.mock.calls[1][1]).toMatchObject({
+      kind: "recovered",
       downSince,
     });
-    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("up");
+    expect(state(deps)?.status).toBe("up");
+    expect(
+      autoIncidents(deps.db, "webhooks.cc", 0)[0].resolvedAt,
+    ).not.toBeNull();
   });
 
-  it("does not alert when config has no alerts block", async () => {
+  it("repeats the alert while down at the configured interval", async () => {
+    const config = parseConfig(`
+alerts:
+  to:
+    - slack: https://hooks.slack.com/x
+  repeatMinutes: 1
+sites:
+  - name: webhooks.cc
+    host: status.webhooks.cc
+    checkpoints:
+      - name: Main site
+        url: https://webhooks.cc
+`);
+    const deps = makeDeps([{ ok: false }], config);
+    let time = 0;
+    deps.now = () => (time += 20_000);
+    await tick(deps); // 20 s: first failure
+    await tick(deps); // 40 s: down, alert 1
+    await tick(deps); // 60 s
+    await tick(deps); // 80 s
+    expect(deps.alertSpy).toHaveBeenCalledTimes(1);
+    await tick(deps); // 100 s: a minute since the alert, repeat
+    expect(deps.alertSpy).toHaveBeenCalledTimes(2);
+    expect(deps.alertSpy.mock.calls[1][1]).toMatchObject({
+      kind: "still-down",
+      downSince: 40_000,
+    });
+    await tick(deps); // 120 s
+    expect(deps.alertSpy).toHaveBeenCalledTimes(2);
+    expect(state(deps)?.lastAlertAt).toBe(100_000);
+  });
+
+  it("reports slowness after two slow responses", async () => {
+    const config = parseConfig(`
+sites:
+  - name: webhooks.cc
+    host: status.webhooks.cc
+    checkpoints:
+      - name: Main site
+        url: https://webhooks.cc
+        slowThresholdMs: 500
+`);
+    const deps = makeDeps(
+      [
+        { ok: true, latencyMs: 900 },
+        { ok: true, latencyMs: 900 },
+        { ok: true },
+      ],
+      config,
+    );
+    deps.jobs[0].destinations = [{ slack: "https://hooks.slack.com/x" }];
+    await tick(deps);
+    expect(state(deps)?.status).toBe("up");
+    await tick(deps);
+    expect(state(deps)?.status).toBe("slow");
+    expect(deps.alertSpy.mock.calls[0][1]).toMatchObject({
+      kind: "went-slow",
+      latencyMs: 900,
+      thresholdMs: 500,
+    });
+    await tick(deps);
+    expect(state(deps)?.status).toBe("up");
+    expect(deps.alertSpy.mock.calls[1][1]).toMatchObject({
+      kind: "back-to-normal",
+    });
+    expect(autoIncidents(deps.db, "webhooks.cc", 0)).toEqual([]);
+  });
+
+  it("keeps checks during maintenance but changes nothing else", async () => {
     const deps = makeDeps([{ ok: false }]);
-    deps.config = { ...CONFIG, alerts: undefined };
+    const job: Job = {
+      ...deps.jobs[0],
+      maintenance: [
+        { title: "Work", start: 0, end: 10_000, checkpoints: undefined },
+      ],
+    };
+    deps.jobs = [job];
+    await tick(deps); // 2 s
+    await tick(deps); // 3 s
+    const rows = deps.db
+      .prepare("SELECT ok, maintenance FROM checks ORDER BY ts")
+      .all();
+    expect(rows).toEqual([
+      { ok: 0, maintenance: 1 },
+      { ok: 0, maintenance: 1 },
+    ]);
+    expect(state(deps)).toBeUndefined();
+    expect(deps.alertSpy).not.toHaveBeenCalled();
+    expect(autoIncidents(deps.db, "webhooks.cc", 0)).toEqual([]);
+  });
+
+  it("does not alert when the site has no destinations", async () => {
+    const deps = makeDeps([{ ok: false }]);
+    deps.jobs[0].destinations = [];
     await tick(deps);
     await tick(deps);
     expect(deps.alertSpy).not.toHaveBeenCalled();
-    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("down");
+    expect(state(deps)?.status).toBe("down");
   });
 
   it("finishes the other checkpoints when one throws", async () => {
-    const deps = makeDeps([{ ok: true }]);
-    deps.config = {
-      ...CONFIG,
-      sites: [
-        {
-          ...CONFIG.sites[0],
-          checkpoints: [
-            { name: "Broken", url: "https://broken.example.com" },
-            { name: "Main site", url: "https://webhooks.cc" },
-          ],
-        },
-      ],
-    };
+    const config = parseConfig(`
+sites:
+  - name: webhooks.cc
+    host: status.webhooks.cc
+    checkpoints:
+      - name: Broken
+        url: https://broken.example.com
+      - name: Main site
+        url: https://webhooks.cc
+`);
+    const deps = makeDeps([{ ok: true }], config);
     const good = deps.check;
-    deps.check = vi.fn((url: string) =>
-      url.includes("broken")
+    deps.check = vi.fn((spec: { url: string }) =>
+      spec.url.includes("broken")
         ? Promise.reject(new Error("db exploded"))
-        : good(url),
+        : good(spec),
     );
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(tick(deps)).resolves.toBeUndefined();
@@ -117,7 +250,7 @@ describe("tick", () => {
       "[scheduler] checkpoint tick failed",
       expect.any(Error),
     );
-    expect(getState(deps.db, "webhooks.cc", "Main site")?.status).toBe("up");
+    expect(state(deps)?.status).toBe("up");
     expect(getState(deps.db, "webhooks.cc", "Broken")).toBeUndefined();
     errorSpy.mockRestore();
   });

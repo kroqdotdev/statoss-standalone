@@ -28,6 +28,12 @@ export function formatUtcClock(ts: number): string {
   return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 
+/** "2023-11-14 22:13 UTC". */
+export function formatUtcStamp(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${formatUtcClock(ts)} UTC`;
+}
+
 /** "12 Aug" in UTC. */
 export function formatUtcDay(ts: number): string {
   const d = new Date(ts);
@@ -70,6 +76,13 @@ export function formatSpan(ms: number): string {
   return formatDuration(ms);
 }
 
+/** "every minute", "every 5 minutes", "every 30 seconds". */
+export function formatInterval(seconds: number): string {
+  if (seconds === 60) return "every minute";
+  if (seconds % 60 === 0) return `every ${seconds / 60} minutes`;
+  return `every ${seconds} seconds`;
+}
+
 /** "1,438" with a thousands separator. */
 export function formatCount(n: number): string {
   return n.toLocaleString("en-US");
@@ -103,6 +116,8 @@ const CAUSE_LABELS: Array<[RegExp, string]> = [
 export function describeError(error: string | null): string {
   if (error === null) return "Failed";
   if (error === "timeout") return "Timed out";
+  if (error === "keyword missing") return "Keyword missing";
+  if (error === "keyword present") return "Keyword present";
   const status = /^unexpected status (\d{3})$/.exec(error);
   if (status) return `HTTP ${status[1]}`;
   for (const [pattern, label] of CAUSE_LABELS) {
