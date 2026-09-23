@@ -94,19 +94,31 @@ body {
   }
 }
 
+/*
+  The headings under the headline, largest first: a group of checkpoints,
+  then a checkpoint or a section (page-heading), then the smaller rows inside
+  one (page-minor: listed incidents), then labels.
+*/
+.page-group {
+  font-family: var(--font-barlow-cond), var(--font-barlow), sans-serif;
+  font-weight: 700;
+  font-size: 1.5rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .page-heading {
   font-family: var(--font-barlow-cond), var(--font-barlow), sans-serif;
   font-weight: 600;
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   letter-spacing: 0.01em;
 }
 
-.page-group {
+.page-minor {
   font-family: var(--font-barlow-cond), var(--font-barlow), sans-serif;
   font-weight: 600;
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   letter-spacing: 0.01em;
-  text-transform: none;
 }
 
 .page-label {

@@ -128,7 +128,7 @@ export function PastIncidents({
         <div className="mt-4 space-y-6">
           {incidents.map((view) => (
             <article key={view.id}>
-              <h3 className="page-heading text-[15px] font-medium leading-tight">
+              <h3 className="page-minor text-[15px] font-medium leading-tight">
                 {view.kind === "maintenance" ? "Maintenance: " : ""}
                 {view.title}
               </h3>
