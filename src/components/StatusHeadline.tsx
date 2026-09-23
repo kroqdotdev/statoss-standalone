@@ -108,7 +108,7 @@ export function StatusHeadline({
 }) {
   return (
     <header>
-      <h1 className="flex items-center gap-4 text-[2rem] font-semibold leading-none tracking-[-0.02em] sm:text-[2.75rem]">
+      <h1 className="page-headline flex items-center gap-4 text-[2rem] font-semibold leading-none tracking-[-0.02em] sm:text-[2.75rem]">
         <span
           aria-hidden="true"
           className={`block size-3 shrink-0 rounded-full bg-current sm:size-3.5 ${DOT[overall]}`}

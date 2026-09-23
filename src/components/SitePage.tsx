@@ -135,7 +135,7 @@ export function SitePage({
                 className="border-t border-rule-strong pt-6"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 pb-2">
-                  <h2 className="text-[15px] font-medium uppercase tracking-wide">
+                  <h2 className="page-group text-[15px] font-medium uppercase tracking-wide">
                     {group.name ?? "Other"}
                   </h2>
                   <span

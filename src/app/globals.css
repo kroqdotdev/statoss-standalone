@@ -1,41 +1,43 @@
 @import "tailwindcss";
 
 /*
-  Palette. Cool paper in the light, deep green-black in the dark. The signal
-  colours carry meaning and nothing else on the page uses them:
+  The house look, the same as the status pages StatOSS hosts: a neutral
+  paper in the light, a neutral charcoal in the dark, Barlow for text and
+  Barlow Condensed for headings. The page follows the visitor's system.
+  The signal colours carry meaning and nothing else on the page uses them:
   up (green), timeout (amber), fail (red), slow (indigo).
 */
 :root {
-  --bg: #f5f7f6;
-  --ink: #15211c;
-  --muted: #5c6b64;
-  --rule: #d8dfdb;
-  --rule-strong: #b4bfb9;
-  --up: #1f8a5b;
+  --bg: #f5f5f2;
+  --ink: #161715;
+  --muted: #5c5f59;
+  --rule: #e0e1dc;
+  --rule-strong: #b3b6ae;
+  --up: #187a4f;
   --up-soft: #b7d9c6;
-  --timeout: #d98e1b;
-  --fail: #d24a32;
+  --timeout: #9c620c;
+  --fail: #c03d27;
   --slow: #5b5fc7;
   --slow-tint: #e9eafa;
-  --none: #e4e9e6;
-  --hover: rgba(21, 33, 28, 0.1);
+  --none: #e6e6e2;
+  --hover: rgba(22, 23, 21, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e1512;
-    --ink: #e4ebe7;
-    --muted: #8c9a93;
-    --rule: #233029;
-    --rule-strong: #35453d;
+    --bg: #121312;
+    --ink: #ecebe5;
+    --muted: #a4a6a0;
+    --rule: #252724;
+    --rule-strong: #3d403b;
     --up: #3fb37d;
-    --up-soft: #245a40;
+    --up-soft: #1f5a3e;
     --timeout: #e5a33a;
     --fail: #e4614a;
     --slow: #9ea2f0;
     --slow-tint: #1f2140;
-    --none: #1b2521;
-    --hover: rgba(228, 235, 231, 0.12);
+    --none: #1f211f;
+    --hover: rgba(236, 235, 229, 0.14);
   }
 }
 
@@ -52,7 +54,7 @@
   --color-slow: var(--slow);
   --color-slow-tint: var(--slow-tint);
   --color-none: var(--none);
-  --font-sans: var(--font-plex), "IBM Plex Sans", system-ui, sans-serif;
+  --font-sans: var(--font-barlow), system-ui, sans-serif;
 }
 
 html {
@@ -68,7 +70,56 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--up);
+  outline: 2px solid var(--ink);
   outline-offset: 3px;
   border-radius: 2px;
+}
+
+/*
+  Headings in Barlow Condensed, set through the same hook classes as the
+  hosted pages. These rules sit outside Tailwind's layers, so they win over
+  the size, weight and case utilities next to them. Group names and labels
+  keep the case they are written in.
+*/
+.page-headline {
+  font-family: var(--font-barlow-cond), var(--font-barlow), sans-serif;
+  font-weight: 700;
+  font-size: 2.6rem;
+  letter-spacing: -0.005em;
+}
+
+@media (min-width: 640px) {
+  .page-headline {
+    font-size: 3.5rem;
+  }
+}
+
+.page-heading {
+  font-family: var(--font-barlow-cond), var(--font-barlow), sans-serif;
+  font-weight: 600;
+  font-size: 1.3rem;
+  letter-spacing: 0.01em;
+}
+
+.page-group {
+  font-family: var(--font-barlow-cond), var(--font-barlow), sans-serif;
+  font-weight: 600;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.page-label {
+  font-family: var(--font-barlow-cond), var(--font-barlow), sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.page-title {
+  font-family: var(--font-barlow-cond), var(--font-barlow), sans-serif;
+  font-weight: 700;
+  font-size: 2.1rem;
+  letter-spacing: -0.005em;
 }

@@ -54,7 +54,7 @@ export function CheckpointSection({
   return (
     <section className="border-t border-rule py-8">
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <Heading className="text-[17px] font-medium leading-tight">
+        <Heading className="page-heading text-[17px] font-medium leading-tight">
           {checkpoint.name}
         </Heading>
         <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[15px]">
