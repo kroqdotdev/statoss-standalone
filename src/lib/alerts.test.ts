@@ -17,7 +17,7 @@ const NOW = 1_700_000_000_000;
 const DOWN: AlertEvent = {
   kind: "went-down",
   site: "webhooks.cc",
-  checkpoint: "Redirector",
+  monitor: "Redirector",
   url: "https://go.webhooks.cc",
   pageUrl: "https://status.webhooks.cc",
   error: "timeout",
@@ -77,6 +77,10 @@ describe("buildAlertEmail", () => {
 
 describe("signWebhook", () => {
   it("is an HMAC SHA-256 over the body", () => {
+    expect(webhookPayload(DOWN)).toMatchObject({
+      monitor: "Redirector",
+      checkpoint: "Redirector",
+    });
     const body = JSON.stringify(webhookPayload(DOWN));
     const expected = createHmac("sha256", "s3cret").update(body).digest("hex");
     expect(signWebhook("s3cret", body)).toBe(`sha256=${expected}`);
@@ -154,7 +158,7 @@ describe("sendAlerts", () => {
     expect(hook).toMatchObject({
       event: "went-down",
       site: "webhooks.cc",
-      checkpoint: "Redirector",
+      monitor: "Redirector",
       error: "timeout",
       at: NOW,
     });

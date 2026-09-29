@@ -13,7 +13,7 @@ const VALID = `
 sites:
   - name: webhooks.cc
     host: status.webhooks.cc
-    checkpoints:
+    monitors:
       - name: Main site
         url: https://webhooks.cc
       - name: Redirector
@@ -31,12 +31,30 @@ alerts:
 `;
 
 describe("parseConfig", () => {
+  it("reads checkpoints, the old name, as monitors", () => {
+    const config = parseConfig(`
+sites:
+  - name: webhooks.cc
+    host: status.webhooks.cc
+    checkpoints:
+      - name: Main site
+        url: https://webhooks.cc
+    maintenance:
+      - title: Upgrade
+        start: 2026-09-12T10:00:00Z
+        end: 2026-09-12T11:00:00Z
+        checkpoints: [Main site]
+`);
+    expect(config.sites[0].monitors.map((m) => m.name)).toEqual(["Main site"]);
+    expect(config.sites[0].maintenance[0].monitors).toEqual(["Main site"]);
+  });
+
   it("parses a valid config and applies defaults", () => {
     const config = parseConfig(VALID);
     expect(config.checkIntervalSeconds).toBe(60);
     expect(config.alerts).toBeUndefined();
     expect(config.sites).toHaveLength(1);
-    const [main, redirector] = config.sites[0].checkpoints;
+    const [main, redirector] = config.sites[0].monitors;
     expect(main.expectStatus).toBeUndefined();
     expect(main.method).toBe("GET");
     expect(main.keywordMode).toBe("present");
@@ -46,13 +64,13 @@ describe("parseConfig", () => {
     expect(config.sites[0].maintenance).toEqual([]);
   });
 
-  it("parses every checkpoint option", () => {
+  it("parses every monitor option", () => {
     const config = parseConfig(
       `
 sites:
   - name: s
     host: s.example.com
-    checkpoints:
+    monitors:
       - name: API
         group: Backend
         url: https://api.example.com/health
@@ -65,7 +83,7 @@ sites:
         slowThresholdMs: 800
 `.replace("method: post", "method: POST"),
     );
-    expect(config.sites[0].checkpoints[0]).toMatchObject({
+    expect(config.sites[0].monitors[0]).toMatchObject({
       group: "Backend",
       method: "POST",
       headers: { Authorization: "Bearer x" },
@@ -106,13 +124,13 @@ sites:
       to:
         - discord: https://discord.com/api/webhooks/z
       repeatMinutes: 15
-    checkpoints:
+    monitors:
       - name: Home
         url: https://other.example
   - name: quiet
     host: status.quiet.example
     alerts: false
-    checkpoints:
+    monitors:
       - name: Home
         url: https://quiet.example
 ` +
@@ -159,14 +177,14 @@ sites:
     ).toThrow(/alerts\.smtp: an email destination needs alerts\.smtp/);
   });
 
-  it("parses maintenance windows and checks their checkpoints", () => {
+  it("parses maintenance windows and checks their monitors", () => {
     const config = parseConfig(
       VALID +
         `    maintenance:
       - title: Database upgrade
         start: 2026-09-20T01:00:00Z
         end: 2026-09-20 03:00
-        checkpoints: [Main site]
+        monitors: [Main site]
         notes: Expect errors for a few minutes.
 `,
     );
@@ -174,7 +192,7 @@ sites:
       title: "Database upgrade",
       start: Date.UTC(2026, 8, 20, 1),
       end: Date.UTC(2026, 8, 20, 3),
-      checkpoints: ["Main site"],
+      monitors: ["Main site"],
       notes: "Expect errors for a few minutes.",
     });
     expect(() =>
@@ -186,21 +204,21 @@ sites:
     expect(() =>
       parseConfig(
         VALID +
-          "    maintenance:\n      - title: x\n        start: 2026-09-20T01:00:00Z\n        end: 2026-09-20T02:00:00Z\n        checkpoints: [Nope]\n",
+          "    maintenance:\n      - title: x\n        start: 2026-09-20T01:00:00Z\n        end: 2026-09-20T02:00:00Z\n        monitors: [Nope]\n",
       ),
-    ).toThrow(/"Nope" is not a checkpoint of this site/);
+    ).toThrow(/"Nope" is not a monitor of this site/);
   });
 
   it("rejects a config with no sites", () => {
     expect(() => parseConfig("sites: []")).toThrow(/sites/);
   });
 
-  it("rejects an invalid checkpoint url with a useful path", () => {
+  it("rejects an invalid monitor url with a useful path", () => {
     const bad = VALID.replace("https://webhooks.cc", "not-a-url");
-    expect(() => parseConfig(bad)).toThrow(/sites\.0\.checkpoints\.0\.url/);
+    expect(() => parseConfig(bad)).toThrow(/sites\.0\.monitors\.0\.url/);
   });
 
-  it("rejects two checkpoints with the same name in one site", () => {
+  it("rejects two monitors with the same name in one site", () => {
     const bad = VALID.replace("name: Redirector", "name: Main site");
     expect(() => parseConfig(bad)).toThrow(
       /"Main site" is used more than once/,
@@ -213,7 +231,7 @@ sites:
       `
   - name: other
     host: STATUS.webhooks.cc
-    checkpoints:
+    monitors:
       - name: Home
         url: https://other.example.com
 `;

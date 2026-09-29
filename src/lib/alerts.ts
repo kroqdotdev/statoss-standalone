@@ -11,7 +11,7 @@ export type AlertKind =
 export interface AlertEvent {
   kind: AlertKind;
   site: string;
-  checkpoint: string;
+  monitor: string;
   url: string;
   /** Where the public page lives, so the message can link to it. */
   pageUrl: string;
@@ -39,7 +39,7 @@ export function describeAlert(event: AlertEvent): {
   lines: string[];
 } {
   const time = `Time: ${formatUtcStamp(event.now)}`;
-  const where = `${event.checkpoint} (${event.url})`;
+  const where = `${event.monitor} (${event.url})`;
   const downFor =
     event.downSince !== undefined
       ? formatDuration(event.now - event.downSince)
@@ -47,7 +47,7 @@ export function describeAlert(event: AlertEvent): {
   switch (event.kind) {
     case "went-down":
       return {
-        subject: `${event.site}: ${event.checkpoint} is down`,
+        subject: `${event.site}: ${event.monitor} is down`,
         lines: [
           `${where} is failing.`,
           `Error: ${event.error ?? "unknown"}`,
@@ -56,7 +56,7 @@ export function describeAlert(event: AlertEvent): {
       };
     case "still-down":
       return {
-        subject: `${event.site}: ${event.checkpoint} is still down`,
+        subject: `${event.site}: ${event.monitor} is still down`,
         lines: [
           `${where} has been down for ${downFor}.`,
           `Error: ${event.error ?? "unknown"}`,
@@ -65,12 +65,12 @@ export function describeAlert(event: AlertEvent): {
       };
     case "recovered":
       return {
-        subject: `${event.site}: ${event.checkpoint} recovered`,
+        subject: `${event.site}: ${event.monitor} recovered`,
         lines: [`${where} is back up.`, `Downtime: ${downFor}`, time],
       };
     case "went-slow":
       return {
-        subject: `${event.site}: ${event.checkpoint} is slow`,
+        subject: `${event.site}: ${event.monitor} is slow`,
         lines: [
           `${where} is responding, but slowly.`,
           `Response time: ${formatCount(event.latencyMs ?? 0)} ms, over the ${formatCount(event.thresholdMs ?? 0)} ms threshold`,
@@ -79,7 +79,7 @@ export function describeAlert(event: AlertEvent): {
       };
     case "back-to-normal":
       return {
-        subject: `${event.site}: ${event.checkpoint} is back to normal speed`,
+        subject: `${event.site}: ${event.monitor} is back to normal speed`,
         lines: [
           `${where} is responding at normal speed again.`,
           `Slow for: ${downFor}`,
@@ -120,12 +120,16 @@ export function discordPayload(event: AlertEvent): { content: string } {
   };
 }
 
-/** The generic webhook body: one flat object, stable field names. */
+/**
+ * The generic webhook body: one flat object, stable field names.
+ * `checkpoint` repeats `monitor` under its name before 0.2.
+ */
 export function webhookPayload(event: AlertEvent): Record<string, unknown> {
   return {
     event: event.kind,
     site: event.site,
-    checkpoint: event.checkpoint,
+    monitor: event.monitor,
+    checkpoint: event.monitor,
     url: event.url,
     pageUrl: event.pageUrl,
     error: event.error ?? null,

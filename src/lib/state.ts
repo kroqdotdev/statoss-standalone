@@ -1,7 +1,7 @@
 export type Transition =
   "went-down" | "recovered" | "went-slow" | "back-to-normal" | null;
 
-export interface CheckpointState {
+export interface MonitorState {
   status: "up" | "slow" | "down";
   consecutiveFails: number;
   consecutiveSlow: number;
@@ -11,7 +11,7 @@ export interface CheckpointState {
 /** What one check found. */
 export interface CheckVerdict {
   ok: boolean;
-  /** A successful check over the checkpoint's slow threshold. */
+  /** A successful check over the monitor's slow threshold. */
   slow: boolean;
 }
 
@@ -21,17 +21,17 @@ const SLOW_AFTER_CONSECUTIVE_SLOW = 2;
 /**
  * Down after two failed checks in a row, back after one success. Slow works
  * the same way: two slow successes in a row, and one fast success ends it.
- * A checkpoint that comes back slow is "up" first, so the recovery is
+ * A monitor that comes back slow is "up" first, so the recovery is
  * reported, and turns slow on the next slow check.
  */
 export function applyResult(
-  prev: CheckpointState | undefined,
+  prev: MonitorState | undefined,
   verdict: CheckVerdict | boolean,
   now: number,
-): { next: CheckpointState; transition: Transition } {
+): { next: MonitorState; transition: Transition } {
   const { ok, slow } =
     typeof verdict === "boolean" ? { ok: verdict, slow: false } : verdict;
-  const current: CheckpointState = prev ?? {
+  const current: MonitorState = prev ?? {
     status: "up",
     consecutiveFails: 0,
     consecutiveSlow: 0,
@@ -92,17 +92,17 @@ export function applyResult(
   };
 }
 
-export type CheckpointStatus = "up" | "slow" | "down" | "unknown";
+export type MonitorStatus = "up" | "slow" | "down" | "unknown";
 export type Overall =
   "operational" | "degraded" | "partial" | "major" | "unknown";
 
 /**
- * Rolls checkpoint statuses up into one headline state. A checkpoint is
- * "unknown" until its first check has run; unknown checkpoints never count
+ * Rolls monitor statuses up into one headline state. A monitor is
+ * "unknown" until its first check has run; unknown monitors never count
  * as up, and a site where nothing has been checked yet is "unknown".
- * Any checkpoint down outranks any checkpoint slow.
+ * Any monitor down outranks any monitor slow.
  */
-export function overallStatus(statuses: CheckpointStatus[]): Overall {
+export function overallStatus(statuses: MonitorStatus[]): Overall {
   if (statuses.length === 0 || statuses.every((status) => status === "up"))
     return "operational";
   if (statuses.every((status) => status === "unknown")) return "unknown";
@@ -126,11 +126,11 @@ const SEVERITY: Record<Overall, number> = {
 /**
  * The headline state once open incidents have their say. An incident written
  * by hand describes a problem the checks cannot see, so its impact outranks
- * a green set of checkpoints. "unknown" only survives when nothing has been
+ * a green set of monitors. "unknown" only survives when nothing has been
  * checked and nothing is open.
  */
 export function pageOverall(
-  statuses: CheckpointStatus[],
+  statuses: MonitorStatus[],
   impacts: IncidentImpact[],
 ): Overall {
   let overall = overallStatus(statuses);

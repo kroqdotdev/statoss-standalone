@@ -8,7 +8,7 @@ import {
   type SiteIncidents,
 } from "./incidents";
 import { windowSummary } from "./queries";
-import { pageOverall, type CheckpointStatus, type Overall } from "./state";
+import { pageOverall, type MonitorStatus, type Overall } from "./state";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -26,14 +26,16 @@ export const BADGE: Record<
 
 export interface StatusJson {
   site: { name: string; url: string; status: Overall; updatedAt: string };
-  checkpoints: Array<{
+  monitors: Array<{
     name: string;
     group: string | null;
-    status: CheckpointStatus;
+    status: MonitorStatus;
     since: string | null;
     uptime24h: number | null;
     latencyMs24h: number | null;
   }>;
+  /** The same list under its name before 0.2, so older scripts keep working. */
+  checkpoints: StatusJson["monitors"];
   incidents: IncidentView[];
   maintenance: IncidentView[];
 }
@@ -45,7 +47,7 @@ export function statusJson(
   incidents: SiteIncidents,
   now: number,
 ): StatusJson {
-  const checkpoints = site.checkpoints.map((cp) => {
+  const monitors = site.monitors.map((cp) => {
     const state = getState(db, site.name, cp.name);
     const day = windowSummary(
       db,
@@ -58,7 +60,7 @@ export function statusJson(
     return {
       name: cp.name,
       group: cp.group ?? null,
-      status: (state?.status ?? "unknown") as CheckpointStatus,
+      status: (state?.status ?? "unknown") as MonitorStatus,
       since: state ? new Date(state.since).toISOString() : null,
       uptime24h:
         day.total === 0 ? null : Math.round((day.up / day.total) * 10000) / 100,
@@ -70,12 +72,13 @@ export function statusJson(
       name: site.name,
       url: siteUrl(site),
       status: pageOverall(
-        checkpoints.map((c) => c.status),
+        monitors.map((c) => c.status),
         openImpacts(incidents.current),
       ),
       updatedAt: new Date(now).toISOString(),
     },
-    checkpoints,
+    monitors,
+    checkpoints: monitors,
     incidents: incidents.current.filter((i) => i.kind === "incident"),
     maintenance: incidents.current.filter((i) => i.kind === "maintenance"),
   };

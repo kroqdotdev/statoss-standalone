@@ -24,7 +24,7 @@ describe("checks", () => {
     const db = memDb();
     insertCheck(db, {
       site: "webhooks.cc",
-      checkpoint: "Main site",
+      monitor: "Main site",
       ts: 1000,
       ok: 1,
       statusCode: 200,
@@ -33,7 +33,7 @@ describe("checks", () => {
     });
     insertCheck(db, {
       site: "webhooks.cc",
-      checkpoint: "Main site",
+      monitor: "Main site",
       ts: 2000,
       ok: 0,
       statusCode: null,
@@ -61,7 +61,7 @@ describe("checks", () => {
     for (const ts of [100, 200, 300]) {
       insertCheck(db, {
         site: "s",
-        checkpoint: "c",
+        monitor: "c",
         ts,
         ok: 1,
         statusCode: 200,
@@ -79,15 +79,17 @@ describe("checks", () => {
 });
 
 describe("migration", () => {
-  it("adds the new columns to a database from the first release", () => {
+  it("renames and adds to a database from the first release", () => {
     const dir = mkdtempSync(join(tmpdir(), "statoss-"));
     const path = join(dir, "old.db");
     const old = new Database(path);
+    // The first release called monitors checkpoints.
     old.exec(`
       CREATE TABLE checks (
         id INTEGER PRIMARY KEY AUTOINCREMENT, site TEXT NOT NULL,
         checkpoint TEXT NOT NULL, ts INTEGER NOT NULL, ok INTEGER NOT NULL,
         status_code INTEGER, latency_ms INTEGER, error TEXT);
+      CREATE INDEX idx_checks_site_cp_ts ON checks(site, checkpoint, ts);
       CREATE TABLE checkpoint_state (
         site TEXT NOT NULL, checkpoint TEXT NOT NULL, status TEXT NOT NULL,
         consecutive_fails INTEGER NOT NULL, since INTEGER NOT NULL,
@@ -99,7 +101,7 @@ describe("migration", () => {
     const migrated = openDb(path);
     expect(getState(migrated, "s", "c")).toEqual({
       site: "s",
-      checkpoint: "c",
+      monitor: "c",
       status: "up",
       consecutiveFails: 0,
       consecutiveSlow: 0,
@@ -110,17 +112,42 @@ describe("migration", () => {
       maintenance: number;
     };
     expect(row.maintenance).toBe(0);
-    // Opening it again must not try to add the columns twice.
+    const checks = migrated.prepare("SELECT monitor FROM checks").get() as {
+      monitor: string;
+    };
+    expect(checks.monitor).toBe("c");
+    // Opening it again must not try to rename or add anything twice.
     openDb(path).close();
+    migrated.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("renames a 0.1 database's outages too, and keeps them", () => {
+    const dir = mkdtempSync(join(tmpdir(), "statoss-"));
+    const path = join(dir, "old.db");
+    const old = new Database(path);
+    old.exec(`
+      CREATE TABLE auto_incident (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, site TEXT NOT NULL,
+        checkpoint TEXT NOT NULL, started_at INTEGER NOT NULL,
+        resolved_at INTEGER, error TEXT);
+      INSERT INTO auto_incident (site, checkpoint, started_at, error)
+        VALUES ('s', 'c', 5, 'timeout');
+    `);
+    old.close();
+    const migrated = openDb(path);
+    expect(autoIncidents(migrated, "s", 0)).toEqual([
+      expect.objectContaining({ monitor: "c", startedAt: 5 }),
+    ]);
     migrated.close();
     rmSync(dir, { recursive: true, force: true });
   });
 });
 
-describe("checkpoint_state", () => {
+describe("monitor_state", () => {
   const up: StateRow = {
     site: "s",
-    checkpoint: "c",
+    monitor: "c",
     status: "up",
     consecutiveFails: 0,
     consecutiveSlow: 0,
@@ -128,7 +155,7 @@ describe("checkpoint_state", () => {
     lastAlertAt: null,
   };
 
-  it("returns undefined for unknown checkpoints", () => {
+  it("returns undefined for unknown monitors", () => {
     expect(getState(memDb(), "s", "c")).toBeUndefined();
   });
 
@@ -145,14 +172,14 @@ describe("checkpoint_state", () => {
     };
     setState(db, down);
     expect(getState(db, "s", "c")).toEqual(down);
-    expect(
-      db.prepare("SELECT COUNT(*) AS n FROM checkpoint_state").get(),
-    ).toEqual({ n: 1 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM monitor_state").get()).toEqual(
+      { n: 1 },
+    );
   });
 });
 
 describe("auto incidents", () => {
-  it("opens one outage per checkpoint and resolves it", () => {
+  it("opens one outage per monitor and resolves it", () => {
     const db = memDb();
     const opened = openAutoIncident(db, "s", "c", 1000, "timeout");
     expect(opened).toMatchObject({ startedAt: 1000, resolvedAt: null });
@@ -171,7 +198,7 @@ describe("auto incidents", () => {
     openAutoIncident(db, "s", "ancient", 50, null);
     openAutoIncident(db, "s", "new", 5000, null);
     resolveAutoIncident(db, "s", "new", 6000);
-    expect(autoIncidents(db, "s", 1000).map((r) => r.checkpoint)).toEqual([
+    expect(autoIncidents(db, "s", 1000).map((r) => r.monitor)).toEqual([
       "new",
       "ancient",
     ]);
@@ -183,6 +210,6 @@ describe("auto incidents", () => {
     resolveAutoIncident(db, "s", "c", 200);
     openAutoIncident(db, "s", "d", 100, null);
     expect(pruneOldChecks(db, 500)).toBe(1);
-    expect(autoIncidents(db, "s", 0).map((r) => r.checkpoint)).toEqual(["d"]);
+    expect(autoIncidents(db, "s", 0).map((r) => r.monitor)).toEqual(["d"]);
   });
 });

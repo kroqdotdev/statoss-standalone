@@ -21,7 +21,7 @@ alerts:
 sites:
   - name: webhooks.cc
     host: status.webhooks.cc
-    checkpoints:
+    monitors:
       - name: Main site
         url: https://webhooks.cc
 `);
@@ -57,12 +57,12 @@ const state = (deps: SchedulerDeps) =>
   getState(deps.db, "webhooks.cc", "Main site");
 
 describe("loadJobs", () => {
-  it("builds one job per checkpoint with the site's destinations", () => {
+  it("builds one job per monitor with the site's destinations", () => {
     const jobs = loadJobs(CONFIG);
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({
       site: "webhooks.cc",
-      checkpoint: "Main site",
+      monitor: "Main site",
       url: "https://webhooks.cc",
       pageUrl: "https://status.webhooks.cc",
       spec: { url: "https://webhooks.cc", method: "GET" },
@@ -92,7 +92,7 @@ describe("tick", () => {
     expect(deps.alertSpy.mock.calls[0][0]).toEqual([{ email: "t@x.com" }]);
     expect(deps.alertSpy.mock.calls[0][1]).toMatchObject({
       site: "webhooks.cc",
-      checkpoint: "Main site",
+      monitor: "Main site",
       pageUrl: "https://status.webhooks.cc",
       kind: "went-down",
       error: "unexpected status 500",
@@ -103,7 +103,7 @@ describe("tick", () => {
     const outages = autoIncidents(deps.db, "webhooks.cc", 0);
     expect(outages).toHaveLength(1);
     expect(outages[0]).toMatchObject({
-      checkpoint: "Main site",
+      monitor: "Main site",
       resolvedAt: null,
       error: "unexpected status 500",
     });
@@ -135,7 +135,7 @@ alerts:
 sites:
   - name: webhooks.cc
     host: status.webhooks.cc
-    checkpoints:
+    monitors:
       - name: Main site
         url: https://webhooks.cc
 `);
@@ -163,7 +163,7 @@ sites:
 sites:
   - name: webhooks.cc
     host: status.webhooks.cc
-    checkpoints:
+    monitors:
       - name: Main site
         url: https://webhooks.cc
         slowThresholdMs: 500
@@ -199,7 +199,7 @@ sites:
     const job: Job = {
       ...deps.jobs[0],
       maintenance: [
-        { title: "Work", start: 0, end: 10_000, checkpoints: undefined },
+        { title: "Work", start: 0, end: 10_000, monitors: undefined },
       ],
     };
     deps.jobs = [job];
@@ -226,12 +226,12 @@ sites:
     expect(state(deps)?.status).toBe("down");
   });
 
-  it("finishes the other checkpoints when one throws", async () => {
+  it("finishes the other monitors when one throws", async () => {
     const config = parseConfig(`
 sites:
   - name: webhooks.cc
     host: status.webhooks.cc
-    checkpoints:
+    monitors:
       - name: Broken
         url: https://broken.example.com
       - name: Main site
@@ -247,7 +247,7 @@ sites:
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(tick(deps)).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith(
-      "[scheduler] checkpoint tick failed",
+      "[scheduler] monitor tick failed",
       expect.any(Error),
     );
     expect(state(deps)?.status).toBe("up");

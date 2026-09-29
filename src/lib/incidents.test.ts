@@ -16,7 +16,7 @@ const CONFIG = parseConfig(`
 sites:
   - name: webhooks.cc
     host: status.webhooks.cc
-    checkpoints:
+    monitors:
       - name: Main site
         url: https://webhooks.cc
       - name: API
@@ -27,12 +27,12 @@ const TWO_SITES = parseConfig(`
 sites:
   - name: one
     host: one.example
-    checkpoints:
+    monitors:
       - name: Home
         url: https://one.example
   - name: two
     host: two.example
-    checkpoints:
+    monitors:
       - name: Home
         url: https://two.example
 `);
@@ -44,7 +44,7 @@ const MARKDOWN = `---
 title: Elevated API errors
 started: 2026-09-12T14:05:00Z
 impact: partial
-checkpoints: [API]
+monitors: [API]
 updates:
   - at: 2026-09-12 14:05
     status: investigating
@@ -96,7 +96,7 @@ describe("parseIncidentFile", () => {
       startedAt: T,
       resolvedAt: Date.UTC(2026, 8, 12, 15, 10),
       auto: false,
-      checkpoints: ["API"],
+      monitors: ["API"],
     });
     expect(view.updates.map((u) => u.status)).toEqual([
       "resolved",
@@ -124,7 +124,7 @@ updates:
       status: "identified",
       impact: "none",
       resolvedAt: null,
-      checkpoints: [],
+      monitors: [],
       postmortem: null,
     });
   });
@@ -153,14 +153,14 @@ updates:
     ).toThrow(/no site named "three"/);
   });
 
-  it("rejects unknown checkpoints and bad fields with the file name", () => {
+  it("rejects unknown monitors and bad fields with the file name", () => {
     expect(() =>
       parseIncidentFile(
         "bad.md",
-        "---\ntitle: x\nstarted: 2026-09-12\ncheckpoints: [Nope]\n---\n",
+        "---\ntitle: x\nstarted: 2026-09-12\nmonitors: [Nope]\n---\n",
         CONFIG,
       ),
-    ).toThrow(/bad\.md: "Nope" is not a checkpoint/);
+    ).toThrow(/bad\.md: "Nope" is not a monitor/);
     expect(() =>
       parseIncidentFile(
         "bad.md",
@@ -179,17 +179,17 @@ describe("maintenance", () => {
     title: "Database upgrade",
     start: T,
     end: T + 2 * HOUR,
-    checkpoints: ["API"],
+    monitors: ["API"],
     notes: "Writes pause for a minute.",
   };
 
-  it("covers named checkpoints while the window is open", () => {
+  it("covers named monitors while the window is open", () => {
     expect(inMaintenance([window], "API", T)).toBe(true);
     expect(inMaintenance([window], "API", T + 2 * HOUR)).toBe(false);
     expect(inMaintenance([window], "API", T - 1)).toBe(false);
     expect(inMaintenance([window], "Main site", T)).toBe(false);
     expect(
-      inMaintenance([{ ...window, checkpoints: undefined }], "Main site", T),
+      inMaintenance([{ ...window, monitors: undefined }], "Main site", T),
     ).toBe(true);
   });
 
@@ -200,7 +200,7 @@ describe("maintenance", () => {
       kind: "maintenance",
       startedAt: T,
       endsAt: T + 2 * HOUR,
-      checkpoints: ["API"],
+      monitors: ["API"],
     });
     expect(view.updates[0].body).toBe("Writes pause for a minute.");
     expect(maintenancePhase(view, T - 1)).toBe("scheduled");
@@ -214,7 +214,7 @@ describe("autoIncidentView", () => {
     const open = autoIncidentView({
       id: 7,
       site: "s",
-      checkpoint: "API",
+      monitor: "API",
       startedAt: T,
       resolvedAt: null,
       error: "timeout",
@@ -224,13 +224,13 @@ describe("autoIncidentView", () => {
       title: "API is down",
       status: "investigating",
       auto: true,
-      checkpoints: ["API"],
+      monitors: ["API"],
     });
     expect(open.updates[0].body).toContain("(timeout)");
     const closed = autoIncidentView({
       id: 7,
       site: "s",
-      checkpoint: "API",
+      monitor: "API",
       startedAt: T,
       resolvedAt: T + 12 * 60_000,
       error: null,
@@ -254,7 +254,7 @@ describe("splitIncidents", () => {
     resolvedAt: null,
     auto: false,
     postmortem: null,
-    checkpoints: [],
+    monitors: [],
     updates: [],
   };
   const now = T + 5 * HOUR;

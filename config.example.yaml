@@ -23,7 +23,7 @@ alerts:
     # - webhook: https://example.com/statoss
     #   secret: ${WEBHOOK_SECRET}
   # Optional. Send "still down" notices this many minutes apart while a
-  # checkpoint stays down. 0 (the default) sends none.
+  # monitor stays down. 0 (the default) sends none.
   repeatMinutes: 0
 
 # Each site gets its own status page on its own hostname.
@@ -38,10 +38,10 @@ sites:
     #   to:
     #     - email: web-team@example.com
     #   repeatMinutes: 30
-    checkpoints:
+    monitors:
       - name: Main site
         url: https://example.com
-        # Optional. Checkpoints with the same group are shown together.
+        # Optional. Monitors with the same group are shown together.
         group: Web
         # Optional. A successful response slower than this counts as slow.
         slowThresholdMs: 1500
@@ -69,5 +69,5 @@ sites:
     #   - title: Database upgrade
     #     start: 2026-09-20T01:00:00Z
     #     end: 2026-09-20T03:00:00Z
-    #     checkpoints: [API health] # omit for the whole site
+    #     monitors: [API health] # omit for the whole site
     #     notes: The API answers with 503 for a few minutes.

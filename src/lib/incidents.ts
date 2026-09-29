@@ -1,6 +1,7 @@
 import { parse } from "yaml";
 import { z } from "zod";
 import {
+  monitorsFromCheckpoints,
   timestampSchema,
   type AppConfig,
   type MaintenanceConfig,
@@ -13,7 +14,7 @@ import type { IncidentImpact } from "./state";
 /**
  * Incidents and maintenance windows. An incident is a titled record on a
  * site with a status and a list of dated updates. The scheduler opens one
- * when a checkpoint goes down and closes it when the checkpoint recovers;
+ * when a monitor goes down and closes it when the monitor recovers;
  * the operator writes the rest as files in the incidents folder. A
  * maintenance window is a planned start and end in the configuration,
  * during which checks are kept but not counted and no alert goes out.
@@ -55,8 +56,8 @@ export interface IncidentView {
   /** Opened by the checker rather than written by hand. */
   auto: boolean;
   postmortem: string | null;
-  /** Names of the checkpoints it covers. Empty means the whole site. */
-  checkpoints: string[];
+  /** Names of the monitors it covers. Empty means the whole site. */
+  monitors: string[];
   /** Newest first. */
   updates: IncidentUpdate[];
 }
@@ -70,17 +71,20 @@ const updateSchema = z.object({
   body: z.string().min(1),
 });
 
-const fileSchema = z.object({
-  title: z.string().min(1),
-  /** The site's name or host. Optional when there is only one site. */
-  site: z.string().min(1).optional(),
-  started: timestampSchema,
-  resolved: timestampSchema.optional(),
-  impact: z.enum(IMPACTS).default("none"),
-  checkpoints: z.array(z.string().min(1)).default([]),
-  updates: z.array(updateSchema).default([]),
-  postmortem: z.string().optional(),
-});
+const fileSchema = z.preprocess(
+  monitorsFromCheckpoints,
+  z.object({
+    title: z.string().min(1),
+    /** The site's name or host. Optional when there is only one site. */
+    site: z.string().min(1).optional(),
+    started: timestampSchema,
+    resolved: timestampSchema.optional(),
+    impact: z.enum(IMPACTS).default("none"),
+    monitors: z.array(z.string().min(1)).default([]),
+    updates: z.array(updateSchema).default([]),
+    postmortem: z.string().optional(),
+  }),
+);
 
 /**
  * Post-mortems are plain text: blank lines separate paragraphs, and a line
@@ -147,10 +151,10 @@ export function parseIncidentFile(
         ? `Invalid incident file ${id}: no site named "${data.site}"`
         : `Invalid incident file ${id}: name the site, since there is more than one`,
     );
-  for (const name of data.checkpoints) {
-    if (!site.checkpoints.some((cp) => cp.name === name))
+  for (const name of data.monitors) {
+    if (!site.monitors.some((cp) => cp.name === name))
       throw new Error(
-        `Invalid incident file ${id}: "${name}" is not a checkpoint of ${site.name}`,
+        `Invalid incident file ${id}: "${name}" is not a monitor of ${site.name}`,
       );
   }
   const updates = data.updates
@@ -174,7 +178,7 @@ export function parseIncidentFile(
       resolvedAt,
       auto: false,
       postmortem: postmortem === "" ? null : postmortem,
-      checkpoints: data.checkpoints,
+      monitors: data.monitors,
       updates,
     },
   };
@@ -199,24 +203,24 @@ export function maintenanceView(
     resolvedAt: null,
     auto: false,
     postmortem: null,
-    checkpoints: window.checkpoints ?? [],
+    monitors: window.monitors ?? [],
     updates: notes
       ? [{ status: "monitoring", body: notes, createdAt: window.start }]
       : [],
   };
 }
 
-/** Whether a checkpoint is inside one of its site's maintenance windows. */
+/** Whether a monitor is inside one of its site's maintenance windows. */
 export function inMaintenance(
   windows: MaintenanceConfig[],
-  checkpoint: string,
+  monitor: string,
   now: number,
 ): boolean {
   return windows.some(
     (w) =>
       w.start <= now &&
       now < w.end &&
-      (w.checkpoints === undefined || w.checkpoints.includes(checkpoint)),
+      (w.monitors === undefined || w.monitors.includes(monitor)),
   );
 }
 
@@ -242,7 +246,7 @@ export function autoIncidentView(row: AutoIncidentRow): IncidentView {
   const updates: IncidentUpdate[] = [
     {
       status: "investigating",
-      body: `${row.checkpoint} stopped responding to checks${
+      body: `${row.monitor} stopped responding to checks${
         row.error ? ` (${row.error})` : ""
       }. Opened automatically.`,
       createdAt: row.startedAt,
@@ -257,7 +261,7 @@ export function autoIncidentView(row: AutoIncidentRow): IncidentView {
   return {
     id: `auto-${row.id}`,
     kind: "incident",
-    title: `${row.checkpoint} is down`,
+    title: `${row.monitor} is down`,
     status: row.resolvedAt === null ? "investigating" : "resolved",
     impact: "none",
     startedAt: row.startedAt,
@@ -265,7 +269,7 @@ export function autoIncidentView(row: AutoIncidentRow): IncidentView {
     resolvedAt: row.resolvedAt,
     auto: true,
     postmortem: null,
-    checkpoints: [row.checkpoint],
+    monitors: [row.monitor],
     updates,
   };
 }

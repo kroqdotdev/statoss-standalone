@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 
-/** The request methods a checkpoint can use. */
+/** The request methods a monitor can use. */
 export const METHODS = [
   "GET",
   "HEAD",
@@ -47,10 +47,10 @@ export const timestampSchema = z.unknown().transform((value, ctx) => {
   return ms;
 });
 
-const checkpointSchema = z.object({
+const monitorSchema = z.object({
   name: z.string().min(1),
   url: z.url(),
-  /** Checkpoints with the same group are shown together on the page. */
+  /** Monitors with the same group are shown together on the page. */
   group: z.string().min(1).optional(),
   method: z.enum(METHODS).default("GET"),
   headers: z.record(z.string().min(1), z.string()).optional(),
@@ -141,7 +141,7 @@ const alertsSchema = z.object({
   smtp: smtpSchema.optional(),
   /** Destinations for every site that has no list of its own. */
   to: z.array(destinationSchema).default([]),
-  /** Minutes between repeat notices while a checkpoint stays down. 0 is off. */
+  /** Minutes between repeat notices while a monitor stays down. 0 is off. */
   repeatMinutes: z.number().int().min(0).default(0),
 });
 
@@ -150,19 +150,42 @@ const siteAlertsSchema = z.object({
   repeatMinutes: z.number().int().min(0).optional(),
 });
 
-const maintenanceSchema = z
+/**
+ * "checkpoints" is what the first releases called monitors. A configuration
+ * or an incident file that still says it reads the same.
+ */
+export function monitorsFromCheckpoints(value: unknown): unknown {
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "checkpoints" in value &&
+    !("monitors" in value)
+  ) {
+    const { checkpoints, ...rest } = value as Record<string, unknown>;
+    return { ...rest, monitors: checkpoints };
+  }
+  return value;
+}
+
+const maintenanceWindowSchema = z
   .object({
     title: z.string().min(1),
     start: timestampSchema,
     end: timestampSchema,
-    /** Checkpoint names the window covers. Omit it for the whole site. */
-    checkpoints: z.array(z.string().min(1)).min(1).optional(),
+    /** Monitor names the window covers. Omit it for the whole site. */
+    monitors: z.array(z.string().min(1)).min(1).optional(),
     notes: z.string().optional(),
   })
   .refine((window) => window.end > window.start, {
     message: "end must be after start",
     path: ["end"],
   });
+
+const maintenanceSchema = z.preprocess(
+  monitorsFromCheckpoints,
+  maintenanceWindowSchema,
+);
 
 function duplicates(values: string[]): string[] {
   const seen = new Set<string>();
@@ -174,37 +197,39 @@ function duplicates(values: string[]): string[] {
   return [...dupes];
 }
 
-const siteSchema = z
+const siteObjectSchema = z
   .object({
     name: z.string().min(1),
     host: z.string().min(1),
     /** Where the page lives, for links in alerts. Default: https://<host>. */
     url: z.url().optional(),
-    checkpoints: z.array(checkpointSchema).min(1),
+    monitors: z.array(monitorSchema).min(1),
     /** false turns alerts off for this site. */
     alerts: z.union([z.literal(false), siteAlertsSchema]).optional(),
     maintenance: z.array(maintenanceSchema).default([]),
   })
   .superRefine((site, ctx) => {
-    const names = site.checkpoints.map((cp) => cp.name);
+    const names = site.monitors.map((cp) => cp.name);
     for (const name of duplicates(names)) {
       ctx.addIssue({
         code: "custom",
-        path: ["checkpoints"],
-        message: `checkpoint name "${name}" is used more than once`,
+        path: ["monitors"],
+        message: `monitor name "${name}" is used more than once`,
       });
     }
     site.maintenance.forEach((window, i) => {
-      for (const name of window.checkpoints ?? []) {
+      for (const name of window.monitors ?? []) {
         if (!names.includes(name))
           ctx.addIssue({
             code: "custom",
-            path: ["maintenance", i, "checkpoints"],
-            message: `"${name}" is not a checkpoint of this site`,
+            path: ["maintenance", i, "monitors"],
+            message: `"${name}" is not a monitor of this site`,
           });
       }
     });
   });
+
+const siteSchema = z.preprocess(monitorsFromCheckpoints, siteObjectSchema);
 
 const configSchema = z
   .object({
@@ -235,7 +260,7 @@ const configSchema = z
 
 export type AppConfig = z.infer<typeof configSchema>;
 export type SiteConfig = AppConfig["sites"][number];
-export type CheckpointConfig = SiteConfig["checkpoints"][number];
+export type MonitorConfig = SiteConfig["monitors"][number];
 export type MaintenanceConfig = SiteConfig["maintenance"][number];
 export type AlertsConfig = NonNullable<AppConfig["alerts"]>;
 export type SmtpConfig = NonNullable<AlertsConfig["smtp"]>;

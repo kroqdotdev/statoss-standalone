@@ -9,7 +9,7 @@ const CONFIG = parseConfig(`
 sites:
   - name: webhooks.cc
     host: status.webhooks.cc
-    checkpoints:
+    monitors:
       - name: Main site
         url: https://webhooks.cc
 `);

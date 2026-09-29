@@ -14,7 +14,7 @@ function runLabel(run: FailureRun): string {
 }
 
 /**
- * How long the checkpoint was not responding: from the first failed check to
+ * How long the monitor was not responding: from the first failed check to
  * the first successful one after it. While the run is still going, the
  * timer counts from the first failure to now.
  */
