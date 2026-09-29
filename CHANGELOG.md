@@ -2,10 +2,15 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.2.0 - 2026-09-29
 
 ### Added
 
+- Check options: `method`, `headers`, `body`, `expectStatus`, `keyword` with `keywordMode: present|absent`, and `slowThresholdMs`. Slow is a state, with its own alerts, drawn in indigo under a dashed line at the threshold.
+- Groups: monitors with the same `group` are shown together under one heading with a one-line summary.
+- Public endpoints on every site's hostname: `status.json`, `badge.svg`, `badge.json` (the shields.io endpoint format), `feed.xml` and `widget.js`.
+- Alert channels: email, Slack, Discord, and a webhook signed with HMAC SHA-256, for all sites or per site; `alerts: false` turns a site off, `repeatMinutes` sends "still down" notices, and `${NAME}` in the configuration reads an environment variable. The old `smtp.to` still works.
+- Incidents as Markdown or YAML files in an `incidents/` folder, read again when a file changes, with post-mortems; planned maintenance windows in the configuration, whose checks are shown but not counted and send no alert. A monitor going down opens an incident by itself and resolves it on recovery.
 - A published image for linux/amd64 and linux/arm64 at `ghcr.io/kroqdotdev/statoss-standalone`, built by the Image workflow on every push to main and every version tag.
 - `docker-compose.build.yml`, to build the image from a checkout instead.
 
