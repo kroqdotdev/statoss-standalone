@@ -5,7 +5,7 @@ import {
   type AlertDeps,
   type AlertEvent,
 } from "./alerts";
-import { checkpointSpec, runCheck } from "./checker";
+import { monitorSpec, runCheck } from "./checker";
 import type { CheckOutcome, CheckSpec } from "./checker";
 import {
   getConfig,
@@ -32,10 +32,10 @@ import { applyResult, type CheckVerdict } from "./state";
 const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const MINUTE_MS = 60_000;
 
-/** Everything one tick needs to know about a checkpoint. */
+/** Everything one tick needs to know about a monitor. */
 export interface Job {
   site: string;
-  checkpoint: string;
+  monitor: string;
   url: string;
   pageUrl: string;
   spec: CheckSpec;
@@ -53,12 +53,12 @@ export function loadJobs(config: AppConfig): Job[] {
     const destinations = siteDestinations(config, site);
     const repeatMinutes = siteRepeatMinutes(config, site);
     const pageUrl = siteUrl(site);
-    return site.checkpoints.map((cp) => ({
+    return site.monitors.map((cp) => ({
       site: site.name,
-      checkpoint: cp.name,
+      monitor: cp.name,
       url: cp.url,
       pageUrl,
-      spec: checkpointSpec(cp),
+      spec: monitorSpec(cp),
       slowThresholdMs: cp.slowThresholdMs ?? null,
       destinations,
       repeatMinutes,
@@ -98,26 +98,26 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
   const ts = deps.now();
   const row = {
     site: job.site,
-    checkpoint: job.checkpoint,
+    monitor: job.monitor,
     ts,
     ok: outcome.ok ? 1 : 0,
     statusCode: outcome.statusCode,
     latencyMs: outcome.latencyMs,
     error: outcome.error,
   } as const;
-  if (inMaintenance(job.maintenance, job.checkpoint, ts)) {
+  if (inMaintenance(job.maintenance, job.monitor, ts)) {
     insertCheck(db, { ...row, maintenance: 1 });
     return;
   }
   insertCheck(db, row);
 
   const verdict: CheckVerdict = { ok: outcome.ok, slow: isSlow(job, outcome) };
-  const prev = getState(db, job.site, job.checkpoint);
+  const prev = getState(db, job.site, job.monitor);
   const { next, transition } = applyResult(prev, verdict, ts);
   let lastAlertAt = prev?.lastAlertAt ?? null;
   const base = {
     site: job.site,
-    checkpoint: job.checkpoint,
+    monitor: job.monitor,
     url: job.url,
     pageUrl: job.pageUrl,
     now: ts,
@@ -147,27 +147,27 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
   }
   setState(db, {
     site: job.site,
-    checkpoint: job.checkpoint,
+    monitor: job.monitor,
     ...next,
     lastAlertAt,
   });
 
   if (transition === "went-down") {
-    openAutoIncident(db, job.site, job.checkpoint, ts, outcome.error);
+    openAutoIncident(db, job.site, job.monitor, ts, outcome.error);
   } else if (transition === "recovered") {
-    resolveAutoIncident(db, job.site, job.checkpoint, ts);
+    resolveAutoIncident(db, job.site, job.monitor, ts);
   }
 }
 
 export async function tick(deps: SchedulerDeps): Promise<void> {
-  // allSettled, not all: one checkpoint failing to record its result must not
+  // allSettled, not all: one monitor failing to record its result must not
   // abandon the others mid-flight or release the overlap guard early.
   const results = await Promise.allSettled(
     deps.jobs.map((job) => runJob(deps, job)),
   );
   for (const result of results) {
     if (result.status === "rejected") {
-      console.error("[scheduler] checkpoint tick failed", result.reason);
+      console.error("[scheduler] monitor tick failed", result.reason);
     }
   }
   bumpDataVersion();
@@ -176,7 +176,7 @@ export async function tick(deps: SchedulerDeps): Promise<void> {
 /**
  * Wraps `task` so that a call made while a previous call is still running is
  * skipped instead of overlapping. A tick can take as long as the check
- * timeout, and two overlapping ticks would race on checkpoint_state and
+ * timeout, and two overlapping ticks would race on monitor_state and
  * could alert twice.
  */
 export function skipWhileRunning(
@@ -249,7 +249,7 @@ export function startScheduler(): void {
   });
 
   console.log(
-    `[scheduler] started: ${config.sites.length} site(s), ${jobs.length} checkpoint(s), every ${config.checkIntervalSeconds}s`,
+    `[scheduler] started: ${config.sites.length} site(s), ${jobs.length} monitor(s), every ${config.checkIntervalSeconds}s`,
   );
   void run();
   setInterval(run, config.checkIntervalSeconds * 1000);

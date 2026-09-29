@@ -5,7 +5,7 @@ import { SitePage } from "@/components/SitePage";
 import { findSiteByHost, getConfig } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { RANGES, parseRange } from "@/lib/ranges";
-import { checkpointView, siteIncidents } from "@/lib/status-data";
+import { monitorView, siteIncidents } from "@/lib/status-data";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +34,8 @@ export default async function StatusPage(props: PageProps<"/">) {
   return (
     <SitePage
       name={site.name}
-      checkpoints={site.checkpoints.map((cp) =>
-        checkpointView(db, site, cp, range, now),
+      monitors={site.monitors.map((cp) =>
+        monitorView(db, site, cp, range, now),
       )}
       incidents={siteIncidents(db, config, site, now)}
       range={RANGES[range].key}

@@ -1,5 +1,5 @@
 import { AutoRefresh } from "./AutoRefresh";
-import { CheckpointSection, type CheckpointView } from "./CheckpointSection";
+import { MonitorSection, type MonitorView } from "./MonitorSection";
 import { CurrentIncidents, PastIncidents } from "./IncidentList";
 import { RangeSwitch } from "./RangeSwitch";
 import { StatusHeadline } from "./StatusHeadline";
@@ -10,28 +10,26 @@ import {
   type SiteIncidents,
 } from "@/lib/incidents";
 import type { RangeKey } from "@/lib/ranges";
-import { overallStatus, pageOverall, type CheckpointStatus } from "@/lib/state";
+import { overallStatus, pageOverall, type MonitorStatus } from "@/lib/state";
 
-export interface CheckpointGroup {
+export interface MonitorGroup {
   name: string | null;
-  checkpoints: CheckpointView[];
+  monitors: MonitorView[];
 }
 
-/** Checkpoints in page order, gathered by group name as each first appears. */
-export function groupCheckpoints(
-  checkpoints: CheckpointView[],
-): CheckpointGroup[] {
-  const groups: CheckpointGroup[] = [];
-  for (const cp of checkpoints) {
+/** Monitors in page order, gathered by group name as each first appears. */
+export function groupMonitors(monitors: MonitorView[]): MonitorGroup[] {
+  const groups: MonitorGroup[] = [];
+  for (const cp of monitors) {
     const name = cp.group?.trim() ? cp.group.trim() : null;
     const group = groups.find((g) => g.name === name);
-    if (group) group.checkpoints.push(cp);
-    else groups.push({ name, checkpoints: [cp] });
+    if (group) group.monitors.push(cp);
+    else groups.push({ name, monitors: [cp] });
   }
   return groups;
 }
 
-function groupLine(statuses: CheckpointStatus[]): string {
+function groupLine(statuses: MonitorStatus[]): string {
   const down = statuses.filter((s) => s === "down").length;
   const slow = statuses.filter((s) => s === "slow").length;
   const n = statuses.length;
@@ -81,26 +79,26 @@ const FEEDS: Array<[string, string]> = [
 
 export function SitePage({
   name,
-  checkpoints,
+  monitors,
   incidents,
   range,
   now,
   intervalSeconds,
 }: {
   name: string;
-  checkpoints: CheckpointView[];
+  monitors: MonitorView[];
   incidents: SiteIncidents;
   range: RangeKey;
   now: number;
   intervalSeconds: number;
 }) {
-  const groups = groupCheckpoints(checkpoints);
+  const groups = groupMonitors(monitors);
   const grouped = groups.some((g) => g.name !== null);
-  // Which checkpoints an open incident names, so their rows say so.
+  // Which monitors an open incident names, so their rows say so.
   const affected = new Map<string, string>();
   for (const view of incidents.current) {
     if (view.kind !== "incident" || view.impact === "none") continue;
-    for (const cp of view.checkpoints)
+    for (const cp of view.monitors)
       if (!affected.has(cp)) affected.set(cp, view.title);
   }
   return (
@@ -109,10 +107,10 @@ export function SitePage({
       <StatusHeadline
         site={name}
         overall={pageOverall(
-          checkpoints.map((cp) => cp.status),
+          monitors.map((cp) => cp.status),
           openImpacts(incidents.current),
         )}
-        checkpoints={checkpoints}
+        monitors={monitors}
         now={now}
         incidents={incidents.current.filter(
           (i) => i.kind === "incident" && i.impact !== "none",
@@ -122,16 +120,16 @@ export function SitePage({
 
       <div className="mt-12 flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3 pb-5 sm:mt-16">
         <RangeSwitch current={range} />
-        <Legend slow={checkpoints.some((cp) => cp.slowThresholdMs !== null)} />
+        <Legend slow={monitors.some((cp) => cp.slowThresholdMs !== null)} />
       </div>
 
       {grouped
         ? groups.map((group) => {
-            const statuses = group.checkpoints.map((cp) => cp.status);
+            const statuses = group.monitors.map((cp) => cp.status);
             return (
               <section
                 key={group.name ?? "\0"}
-                aria-label={group.name ?? "Other checkpoints"}
+                aria-label={group.name ?? "Other monitors"}
                 className="border-t border-rule-strong pt-6"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 pb-2">
@@ -144,10 +142,10 @@ export function SitePage({
                     {groupLine(statuses)}
                   </span>
                 </div>
-                {group.checkpoints.map((cp) => (
-                  <CheckpointSection
+                {group.monitors.map((cp) => (
+                  <MonitorSection
                     key={cp.name}
-                    checkpoint={cp}
+                    monitor={cp}
                     range={range}
                     now={now}
                     incident={affected.get(cp.name) ?? null}
@@ -157,10 +155,10 @@ export function SitePage({
               </section>
             );
           })
-        : checkpoints.map((cp) => (
-            <CheckpointSection
+        : monitors.map((cp) => (
+            <MonitorSection
               key={cp.name}
-              checkpoint={cp}
+              monitor={cp}
               range={range}
               now={now}
               incident={affected.get(cp.name) ?? null}

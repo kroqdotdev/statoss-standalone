@@ -1,4 +1,4 @@
-import type { CheckpointConfig } from "./config";
+import type { MonitorConfig } from "./config";
 
 /** Everything one HTTP check needs to know. */
 export interface CheckSpec {
@@ -28,8 +28,8 @@ export const DEFAULT_TIMEOUT_MS = 10_000;
 /** Bodies are read up to this much when a keyword is set. */
 const MAX_BODY_BYTES = 1024 * 1024;
 
-/** The check a checkpoint's configuration describes. */
-export function checkpointSpec(cp: CheckpointConfig): CheckSpec {
+/** The check a monitor's configuration describes. */
+export function monitorSpec(cp: MonitorConfig): CheckSpec {
   return {
     url: cp.url,
     method: cp.method,

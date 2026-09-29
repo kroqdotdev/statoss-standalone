@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { CheckpointView } from "@/components/CheckpointSection";
+import type { MonitorView } from "@/components/MonitorSection";
 import { cached } from "./cache";
 import { getConfig, type AppConfig, type SiteConfig } from "./config";
 import { autoIncidents, getDb, getState } from "./db";
@@ -18,22 +18,22 @@ import {
   windowSummary,
 } from "./queries";
 import { RANGES, type RangeKey } from "./ranges";
-import type { CheckpointStatus } from "./state";
+import type { MonitorStatus } from "./state";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Everything the page shows for one checkpoint. The aggregate queries scan
+ * Everything the page shows for one monitor. The aggregate queries scan
  * the whole window, so they are computed once per scheduler tick and shared
  * by every request until new checks land.
  */
-export function checkpointView(
+export function monitorView(
   db: Database.Database,
   site: SiteConfig,
-  cp: SiteConfig["checkpoints"][number],
+  cp: SiteConfig["monitors"][number],
   range: RangeKey,
   now: number,
-): CheckpointView {
+): MonitorView {
   const spec = RANGES[range];
   const { start, end } = rangeWindow(spec, now);
   const state = getState(db, site.name, cp.name);
@@ -61,12 +61,12 @@ export function checkpointView(
   };
 }
 
-/** The current status of every checkpoint on a site, in page order. */
-export function checkpointStatuses(
+/** The current status of every monitor on a site, in page order. */
+export function monitorStatuses(
   db: Database.Database,
   site: SiteConfig,
-): CheckpointStatus[] {
-  return site.checkpoints.map(
+): MonitorStatus[] {
+  return site.monitors.map(
     (cp) => getState(db, site.name, cp.name)?.status ?? "unknown",
   );
 }
@@ -97,7 +97,7 @@ export function liveSite(site: SiteConfig, now: number) {
   const db = getDb();
   const config = getConfig();
   return {
-    statuses: checkpointStatuses(db, site),
+    statuses: monitorStatuses(db, site),
     incidents: siteIncidents(db, config, site, now),
   };
 }

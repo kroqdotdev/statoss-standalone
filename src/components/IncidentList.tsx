@@ -10,8 +10,8 @@ import {
 } from "@/lib/incidents";
 
 function scope(view: IncidentView): string {
-  if (view.checkpoints.length === 0) return "";
-  return ` Affects ${view.checkpoints.join(", ")}.`;
+  if (view.monitors.length === 0) return "";
+  return ` Affects ${view.monitors.join(", ")}.`;
 }
 
 /** One line about when: started, planned window, or resolved. */

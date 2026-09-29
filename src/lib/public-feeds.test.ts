@@ -14,7 +14,7 @@ const CONFIG = parseConfig(`
 sites:
   - name: webhooks.cc
     host: status.webhooks.cc
-    checkpoints:
+    monitors:
       - name: Main site
         group: Web
         url: https://webhooks.cc
@@ -26,11 +26,11 @@ const NOW = Date.UTC(2026, 8, 12, 15);
 const NONE: SiteIncidents = { current: [], past: [] };
 
 describe("statusJson", () => {
-  it("reports each checkpoint's state and the last day's figures", () => {
+  it("reports each monitor's state and the last day's figures", () => {
     const db = openDb(":memory:");
     setState(db, {
       site: SITE.name,
-      checkpoint: "Main site",
+      monitor: "Main site",
       status: "up",
       consecutiveFails: 0,
       consecutiveSlow: 0,
@@ -44,7 +44,7 @@ describe("statusJson", () => {
     ] as const) {
       insertCheck(db, {
         site: SITE.name,
-        checkpoint: "Main site",
+        monitor: "Main site",
         ts,
         ok,
         statusCode: ok ? 200 : 500,
@@ -53,13 +53,15 @@ describe("statusJson", () => {
       });
     }
     const json = statusJson(db, SITE, NONE, NOW);
+    // The old name stays for scripts written against 0.1.
+    expect(json.checkpoints).toEqual(json.monitors);
     expect(json.site).toEqual({
       name: "webhooks.cc",
       url: "https://status.webhooks.cc",
       status: "operational",
       updatedAt: "2026-09-12T15:00:00.000Z",
     });
-    expect(json.checkpoints).toEqual([
+    expect(json.monitors).toEqual([
       {
         name: "Main site",
         group: "Web",
@@ -96,7 +98,7 @@ describe("statusJson", () => {
           resolvedAt: null,
           auto: false,
           postmortem: null,
-          checkpoints: [],
+          monitors: [],
           updates: [],
         },
       ],
@@ -144,7 +146,7 @@ describe("feedXml", () => {
           resolvedAt: NOW - 2 * 60 * 60_000,
           auto: false,
           postmortem: null,
-          checkpoints: [],
+          monitors: [],
           updates: [
             {
               status: "resolved",
@@ -169,7 +171,7 @@ describe("feedXml", () => {
           resolvedAt: null,
           auto: false,
           postmortem: null,
-          checkpoints: [],
+          monitors: [],
           updates: [],
         },
       ],

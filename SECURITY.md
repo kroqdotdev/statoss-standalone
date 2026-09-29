@@ -14,6 +14,6 @@ You will get a first reply within 7 days. When a fix is ready, it is published o
 
 ## What to look at
 
-The status page is public by design. It shows checkpoint names, response times, and the reason for each failed check. It never shows the checked URLs, configuration values, or raw error messages.
+The status page is public by design. It shows monitor names, response times, and the reason for each failed check. It never shows the checked URLs, configuration values, or raw error messages.
 
 The server chooses a site by the `Host` header and answers 404 for unknown hostnames. Only the hostnames in the configuration are served.

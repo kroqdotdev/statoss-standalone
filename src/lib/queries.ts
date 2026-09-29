@@ -29,7 +29,7 @@ export interface Bucket {
   up: number;
   /** Failed checks whose error was a timeout. */
   timeouts: number;
-  /** Successful checks over the checkpoint's slow threshold. */
+  /** Successful checks over the monitor's slow threshold. */
   slow: number;
   /** Checks that ran inside a maintenance window: shown, not counted. */
   maintenance: number;
@@ -50,7 +50,7 @@ export const EMPTY_BUCKET: Omit<Bucket, "ts"> = {
 export function bucketSeries(
   db: Database.Database,
   site: string,
-  checkpoint: string,
+  monitor: string,
   spec: RangeSpec,
   now = Date.now(),
   slowThresholdMs: number | null = null,
@@ -67,14 +67,14 @@ export function bucketSeries(
               SUM(maintenance = 1) AS maintenance,
               ROUND(AVG(CASE WHEN ok = 1 AND maintenance = 0 THEN latency_ms END)) AS latencyMs
        FROM checks
-       WHERE site = ? AND checkpoint = ? AND ts >= ? AND ts < ?
+       WHERE site = ? AND monitor = ? AND ts >= ? AND ts < ?
        GROUP BY (ts / ${bucketMs}) * ${bucketMs}`,
     )
     .all(
       slowThresholdMs,
       slowThresholdMs,
       site,
-      checkpoint,
+      monitor,
       start,
       end,
     ) as Bucket[];
@@ -101,7 +101,7 @@ export interface WindowSummary {
 export function windowSummary(
   db: Database.Database,
   site: string,
-  checkpoint: string,
+  monitor: string,
   sinceMs: number,
   untilMs: number,
   slowThresholdMs: number | null = null,
@@ -115,13 +115,13 @@ export function windowSummary(
               COALESCE(SUM(maintenance = 1), 0) AS maintenance,
               ROUND(AVG(CASE WHEN ok = 1 AND maintenance = 0 THEN latency_ms END)) AS latencyMs
        FROM checks
-       WHERE site = ? AND checkpoint = ? AND ts >= ? AND ts < ?`,
+       WHERE site = ? AND monitor = ? AND ts >= ? AND ts < ?`,
     )
     .get(
       slowThresholdMs,
       slowThresholdMs,
       site,
-      checkpoint,
+      monitor,
       sinceMs,
       untilMs,
     ) as WindowSummary;
@@ -138,7 +138,7 @@ export interface FailureRun {
   errors: string[];
   /** Time of the first successful check after the run, or null if none yet. */
   recoveredTs: number | null;
-  /** True when the run includes the checkpoint's most recent check. */
+  /** True when the run includes the monitor's most recent check. */
   ongoing: boolean;
 }
 
@@ -151,16 +151,16 @@ export interface FailureRun {
 export function failureRuns(
   db: Database.Database,
   site: string,
-  checkpoint: string,
+  monitor: string,
   sinceMs: number,
   untilMs: number,
 ): FailureRun[] {
   const latest = db
     .prepare(
       `SELECT MAX(ts) AS ts FROM checks
-       WHERE site = ? AND checkpoint = ? AND maintenance = 0`,
+       WHERE site = ? AND monitor = ? AND maintenance = 0`,
     )
-    .get(site, checkpoint) as { ts: number | null };
+    .get(site, monitor) as { ts: number | null };
   // `grp` counts successful checks so far, so every failed check between two
   // successes shares a value, and the success that ends a run has grp + 1.
   const rows = db
@@ -169,7 +169,7 @@ export function failureRuns(
          SELECT ts, ok, error,
                 SUM(ok) OVER (ORDER BY ts ROWS UNBOUNDED PRECEDING) AS grp
          FROM checks
-         WHERE site = ? AND checkpoint = ? AND ts >= ? AND ts < ? AND maintenance = 0
+         WHERE site = ? AND monitor = ? AND ts >= ? AND ts < ? AND maintenance = 0
        ),
        runs AS (
          SELECT grp,
@@ -188,7 +188,7 @@ export function failureRuns(
        FROM runs
        ORDER BY startTs DESC`,
     )
-    .all(site, checkpoint, sinceMs, untilMs) as Array<{
+    .all(site, monitor, sinceMs, untilMs) as Array<{
     startTs: number;
     endTs: number;
     checks: number;

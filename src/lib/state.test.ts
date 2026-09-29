@@ -3,16 +3,16 @@ import {
   applyResult,
   overallStatus,
   pageOverall,
-  type CheckpointState,
+  type MonitorState,
 } from "./state";
 
-const UP: CheckpointState = {
+const UP: MonitorState = {
   status: "up",
   consecutiveFails: 0,
   consecutiveSlow: 0,
   since: 100,
 };
-const DOWN: CheckpointState = {
+const DOWN: MonitorState = {
   status: "down",
   consecutiveFails: 2,
   consecutiveSlow: 0,
@@ -20,7 +20,7 @@ const DOWN: CheckpointState = {
 };
 
 describe("applyResult", () => {
-  it("starts unknown checkpoints as up without a transition", () => {
+  it("starts unknown monitors as up without a transition", () => {
     const { next, transition } = applyResult(undefined, true, 1000);
     expect(next).toEqual({ ...UP, since: 1000 });
     expect(transition).toBeNull();
@@ -100,7 +100,7 @@ describe("applyResult", () => {
   });
 
   it("goes down from slow after two failures", () => {
-    const slow: CheckpointState = { ...UP, status: "slow", consecutiveSlow: 2 };
+    const slow: MonitorState = { ...UP, status: "slow", consecutiveSlow: 2 };
     const one = applyResult(slow, false, 2000);
     expect(one.next.status).toBe("slow");
     const two = applyResult(one.next, false, 3000);
@@ -110,7 +110,7 @@ describe("applyResult", () => {
 });
 
 describe("overallStatus", () => {
-  it("is operational when every checkpoint is up (or there are none)", () => {
+  it("is operational when every monitor is up (or there are none)", () => {
     expect(overallStatus(["up", "up"])).toBe("operational");
     expect(overallStatus([])).toBe("operational");
   });
@@ -128,11 +128,11 @@ describe("overallStatus", () => {
     expect(overallStatus(["slow", "down"])).toBe("partial");
   });
 
-  it("is unknown until any checkpoint has been checked", () => {
+  it("is unknown until any monitor has been checked", () => {
     expect(overallStatus(["unknown", "unknown"])).toBe("unknown");
   });
 
-  it("ignores unchecked checkpoints once others are known", () => {
+  it("ignores unchecked monitors once others are known", () => {
     expect(overallStatus(["up", "unknown"])).toBe("operational");
     expect(overallStatus(["down", "unknown"])).toBe("major");
     expect(overallStatus(["down", "up", "unknown"])).toBe("partial");

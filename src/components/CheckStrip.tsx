@@ -25,7 +25,7 @@ interface Props {
   buckets: Bucket[];
   range: RangeKey;
   summary: WindowSummary;
-  /** The checkpoint name, for assistive technology. */
+  /** The monitor name, for assistive technology. */
   name: string;
   /** Draws the slow line and colours buckets over it. */
   slowThresholdMs?: number | null;

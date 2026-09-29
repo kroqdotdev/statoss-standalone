@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { checkpointSpec, runCheck } from "./checker";
+import { monitorSpec, runCheck } from "./checker";
 import { parseConfig } from "./config";
 
 let server: Server;
@@ -144,13 +144,13 @@ describe("runCheck", () => {
   });
 });
 
-describe("checkpointSpec", () => {
+describe("monitorSpec", () => {
   it("carries every request option from the config", () => {
     const config = parseConfig(`
 sites:
   - name: s
     host: s.example.com
-    checkpoints:
+    monitors:
       - name: API
         url: https://api.example.com/health
         method: POST
@@ -162,7 +162,7 @@ sites:
         keywordMode: absent
         slowThresholdMs: 800
 `);
-    expect(checkpointSpec(config.sites[0].checkpoints[0])).toEqual({
+    expect(monitorSpec(config.sites[0].monitors[0])).toEqual({
       url: "https://api.example.com/health",
       method: "POST",
       headers: { Authorization: "Bearer x" },
@@ -178,11 +178,11 @@ sites:
 sites:
   - name: s
     host: s.example.com
-    checkpoints:
+    monitors:
       - name: Home
         url: https://example.com
 `);
-    expect(checkpointSpec(config.sites[0].checkpoints[0])).toEqual({
+    expect(monitorSpec(config.sites[0].monitors[0])).toEqual({
       url: "https://example.com",
       method: "GET",
       headers: {},

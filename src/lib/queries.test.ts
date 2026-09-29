@@ -22,7 +22,7 @@ function seed(
 ) {
   insertCheck(db, {
     site: "s",
-    checkpoint: "c",
+    monitor: "c",
     ts,
     ok,
     statusCode: ok ? 200 : 500,
@@ -66,7 +66,7 @@ describe("bucketSeries", () => {
     seed(db, slot + 2000, 1, 300);
     insertCheck(db, {
       site: "s",
-      checkpoint: "c",
+      monitor: "c",
       ts: slot + 3000,
       ok: 0,
       statusCode: null,
@@ -112,7 +112,7 @@ describe("windowSummary", () => {
     seed(db, NOW - 2000, 1, 200);
     insertCheck(db, {
       site: "s",
-      checkpoint: "c",
+      monitor: "c",
       ts: NOW - 1000,
       ok: 0,
       statusCode: null,
@@ -166,7 +166,7 @@ describe("windowSummary", () => {
     seed(db, NOW - 3000, 1, 100);
     insertCheck(db, {
       site: "s",
-      checkpoint: "c",
+      monitor: "c",
       ts: NOW - 2000,
       ok: 0,
       statusCode: 500,
@@ -199,7 +199,7 @@ describe("failureRuns", () => {
   function fail(db: ReturnType<typeof openDb>, ts: number, error: string) {
     insertCheck(db, {
       site: "s",
-      checkpoint: "c",
+      monitor: "c",
       ts,
       ok: 0,
       statusCode: error.startsWith("unexpected") ? 503 : null,

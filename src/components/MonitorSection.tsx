@@ -3,14 +3,14 @@ import { FailureList } from "./FailureList";
 import { formatDuration, formatPercent, formatUtcDateTime } from "@/lib/format";
 import type { Bucket, FailureRun, WindowSummary } from "@/lib/queries";
 import type { RangeKey } from "@/lib/ranges";
-import type { CheckpointStatus } from "@/lib/state";
+import type { MonitorStatus } from "@/lib/state";
 
-export interface CheckpointView {
+export interface MonitorView {
   name: string;
-  /** Checkpoints with the same group are shown together. */
+  /** Monitors with the same group are shown together. */
   group: string | null;
   slowThresholdMs: number | null;
-  status: CheckpointStatus;
+  status: MonitorStatus;
   /** When the current status began, or null before the first check. */
   since: number | null;
   buckets: Bucket[];
@@ -20,7 +20,7 @@ export interface CheckpointView {
   last24h: WindowSummary;
 }
 
-function statusLine(cp: CheckpointView, now: number): string {
+function statusLine(cp: MonitorView, now: number): string {
   if (cp.status === "unknown" || cp.since === null)
     return "Waiting for the first check";
   const duration = formatDuration(now - cp.since);
@@ -29,33 +29,33 @@ function statusLine(cp: CheckpointView, now: number): string {
   return `Down for ${duration}, since ${formatUtcDateTime(cp.since, now)}`;
 }
 
-export function CheckpointSection({
-  checkpoint,
+export function MonitorSection({
+  monitor,
   range,
   now,
   incident = null,
   as: Heading = "h2",
 }: {
-  checkpoint: CheckpointView;
+  monitor: MonitorView;
   range: RangeKey;
   now: number;
-  /** The title of an open incident that names this checkpoint, if any. */
+  /** The title of an open incident that names this monitor, if any. */
   incident?: string | null;
-  /** Inside a group the checkpoint heading sits one level down. */
+  /** Inside a group the monitor heading sits one level down. */
   as?: "h2" | "h3";
 }) {
   const tone =
-    checkpoint.status === "down"
+    monitor.status === "down"
       ? "font-medium text-fail"
-      : checkpoint.status === "slow"
+      : monitor.status === "slow"
         ? "font-medium text-slow"
         : "text-muted";
-  const pct = formatPercent(checkpoint.summary.up, checkpoint.summary.total);
+  const pct = formatPercent(monitor.summary.up, monitor.summary.total);
   return (
     <section className="border-t border-rule py-8">
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <Heading className="page-heading text-[17px] font-medium leading-tight">
-          {checkpoint.name}
+          {monitor.name}
         </Heading>
         <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[15px]">
           {incident !== null && (
@@ -63,7 +63,7 @@ export function CheckpointSection({
               Incident open
             </span>
           )}
-          <span className={tone}>{statusLine(checkpoint, now)}</span>
+          <span className={tone}>{statusLine(monitor, now)}</span>
           {pct !== "" && (
             <span className="text-ink" title="Checks passed in this window">
               {pct}
@@ -72,13 +72,13 @@ export function CheckpointSection({
         </p>
       </div>
       <CheckStrip
-        buckets={checkpoint.buckets}
+        buckets={monitor.buckets}
         range={range}
-        summary={checkpoint.summary}
-        name={checkpoint.name}
-        slowThresholdMs={checkpoint.slowThresholdMs}
+        summary={monitor.summary}
+        name={monitor.name}
+        slowThresholdMs={monitor.slowThresholdMs}
       />
-      <FailureList runs={checkpoint.runs} now={now} />
+      <FailureList runs={monitor.runs} now={now} />
     </section>
   );
 }

@@ -6,7 +6,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS checks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   site TEXT NOT NULL,
-  checkpoint TEXT NOT NULL,
+  monitor TEXT NOT NULL,
   ts INTEGER NOT NULL,
   ok INTEGER NOT NULL,
   status_code INTEGER,
@@ -14,22 +14,22 @@ CREATE TABLE IF NOT EXISTS checks (
   error TEXT,
   maintenance INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_checks_site_cp_ts ON checks(site, checkpoint, ts);
+CREATE INDEX IF NOT EXISTS idx_checks_site_cp_ts ON checks(site, monitor, ts);
 CREATE INDEX IF NOT EXISTS idx_checks_ts ON checks(ts);
-CREATE TABLE IF NOT EXISTS checkpoint_state (
+CREATE TABLE IF NOT EXISTS monitor_state (
   site TEXT NOT NULL,
-  checkpoint TEXT NOT NULL,
+  monitor TEXT NOT NULL,
   status TEXT NOT NULL,
   consecutive_fails INTEGER NOT NULL,
   consecutive_slow INTEGER NOT NULL DEFAULT 0,
   since INTEGER NOT NULL,
   last_alert_at INTEGER,
-  PRIMARY KEY (site, checkpoint)
+  PRIMARY KEY (site, monitor)
 );
 CREATE TABLE IF NOT EXISTS auto_incident (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   site TEXT NOT NULL,
-  checkpoint TEXT NOT NULL,
+  monitor TEXT NOT NULL,
   started_at INTEGER NOT NULL,
   resolved_at INTEGER,
   error TEXT
@@ -43,9 +43,36 @@ CREATE INDEX IF NOT EXISTS idx_auto_incident_site ON auto_incident(site, started
  */
 const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ["checks", "maintenance", "INTEGER NOT NULL DEFAULT 0"],
-  ["checkpoint_state", "consecutive_slow", "INTEGER NOT NULL DEFAULT 0"],
-  ["checkpoint_state", "last_alert_at", "INTEGER"],
+  ["monitor_state", "consecutive_slow", "INTEGER NOT NULL DEFAULT 0"],
+  ["monitor_state", "last_alert_at", "INTEGER"],
 ];
+
+/**
+ * What the first releases called monitors was "checkpoint", in a table
+ * name and three columns. A database from then is renamed in place on the
+ * next start, before anything else reads it; SQLite's RENAME is instant.
+ */
+function renameCheckpoints(db: Database.Database): void {
+  const tables = new Set(
+    (
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as Array<{ name: string }>
+    ).map((t) => t.name),
+  );
+  if (tables.has("checkpoint_state") && !tables.has("monitor_state")) {
+    db.exec("ALTER TABLE checkpoint_state RENAME TO monitor_state");
+    tables.add("monitor_state");
+  }
+  for (const table of ["checks", "monitor_state", "auto_incident"]) {
+    if (!tables.has(table)) continue;
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+      name: string;
+    }>;
+    if (columns.some((c) => c.name === "checkpoint"))
+      db.exec(`ALTER TABLE ${table} RENAME COLUMN checkpoint TO monitor`);
+  }
+}
 
 function migrate(db: Database.Database): void {
   for (const [table, column, ddl] of ADDED_COLUMNS) {
@@ -59,7 +86,7 @@ function migrate(db: Database.Database): void {
 
 export interface CheckRow {
   site: string;
-  checkpoint: string;
+  monitor: string;
   ts: number;
   ok: 0 | 1;
   statusCode: number | null;
@@ -71,7 +98,7 @@ export interface CheckRow {
 
 export interface StateRow {
   site: string;
-  checkpoint: string;
+  monitor: string;
   status: "up" | "slow" | "down";
   consecutiveFails: number;
   consecutiveSlow: number;
@@ -88,6 +115,7 @@ export function openDb(
   }
   const db = new Database(path);
   db.pragma("journal_mode = WAL");
+  renameCheckpoints(db);
   db.exec(SCHEMA);
   migrate(db);
   return db;
@@ -102,11 +130,11 @@ export function getDb(): Database.Database {
 
 export function insertCheck(db: Database.Database, row: CheckRow): void {
   db.prepare(
-    `INSERT INTO checks (site, checkpoint, ts, ok, status_code, latency_ms, error, maintenance)
+    `INSERT INTO checks (site, monitor, ts, ok, status_code, latency_ms, error, maintenance)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     row.site,
-    row.checkpoint,
+    row.monitor,
     row.ts,
     row.ok,
     row.statusCode,
@@ -119,26 +147,26 @@ export function insertCheck(db: Database.Database, row: CheckRow): void {
 export function getState(
   db: Database.Database,
   site: string,
-  checkpoint: string,
+  monitor: string,
 ): StateRow | undefined {
   return db
     .prepare(
-      `SELECT site, checkpoint, status,
+      `SELECT site, monitor, status,
               consecutive_fails AS consecutiveFails,
               consecutive_slow AS consecutiveSlow,
               since,
               last_alert_at AS lastAlertAt
-       FROM checkpoint_state WHERE site = ? AND checkpoint = ?`,
+       FROM monitor_state WHERE site = ? AND monitor = ?`,
     )
-    .get(site, checkpoint) as StateRow | undefined;
+    .get(site, monitor) as StateRow | undefined;
 }
 
 export function setState(db: Database.Database, state: StateRow): void {
   db.prepare(
-    `INSERT INTO checkpoint_state
-       (site, checkpoint, status, consecutive_fails, consecutive_slow, since, last_alert_at)
+    `INSERT INTO monitor_state
+       (site, monitor, status, consecutive_fails, consecutive_slow, since, last_alert_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(site, checkpoint) DO UPDATE SET
+     ON CONFLICT(site, monitor) DO UPDATE SET
        status = excluded.status,
        consecutive_fails = excluded.consecutive_fails,
        consecutive_slow = excluded.consecutive_slow,
@@ -146,7 +174,7 @@ export function setState(db: Database.Database, state: StateRow): void {
        last_alert_at = excluded.last_alert_at`,
   ).run(
     state.site,
-    state.checkpoint,
+    state.monitor,
     state.status,
     state.consecutiveFails,
     state.consecutiveSlow,
@@ -171,38 +199,38 @@ export function pruneOldChecks(db: Database.Database, before: number): number {
 export interface AutoIncidentRow {
   id: number;
   site: string;
-  checkpoint: string;
+  monitor: string;
   startedAt: number;
   resolvedAt: number | null;
   error: string | null;
 }
 
-const AUTO_COLUMNS = `id, site, checkpoint, started_at AS startedAt, resolved_at AS resolvedAt, error`;
+const AUTO_COLUMNS = `id, site, monitor, started_at AS startedAt, resolved_at AS resolvedAt, error`;
 
 export function openAutoIncident(
   db: Database.Database,
   site: string,
-  checkpoint: string,
+  monitor: string,
   now: number,
   error: string | null,
 ): AutoIncidentRow | null {
   const open = db
     .prepare(
       `SELECT ${AUTO_COLUMNS} FROM auto_incident
-       WHERE site = ? AND checkpoint = ? AND resolved_at IS NULL`,
+       WHERE site = ? AND monitor = ? AND resolved_at IS NULL`,
     )
-    .get(site, checkpoint) as AutoIncidentRow | undefined;
+    .get(site, monitor) as AutoIncidentRow | undefined;
   if (open) return null;
   const result = db
     .prepare(
-      `INSERT INTO auto_incident (site, checkpoint, started_at, error)
+      `INSERT INTO auto_incident (site, monitor, started_at, error)
        VALUES (?, ?, ?, ?)`,
     )
-    .run(site, checkpoint, now, error);
+    .run(site, monitor, now, error);
   return {
     id: Number(result.lastInsertRowid),
     site,
-    checkpoint,
+    monitor,
     startedAt: now,
     resolvedAt: null,
     error,
@@ -212,15 +240,15 @@ export function openAutoIncident(
 export function resolveAutoIncident(
   db: Database.Database,
   site: string,
-  checkpoint: string,
+  monitor: string,
   now: number,
 ): AutoIncidentRow | null {
   const open = db
     .prepare(
       `SELECT ${AUTO_COLUMNS} FROM auto_incident
-       WHERE site = ? AND checkpoint = ? AND resolved_at IS NULL`,
+       WHERE site = ? AND monitor = ? AND resolved_at IS NULL`,
     )
-    .get(site, checkpoint) as AutoIncidentRow | undefined;
+    .get(site, monitor) as AutoIncidentRow | undefined;
   if (!open) return null;
   db.prepare("UPDATE auto_incident SET resolved_at = ? WHERE id = ?").run(
     now,

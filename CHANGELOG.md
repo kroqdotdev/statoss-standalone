@@ -11,6 +11,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- Checkpoints are called monitors: on the page, in the configuration, the docs, `status.json` and the webhook body. Nothing written for 0.1 breaks: `checkpoints:` in a configuration or an incident file still works, `status.json` also lists them as `checkpoints`, the webhook body also carries `checkpoint`, and a 0.1 database is renamed in place on the next start.
+- The status page has the look of the pages StatOSS hosts: Barlow and Barlow Condensed, self-hosted, and a neutral paper by day and charcoal by night.
 - `docker-compose.yml` runs the published image. The quick start begins with `docker run` and Docker Compose on that image.
 - The image declares `/data` as a volume owned by the `node` user, so a new named volume is writable without a `chown`.
 - The image keeps only the SQLite binary for its own platform.

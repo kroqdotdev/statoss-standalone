@@ -6,8 +6,8 @@ started: 2026-09-12T14:05:00Z
 # none (default), degraded, partial or major. Anything but none sets the
 # headline of the page while the incident is open.
 impact: partial
-# Checkpoints affected. Optional.
-checkpoints: [API health]
+# Monitors affected. Optional.
+monitors: [API health]
 updates:
   - at: 2026-09-12T14:05:00Z
     status: investigating
