@@ -73,7 +73,7 @@ export function CurrentIncidents({
           className="rounded-xl border border-rule bg-none px-5 py-4"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-            <h2 className="flex items-center gap-2.5 text-[17px] font-medium leading-tight">
+            <h2 className="page-heading flex items-center gap-2.5 text-[17px] font-medium leading-tight">
               <span
                 aria-hidden="true"
                 className={`block size-2 shrink-0 rounded-full ${
@@ -117,7 +117,9 @@ export function PastIncidents({
       aria-label="Past incidents"
       className="mt-4 border-t border-rule py-8"
     >
-      <h2 className="text-[17px] font-medium leading-tight">Past incidents</h2>
+      <h2 className="page-heading text-[17px] font-medium leading-tight">
+        Past incidents
+      </h2>
       {incidents.length === 0 ? (
         <p className="mt-2 text-[14px] text-muted">
           No incidents in the last {days} days.
@@ -126,7 +128,7 @@ export function PastIncidents({
         <div className="mt-4 space-y-6">
           {incidents.map((view) => (
             <article key={view.id}>
-              <h3 className="text-[15px] font-medium leading-tight">
+              <h3 className="page-minor text-[15px] font-medium leading-tight">
                 {view.kind === "maintenance" ? "Maintenance: " : ""}
                 {view.title}
               </h3>
@@ -137,7 +139,7 @@ export function PastIncidents({
               <Updates view={view} now={now} />
               {view.postmortem && (
                 <div className="mt-3 border-l-2 border-rule pl-4 text-[14px] leading-relaxed">
-                  <p className="mb-1 text-[12.5px] font-medium uppercase tracking-wide text-muted">
+                  <p className="page-label mb-1 text-[12.5px] font-medium uppercase tracking-wide text-muted">
                     Post-mortem
                   </p>
                   <p className="whitespace-pre-line">{view.postmortem}</p>
