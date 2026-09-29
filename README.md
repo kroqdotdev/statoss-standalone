@@ -38,21 +38,63 @@ The server reads the `Host` header of each request and shows the site with the m
 
 ## Requirements
 
-- Docker with Docker Compose, to run it.
+- Docker, to run it. Docker Compose is optional.
 - A reverse proxy that terminates TLS, for example Caddy or nginx.
 - Node.js 22 and pnpm, only if you want to develop it.
 
-## Quick start with Docker
+## Quick start
 
-1. Clone the repository and enter it.
-2. Create the data directory and the configuration:
+A ready image is published for linux/amd64 and linux/arm64:
+
+```
+ghcr.io/kroqdotdev/statoss-standalone
+```
+
+`latest` follows the main branch. Releases are also tagged by version, for example `1.2.3`, `1.2` and `1`. Every build is tagged `sha-` and the short commit hash.
+
+The container runs as the `node` user (user ID 1000). It reads `/data/config.yaml`, reads incidents from `/data/incidents`, and keeps its database in `/data/status.db`.
+
+### Run the image with docker run
+
+1. Download the example configuration and edit it. The file explains every field.
 
    ```sh
-   mkdir data
-   cp config.example.yaml data/config.yaml
+   curl -o config.yaml https://raw.githubusercontent.com/kroqdotdev/statoss-standalone/main/config.example.yaml
    ```
 
-3. Edit `data/config.yaml`. The example file explains every field.
+2. Start the container:
+
+   ```sh
+   docker run -d --name statoss --restart unless-stopped -p 127.0.0.1:3000:3000 -v "$PWD/config.yaml:/data/config.yaml:ro" -v statoss-data:/data ghcr.io/kroqdotdev/statoss-standalone:latest
+   ```
+
+The database is kept in the `statoss-data` volume. For email alerts, add `-e SMTP_PASS=your-password`. To write incident files on the host, create an `incidents` folder and add `-v "$PWD/incidents:/data/incidents:ro"`.
+
+### Run the image with Docker Compose
+
+1. Create a folder for it with a `data` directory and the example configuration:
+
+   ```sh
+   mkdir -p statoss/data && cd statoss
+   curl -o data/config.yaml https://raw.githubusercontent.com/kroqdotdev/statoss-standalone/main/config.example.yaml
+   ```
+
+2. Edit `data/config.yaml`. The example file explains every field.
+3. Save this as `docker-compose.yml`:
+
+   ```yaml
+   services:
+     statoss:
+       image: ghcr.io/kroqdotdev/statoss-standalone:latest
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:3000:3000"
+       environment:
+         - SMTP_PASS=${SMTP_PASS}
+       volumes:
+         - ./data:/data
+   ```
+
 4. If you use email alerts, put the SMTP password in `.env`:
 
    ```sh
@@ -61,16 +103,36 @@ The server reads the `Host` header of each request and shows the site with the m
 
    Any other secret the configuration refers to as `${NAME}` goes in `.env` too, and in the `environment` list of `docker-compose.yml`, so the container can see it.
 
-5. Build and start the container:
+5. Make the `data` directory writable by user ID 1000 and start the container:
 
    ```sh
    sudo chown -R 1000:1000 data
-   docker compose up -d --build
+   docker compose up -d
    ```
 
-The container listens on `127.0.0.1:3000` and runs as the `node` user (user ID 1000), so the `data` directory must be writable by that user.
+### Build from source
 
-6. Point your reverse proxy at it. For Caddy, add one block for each site:
+1. Clone the repository and enter it.
+2. Create the data directory and the configuration, then edit `data/config.yaml`:
+
+   ```sh
+   mkdir data
+   cp config.example.yaml data/config.yaml
+   ```
+
+3. Put secrets in `.env` as in the Compose steps above.
+4. Build and start the container. `docker-compose.build.yml` adds the build to the Compose file in the repository.
+
+   ```sh
+   sudo chown -R 1000:1000 data
+   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+   ```
+
+### Put it online
+
+The container listens on `127.0.0.1:3000`.
+
+1. Point your reverse proxy at it. For Caddy, add one block for each site:
 
    ```
    status.example.com {
@@ -78,7 +140,7 @@ The container listens on `127.0.0.1:3000` and runs as the `node` user (user ID 1
    }
    ```
 
-7. Create a DNS record for each status hostname.
+2. Create a DNS record for each status hostname.
 
 Open `https://status.example.com` to see the page.
 
@@ -187,7 +249,7 @@ The JSON and badge endpoints allow cross-origin requests.
 - **Change the configuration:** edit `data/config.yaml`, then run `docker compose restart`.
 - **Open an incident:** add a file to `data/incidents/`. The page shows it on the next request. Edit the file to post updates and to resolve it.
 - **Change `.env`:** run `docker compose up -d`. A restart alone does not load new environment variables.
-- **Update to a new version:** pull the new code, then run `docker compose up -d --build`. A database from an older version gets its new columns on the first start.
+- **Update to a new version:** run `docker compose pull`, then `docker compose up -d`. From source, pull the new code and run the build command again. A database from an older version gets its new columns on the first start.
 - **Check health:** `docker compose ps` shows `healthy` when the server answers requests.
 - **Back up:** copy `data/status.db` while the container is stopped, or use `sqlite3 data/status.db ".backup backup.db"` while it runs.
 

@@ -4,6 +4,17 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+### Added
+
+- A published image for linux/amd64 and linux/arm64 at `ghcr.io/kroqdotdev/statoss-standalone`, built by the Image workflow on every push to main and every version tag.
+- `docker-compose.build.yml`, to build the image from a checkout instead.
+
+### Changed
+
+- `docker-compose.yml` runs the published image. The quick start begins with `docker run` and Docker Compose on that image.
+- The image declares `/data` as a volume owned by the `node` user, so a new named volume is writable without a `chown`.
+- The image keeps only the SQLite binary for its own platform.
+
 ## 0.1.0 - 2026-09-10
 
 First public release as statoss-standalone.
