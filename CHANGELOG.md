@@ -17,6 +17,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - The image declares `/data` as a volume owned by the `node` user, so a new named volume is writable without a `chown`.
 - The image keeps only the SQLite binary for its own platform.
 
+### Security
+
+- Next.js 16.3.6, which fixes two critical advisories: remote code execution through the image optimiser, and on servers running on Windows. Anyone running 0.1 or an earlier image should update.
+- nodemailer 10.0.12, fixing its advisories about address parsing, file access and DNS caching.
+- vitest 4.1.11 for development, and patched versions of sharp, js-yaml and nanoid underneath. `pnpm audit` finds nothing.
+
 ## 0.1.0 - 2026-09-10
 
 First public release as statoss-standalone.
