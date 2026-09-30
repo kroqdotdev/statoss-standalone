@@ -5,16 +5,19 @@ import { cached, cachedFor } from "./cache";
 import {
   getConfig,
   LATENCY_TYPES,
+  monitorIntervalSeconds,
   type AppConfig,
+  type ComponentState,
   type SiteConfig,
 } from "./config";
 import { autoIncidents, getDb, getState, lastCheckOk } from "./db";
 import { readIncidentFiles } from "./incident-files";
 import {
   autoIncidentView,
-  INCIDENT_HISTORY_DAYS,
   maintenanceView,
+  PAGE_INCIDENT_DAYS,
   splitIncidents,
+  type IncidentView,
   type SiteIncidents,
 } from "./incidents";
 import {
@@ -26,9 +29,16 @@ import {
   windowSummary,
 } from "./queries";
 import { RANGE_TTL_MS, RANGES, type RangeKey } from "./ranges";
-import type { MonitorStatus } from "./state";
+import { checkLate, type MonitorStatus } from "./state";
+import {
+  componentState,
+  componentStatus,
+  statedByName,
+  type Stated,
+} from "./stated";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 /**
  * Everything the page shows for one monitor. The last 24 hours are read
@@ -45,6 +55,7 @@ export function monitorView(
   range: RangeKey,
   now: number,
   retentionDays = 90,
+  checkIntervalSeconds = 60,
 ): MonitorView {
   const spec = RANGES[range];
   const { start, end } = rangeWindow(spec, now);
@@ -80,7 +91,7 @@ export function monitorView(
     expiresAt: state?.expiresAt ?? null,
     group: cp.group ?? null,
     slowThresholdMs: threshold,
-    status: state?.status ?? "unknown",
+    ...liveStatus(db, { checkIntervalSeconds }, site, cp, now),
     since: state?.since ?? null,
     ...data,
     last24h,
@@ -109,43 +120,137 @@ export function siteBudget(
   );
 }
 
-/** The current status of every monitor on a site, in page order. */
-export function monitorStatuses(
-  db: Database.Database,
+/** A component as the page shows it. */
+export interface ComponentView {
+  name: string;
+  group: string | null;
+  description: string | null;
+  state: ComponentState;
+}
+
+export interface SiteRows {
+  monitors: MonitorView[];
+  components: ComponentView[];
+  /** What open incidents and maintenance say about each row, by name. */
+  stated: Map<string, Stated>;
+}
+
+/** A site's components, each in the worse of its own state and an open incident's. */
+export function componentViews(
   site: SiteConfig,
-): MonitorStatus[] {
-  return site.monitors.map(
-    (cp) => getState(db, site.name, cp.name)?.status ?? "unknown",
-  );
+  stated: Map<string, Stated>,
+): ComponentView[] {
+  return site.components.map((c) => ({
+    name: c.name,
+    group: c.group ?? null,
+    description: c.description ?? null,
+    state: componentState(c.state, stated.get(c.name)),
+  }));
+}
+
+/** Every name on a site that an incident or a window can cover. */
+export function rowNames(site: SiteConfig): string[] {
+  return [
+    ...site.monitors.map((m) => m.name),
+    ...site.components.map((c) => c.name),
+  ];
 }
 
 /**
- * A site's incidents from all three sources: files in the incidents folder,
- * maintenance windows in the configuration, and outages the checker opened.
+ * A monitor's status as the checks have it, or "unknown" once they have
+ * stopped arriving: an old state is not shown as the current one.
  */
+export function liveStatus(
+  db: Database.Database,
+  config: Pick<AppConfig, "checkIntervalSeconds">,
+  site: SiteConfig,
+  cp: SiteConfig["monitors"][number],
+  now: number,
+): { status: MonitorStatus; stale: boolean; checkedAt: number | null } {
+  const state = getState(db, site.name, cp.name);
+  const stale =
+    state !== undefined &&
+    checkLate(
+      state.checkedAt,
+      monitorIntervalSeconds(cp, config.checkIntervalSeconds),
+      now,
+    );
+  return {
+    status: stale ? "unknown" : (state?.status ?? "unknown"),
+    stale,
+    checkedAt: state?.checkedAt ?? null,
+  };
+}
+
+/**
+ * The statuses the headline, the badge and status.json's site status are
+ * made from: every monitor's checks, and every component's state.
+ */
+export function siteStatuses(
+  db: Database.Database,
+  config: AppConfig,
+  site: SiteConfig,
+  current: IncidentView[],
+  now: number,
+): MonitorStatus[] {
+  const stated = statedByName(current, rowNames(site), now);
+  return [
+    ...site.monitors.map((cp) => liveStatus(db, config, site, cp, now).status),
+    ...componentViews(site, stated).map((c) => componentStatus(c.state)),
+  ];
+}
+
+/**
+ * Every incident and window of a site, from all three sources: files in
+ * the incidents folder, maintenance windows in the configuration, and
+ * outages the checker opened (open ones, and those started after `since`).
+ */
+export function siteIncidentViews(
+  db: Database.Database,
+  config: AppConfig,
+  site: SiteConfig,
+  since: number,
+): IncidentView[] {
+  return [
+    ...(readIncidentFiles(config).get(site.name) ?? []),
+    ...site.maintenance.map((window) => maintenanceView(window)),
+    ...cached(
+      `incidents\0${site.name}\0${since === 0 ? "all" : "recent"}`,
+      () => autoIncidents(db, site.name, since).map(autoIncidentView),
+    ),
+  ];
+}
+
+/** What the page shows: current, and the last `days` of past ones. */
 export function siteIncidents(
   db: Database.Database,
   config: AppConfig,
   site: SiteConfig,
   now: number,
+  days = PAGE_INCIDENT_DAYS,
 ): SiteIncidents {
-  const since = now - INCIDENT_HISTORY_DAYS * DAY_MS;
-  const views = [
-    ...(readIncidentFiles(config).get(site.name) ?? []),
-    ...site.maintenance.map((window) => maintenanceView(window)),
-    ...cached(`incidents\0${site.name}`, () =>
-      autoIncidents(db, site.name, since).map(autoIncidentView),
-    ),
-  ];
-  return splitIncidents(views, now);
+  // Rounded to the hour, so the cached list is not thrown away each request.
+  const since = Math.floor((now - days * DAY_MS) / HOUR_MS) * HOUR_MS;
+  return splitIncidents(siteIncidentViews(db, config, site, since), now, days);
+}
+
+/** One incident or window by its id, or undefined. */
+export function findIncident(
+  db: Database.Database,
+  config: AppConfig,
+  site: SiteConfig,
+  id: string,
+): IncidentView | undefined {
+  return siteIncidentViews(db, config, site, 0).find((v) => v.id === id);
 }
 
 /** The live pieces the route handlers need for a site. */
-export function liveSite(site: SiteConfig, now: number) {
+export function liveSite(site: SiteConfig, now: number, days?: number) {
   const db = getDb();
   const config = getConfig();
+  const incidents = siteIncidents(db, config, site, now, days);
   return {
-    statuses: monitorStatuses(db, site),
-    incidents: siteIncidents(db, config, site, now),
+    statuses: siteStatuses(db, config, site, incidents.current, now),
+    incidents,
   };
 }

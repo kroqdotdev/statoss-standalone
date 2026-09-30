@@ -209,7 +209,7 @@ sites:
         VALID +
           "    maintenance:\n      - title: x\n        start: 2026-09-20T01:00:00Z\n        end: 2026-09-20T02:00:00Z\n        monitors: [Nope]\n",
       ),
-    ).toThrow(/"Nope" is not a monitor of this site/);
+    ).toThrow(/"Nope" is not a monitor or component of this site/);
   });
 
   it("rejects a config with no sites", () => {

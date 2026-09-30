@@ -1,15 +1,18 @@
 import type Database from "better-sqlite3";
 import type { ErrorBudget } from "./budget";
-import { siteUrl, type SiteConfig } from "./config";
+import { siteUrl, type ComponentState, type SiteConfig } from "./config";
 import { getState } from "./db";
 import { formatUtcStamp } from "./format";
 import {
   openImpacts,
+  STATUS_LABELS,
   type IncidentView,
   type SiteIncidents,
 } from "./incidents";
 import { windowSummary } from "./queries";
 import { pageOverall, type MonitorStatus, type Overall } from "./state";
+import { componentStatus, statedByName, statusWithStated } from "./stated";
+import { componentViews, liveStatus, rowNames } from "./status-data";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -39,8 +42,13 @@ export interface StatusJson {
     name: string;
     type: string;
     group: string | null;
+    /** The worse of what the checks say and what an open incident says. */
     status: MonitorStatus;
     since: string | null;
+    /** When the last check ran. */
+    lastCheckedAt: string | null;
+    /** True when the checks have stopped arriving; the status is then unknown. */
+    stale: boolean;
     /** Certificate and domain monitors: when it expires. */
     expiresAt: string | null;
     uptime24h: number | null;
@@ -48,6 +56,11 @@ export interface StatusJson {
   }>;
   /** The same list under its name before 0.2, so older scripts keep working. */
   checkpoints: StatusJson["monitors"];
+  components: Array<{
+    name: string;
+    group: string | null;
+    status: ComponentState;
+  }>;
   incidents: IncidentView[];
   maintenance: IncidentView[];
 }
@@ -58,9 +71,14 @@ export function statusJson(
   site: SiteConfig,
   incidents: SiteIncidents,
   now: number,
-  budget: ErrorBudget | null = null,
+  options: { budget?: ErrorBudget | null; checkIntervalSeconds?: number } = {},
 ): StatusJson {
-  const monitors = site.monitors.map((cp) => {
+  const { budget = null, checkIntervalSeconds = 60 } = options;
+  const stated = statedByName(incidents.current, rowNames(site), now);
+  const live = site.monitors.map((cp) =>
+    liveStatus(db, { checkIntervalSeconds }, site, cp, now),
+  );
+  const monitors = site.monitors.map((cp, i) => {
     const state = getState(db, site.name, cp.name);
     const day = windowSummary(
       db,
@@ -74,8 +92,12 @@ export function statusJson(
       name: cp.name,
       type: cp.type,
       group: cp.group ?? null,
-      status: (state?.status ?? "unknown") as MonitorStatus,
+      status: statusWithStated(live[i].status, stated.get(cp.name)),
       since: state ? new Date(state.since).toISOString() : null,
+      lastCheckedAt: live[i].checkedAt
+        ? new Date(live[i].checkedAt).toISOString()
+        : null,
+      stale: live[i].stale,
       expiresAt: state?.expiresAt
         ? new Date(state.expiresAt).toISOString()
         : null,
@@ -84,12 +106,18 @@ export function statusJson(
       latencyMs24h: day.latencyMs,
     };
   });
+  const components = componentViews(site, stated);
   return {
     site: {
       name: site.name,
       url: siteUrl(site),
+      // The checks and the incidents' impacts, as the headline and the
+      // badge read them; a row's stated state shows on the row.
       status: pageOverall(
-        monitors.map((c) => c.status),
+        [
+          ...live.map((l) => l.status),
+          ...components.map((c) => componentStatus(c.state)),
+        ],
         openImpacts(incidents.current),
       ),
       updatedAt: new Date(now).toISOString(),
@@ -110,6 +138,11 @@ export function statusJson(
       : {}),
     monitors,
     checkpoints: monitors,
+    components: components.map((c) => ({
+      name: c.name,
+      group: c.group,
+      status: c.state,
+    })),
     incidents: incidents.current.filter((i) => i.kind === "incident"),
     maintenance: incidents.current.filter((i) => i.kind === "maintenance"),
   };
@@ -151,6 +184,60 @@ export function badgeJson(overall: Overall, label = "status") {
   return { schemaVersion: 1, label, message, color };
 }
 
+/**
+ * One feed entry's words, shared by RSS and Atom: the title, when it was
+ * last touched, and a body that carries what the page shows. A planned
+ * window says when it is; every update carries its status word; a
+ * post-mortem comes last, and a planned window is dated by when the feed
+ * first had it, not by a start in the future.
+ */
+export function feedEntry(
+  view: IncidentView,
+  now: number,
+): { title: string; stamp: number; published: number; body: string } {
+  const ahead = view.startedAt > now;
+  const latest = view.kind === "incident" ? view.updates[0] : undefined;
+  const stamp =
+    latest?.createdAt ??
+    (view.kind === "maintenance" && view.endsAt !== null && view.endsAt <= now
+      ? view.endsAt
+      : ahead
+        ? now
+        : view.startedAt);
+  const title = `${view.kind === "maintenance" ? "Maintenance: " : ""}${view.title}`;
+  const lines: string[] = [];
+  if (view.kind === "maintenance" && view.endsAt !== null)
+    lines.push(
+      `${view.endsAt <= now ? "Was planned" : "Planned"} ${formatUtcStamp(view.startedAt)} to ${formatUtcStamp(view.endsAt)}.`,
+    );
+  if (view.monitors.length > 0)
+    lines.push(`Affects ${view.monitors.join(", ")}.`);
+  for (const u of view.updates.slice().reverse())
+    lines.push(
+      view.kind === "maintenance"
+        ? u.body
+        : `${formatUtcStamp(u.createdAt)}, ${STATUS_LABELS[u.status]}: ${u.body}`,
+    );
+  if (view.postmortem) lines.push(`Post-mortem: ${view.postmortem}`);
+  return {
+    title,
+    stamp,
+    published: ahead ? stamp : view.startedAt,
+    body: lines.join("\n\n"),
+  };
+}
+
+function feedItems(incidents: SiteIncidents): IncidentView[] {
+  return [...incidents.current, ...incidents.past].sort(
+    (a, b) => b.startedAt - a.startedAt,
+  );
+}
+
+/** Where one incident or window has its own page. */
+export function incidentUrl(site: SiteConfig, id: string): string {
+  return `${siteUrl(site).replace(/\/$/, "")}/incidents/${encodeURIComponent(id)}`;
+}
+
 /** An RSS 2.0 feed of the site's incidents and maintenance, newest first. */
 export function feedXml(
   site: SiteConfig,
@@ -158,23 +245,13 @@ export function feedXml(
   now: number,
 ): string {
   const url = siteUrl(site);
-  const items = [...incidents.current, ...incidents.past].sort(
-    (a, b) => b.startedAt - a.startedAt,
-  );
-  const entries = items
+  const entries = feedItems(incidents)
     .map((view) => {
-      const latest = view.updates[0];
-      const stamp = latest?.createdAt ?? view.startedAt;
-      const title = `${view.kind === "maintenance" ? "Maintenance: " : ""}${view.title}`;
-      const body = view.updates
-        .slice()
-        .reverse()
-        .map((u) => `${formatUtcStamp(u.createdAt)}: ${u.body}`)
-        .join("\n\n");
+      const { title, stamp, body } = feedEntry(view, now);
       return `<item>
 <title>${escapeXml(title)}</title>
-<link>${escapeXml(url)}</link>
-<guid isPermaLink="false">${escapeXml(`${view.id}:${stamp}`)}</guid>
+<link>${escapeXml(incidentUrl(site, view.id))}</link>
+<guid isPermaLink="false">${escapeXml(`urn:statoss:incident:${view.id}`)}</guid>
 <pubDate>${new Date(stamp).toUTCString()}</pubDate>
 <description>${escapeXml(body)}</description>
 </item>`;
@@ -190,6 +267,38 @@ export function feedXml(
 ${entries}
 </channel>
 </rss>`;
+}
+
+/** The same incidents as an Atom feed, for readers that want one. */
+export function feedAtom(
+  site: SiteConfig,
+  incidents: SiteIncidents,
+  now: number,
+): string {
+  const url = siteUrl(site).replace(/\/$/, "");
+  const entries = feedItems(incidents)
+    .map((view) => {
+      const { title, stamp, published, body } = feedEntry(view, now);
+      return `<entry>
+<title>${escapeXml(title)}</title>
+<link href="${escapeXml(incidentUrl(site, view.id))}"/>
+<id>${escapeXml(`urn:statoss:incident:${view.id}`)}</id>
+<published>${new Date(published).toISOString()}</published>
+<updated>${new Date(stamp).toISOString()}</updated>
+<content type="text">${escapeXml(body)}</content>
+</entry>`;
+    })
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+<title>${escapeXml(site.name)} status</title>
+<link href="${escapeXml(url)}"/>
+<link rel="self" href="${escapeXml(`${url}/feed.atom`)}"/>
+<id>${escapeXml(`urn:statoss:site:${site.host.toLowerCase()}`)}</id>
+<author><name>${escapeXml(site.name)}</name></author>
+<updated>${new Date(now).toISOString()}</updated>
+${entries}
+</feed>`;
 }
 
 /**

@@ -99,12 +99,13 @@ export type Overall =
 /**
  * Rolls monitor statuses up into one headline state. A monitor is
  * "unknown" until its first check has run; unknown monitors never count
- * as up, and a site where nothing has been checked yet is "unknown".
+ * as up, and a site where nothing has been checked yet, or that has
+ * nothing to check, is "unknown".
  * Any monitor down outranks any monitor slow.
  */
 export function overallStatus(statuses: MonitorStatus[]): Overall {
-  if (statuses.length === 0 || statuses.every((status) => status === "up"))
-    return "operational";
+  if (statuses.length === 0) return "unknown";
+  if (statuses.every((status) => status === "up")) return "operational";
   if (statuses.every((status) => status === "unknown")) return "unknown";
   const known = statuses.filter((status) => status !== "unknown");
   if (known.every((status) => status === "down")) return "major";
@@ -139,4 +140,19 @@ export function pageOverall(
     if (SEVERITY[impact] > SEVERITY[overall]) overall = impact;
   }
   return overall;
+}
+
+/**
+ * Whether a monitor's checks have stopped arriving: three intervals with no
+ * result, and five minutes at the least, so one slow round is not "late".
+ * A stored state is only as good as the last check behind it. Null, a
+ * state from before the time was kept, is not called late.
+ */
+export function checkLate(
+  checkedAt: number | null | undefined,
+  intervalSeconds: number,
+  now: number,
+): boolean {
+  if (checkedAt === null || checkedAt === undefined) return false;
+  return now - checkedAt > Math.max(3 * intervalSeconds, 5 * 60) * 1000;
 }

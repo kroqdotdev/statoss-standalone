@@ -2,6 +2,8 @@ import type { MonitorView } from "./MonitorSection";
 import { failureSummary, formatDuration, pluralize } from "@/lib/format";
 import type { IncidentView } from "@/lib/incidents";
 import type { Overall } from "@/lib/state";
+import { COMPONENT_LABELS } from "@/lib/stated";
+import type { ComponentView } from "@/lib/status-data";
 
 const DOT: Record<Overall, string> = {
   operational: "text-up",
@@ -34,7 +36,33 @@ function incidentDetail(incidents: IncidentView[], now: number): string {
   }. Updates are below.`;
 }
 
-function detail(monitors: MonitorView[], now: number): string {
+/** What the components that are not operational are, in one sentence. */
+function componentDetail(components: ComponentView[]): string {
+  const off = components.filter((c) => c.state !== "operational");
+  if (off.length === 0) return "";
+  return off
+    .map((c) => `${c.name}: ${COMPONENT_LABELS[c.state].toLowerCase()}.`)
+    .join(" ");
+}
+
+function detail(
+  monitors: MonitorView[],
+  components: ComponentView[],
+  now: number,
+): string {
+  if (monitors.length === 0) {
+    if (components.length === 0) return "No monitors are set up for this page.";
+    return components.every((c) => c.state === "operational")
+      ? components.length === 1
+        ? `${components[0].name} is operational.`
+        : `All ${components.length} components are operational.`
+      : "";
+  }
+  const stale = monitors.filter((cp) => cp.stale);
+  if (stale.length > 0)
+    return stale.length === monitors.length
+      ? "The checks have stopped arriving, so the state of things is not known."
+      : `Checks for ${joinNames(stale.map((cp) => cp.name))} have stopped arriving.`;
   const down = monitors.filter((cp) => cp.status === "down");
   const slow = monitors.filter((cp) => cp.status === "slow");
   const unknown = monitors.filter((cp) => cp.status === "unknown").length;
@@ -75,6 +103,7 @@ function detail(monitors: MonitorView[], now: number): string {
 }
 
 function recent(monitors: MonitorView[]): string {
+  if (monitors.length === 0) return "";
   const failed = monitors.reduce(
     (sum, cp) => sum + (cp.last24h.total - cp.last24h.up),
     0,
@@ -89,12 +118,14 @@ export function StatusHeadline({
   site,
   overall,
   monitors,
+  components = [],
   now,
   incidents = [],
 }: {
   site: string;
   overall: Overall;
   monitors: MonitorView[];
+  components?: ComponentView[];
   now: number;
   /** Open incidents with an impact, worst first, that shape the headline. */
   incidents?: IncidentView[];
@@ -106,13 +137,22 @@ export function StatusHeadline({
           aria-hidden="true"
           className={`block size-3 shrink-0 rounded-full bg-current sm:size-3.5 ${DOT[overall]}`}
         />
-        <span>{headline(site, overall, monitors.length)}</span>
+        <span>
+          {monitors.length + components.length === 0
+            ? `Nothing on ${site} is checked yet.`
+            : headline(site, overall, monitors.length + components.length)}
+        </span>
       </h1>
       <p className="mt-5 max-w-[36rem] text-[15px] leading-relaxed text-muted sm:text-[17px]">
-        {incidents.length > 0
-          ? incidentDetail(incidents, now)
-          : detail(monitors, now)}{" "}
-        {recent(monitors)}
+        {[
+          incidents.length > 0
+            ? incidentDetail(incidents, now)
+            : detail(monitors, components, now),
+          incidents.length > 0 ? "" : componentDetail(components),
+          recent(monitors),
+        ]
+          .filter((part) => part !== "")
+          .join(" ")}
       </p>
     </header>
   );

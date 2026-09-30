@@ -18,6 +18,7 @@ function incident(updates: Array<[number, "investigating" | "resolved"]>) {
     endsAt: null,
     resolvedAt: null,
     auto: false,
+    states: {},
     postmortem: null,
     monitors: ["API"],
     updates: updates
