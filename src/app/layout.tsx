@@ -43,7 +43,11 @@ export async function generateMetadata(): Promise<Metadata> {
   const favicon = assetSrc(site.favicon, "/favicon");
   return {
     title: `${site.name} status`,
-    description: site.description ?? `Status and uptime of ${site.name}`,
+    // A locked page says nothing about itself before the password.
+    description:
+      site.description && !site.password
+        ? site.description
+        : `Status and uptime of ${site.name}`,
     ...(favicon ? { icons: { icon: favicon } } : {}),
     // A password page is nobody's search result.
     ...(site.noindex || site.password

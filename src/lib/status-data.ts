@@ -283,13 +283,14 @@ export function siteIncidentViews(
   config: AppConfig,
   site: SiteConfig,
   since: number,
+  /** Which window `since` is, for the cache: the page's and the feeds' differ. */
+  window = since === 0 ? "all" : String(since),
 ): IncidentView[] {
   return [
     ...(readIncidentFiles(config).get(site.name) ?? []),
     ...site.maintenance.map((window) => maintenanceView(window)),
-    ...cached(
-      `incidents\0${site.name}\0${since === 0 ? "all" : "recent"}`,
-      () => autoIncidents(db, site.name, since).map(autoIncidentView),
+    ...cached(`incidents\0${site.name}\0${window}`, () =>
+      autoIncidents(db, site.name, since).map(autoIncidentView),
     ),
   ];
 }
@@ -304,7 +305,11 @@ export function siteIncidents(
 ): SiteIncidents {
   // Rounded to the hour, so the cached list is not thrown away each request.
   const since = Math.floor((now - days * DAY_MS) / HOUR_MS) * HOUR_MS;
-  return splitIncidents(siteIncidentViews(db, config, site, since), now, days);
+  return splitIncidents(
+    siteIncidentViews(db, config, site, since, `${days}d`),
+    now,
+    days,
+  );
 }
 
 /** One incident or window by its id, or undefined. */

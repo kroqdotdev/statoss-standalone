@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import {
+  clientOf,
   mayView,
   noteFailure,
   passwordMatches,
@@ -18,6 +19,7 @@ import { bumpDataVersion } from "./data-version";
 import { getDb, listDeploys, recordDeploy, recordHeartbeat } from "./db";
 import { FEED_DAYS, openImpacts } from "./incidents";
 import { handleMcp, mcpOverLimit, siteTools } from "./mcp";
+import { judgeHeartbeat } from "./scheduler";
 import {
   badgeJson,
   badgeSvg,
@@ -169,6 +171,7 @@ export async function heartbeatResponse(token: string): Promise<Response> {
       if (monitor.type !== "heartbeat" || !monitor.token) continue;
       if (!sameToken(monitor.token, token)) continue;
       recordHeartbeat(getDb(), site.name, monitor.name, Date.now());
+      await judgeHeartbeat(site.name, monitor.name);
       bumpDataVersion();
       return new Response("ok\n", {
         headers: { "cache-control": "no-store" },
@@ -220,11 +223,12 @@ export async function unlockResponse(request: Request): Promise<Response> {
   if (token === null) redirect("/");
   const now = Date.now();
   const host = site.host.toLowerCase();
-  if (tooManyFailures(host, now)) redirect("/?unlock=wait");
+  const client = clientOf(request.headers);
+  if (tooManyFailures(host, client, now)) redirect("/?unlock=wait");
   const form = await request.formData().catch(() => null);
   const given = form?.get("password");
   if (typeof given !== "string" || !passwordMatches(site, given)) {
-    noteFailure(host, now);
+    noteFailure(host, client, now);
     redirect("/?unlock=wrong");
   }
   (await cookies()).set(UNLOCK_COOKIE, token, {

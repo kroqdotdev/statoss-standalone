@@ -23,6 +23,10 @@ export interface AlertEvent {
   thresholdMs?: number | null;
   /** went-down: the time of the first failed check of the outage. */
   failingSince?: number | null;
+  /** went-down: the monitor was slow until now, and its slow alert is still open on a pager. */
+  wasSlow?: boolean;
+  /** When the state the alert is about began, so a late retry can tell it is still that one. */
+  stateSince?: number;
   now: number;
 }
 
@@ -255,6 +259,8 @@ export interface Message {
   pager: {
     action: "trigger" | "resolve";
     key: string;
+    /** Other alerts this one closes first, by key. */
+    closes?: string[];
     severity: "critical" | "warning";
     source: string;
     component: string;
@@ -278,9 +284,12 @@ const NTFY: Record<AlertKind | NoticeKind, { priority: string; tags: string }> =
 
 export function alertMessage(event: AlertEvent): Message {
   const { subject, lines } = describeAlert(event);
-  // Down and slow are two alerts on a pager, each closed by its own end.
+  // Down and slow are two alerts on a pager, each closed by its own end;
+  // a monitor that goes down from slow closes its slow alert on the way,
+  // since no "back to normal" will come for it.
   const slowness =
     event.kind === "went-slow" || event.kind === "back-to-normal";
+  const key = `statoss:${event.site}:${event.monitor}`;
   return {
     event: event.kind,
     subject,
@@ -293,7 +302,10 @@ export function alertMessage(event: AlertEvent): Message {
         event.kind === "recovered" || event.kind === "back-to-normal"
           ? "resolve"
           : "trigger",
-      key: `statoss:${event.site}:${event.monitor}${slowness ? ":slow" : ""}`,
+      key: slowness ? `${key}:slow` : key,
+      ...(event.kind === "went-down" && event.wasSlow
+        ? { closes: [`${key}:slow`] }
+        : {}),
       severity: slowness ? "warning" : "critical",
       source: event.url || event.site,
       component: event.monitor,
@@ -469,31 +481,51 @@ function deliver(
       {},
     );
   if ("pagerduty" in d) {
-    if (message.pager === null) return null;
-    return post(
-      deps.fetch,
-      PAGERDUTY_EVENTS,
-      JSON.stringify(pagerdutyPayload(message, d.pagerduty)),
-      {},
-    );
+    const pager = message.pager;
+    if (pager === null) return null;
+    return (async () => {
+      for (const closed of pager.closes ?? [])
+        await post(
+          deps.fetch,
+          PAGERDUTY_EVENTS,
+          JSON.stringify({
+            routing_key: d.pagerduty,
+            event_action: "resolve",
+            dedup_key: closed,
+          }),
+          {},
+        );
+      await post(
+        deps.fetch,
+        PAGERDUTY_EVENTS,
+        JSON.stringify(pagerdutyPayload(message, d.pagerduty)),
+        {},
+      );
+    })();
   }
   if ("opsgenie" in d) {
     if (message.pager === null) return null;
     const base = opsgenieBase(d.region === "eu");
     const headers = { authorization: `GenieKey ${d.opsgenie}` };
-    return message.pager.action === "trigger"
-      ? post(
+    const pager = message.pager;
+    const close = (key: string) =>
+      post(
+        deps.fetch,
+        `${base}/v2/alerts/${encodeURIComponent(key)}/close?identifierType=alias`,
+        JSON.stringify({ source: "StatOSS", note: message.subject }),
+        headers,
+      );
+    return (async () => {
+      for (const closed of pager.closes ?? []) await close(closed);
+      if (pager.action === "trigger")
+        await post(
           deps.fetch,
           `${base}/v2/alerts`,
           JSON.stringify(opsgeniePayload(message)),
           headers,
-        )
-      : post(
-          deps.fetch,
-          `${base}/v2/alerts/${encodeURIComponent(message.pager.key)}/close?identifierType=alias`,
-          JSON.stringify({ source: "StatOSS", note: message.subject }),
-          headers,
         );
+      else await close(pager.key);
+    })();
   }
   if ("ntfy" in d)
     return post(

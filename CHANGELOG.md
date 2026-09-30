@@ -37,6 +37,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- A round no longer waits for the last one to finish. With a short `checkIntervalSeconds` and a check waiting on its timeout, every other round used to be skipped; now only that monitor waits.
 - Moving from a bar to the list of its checks keeps the bar read out, so on a phone the list no longer moves under a finger half way through a tap.
 - A strip is drawn as one SVG path per colour instead of two or three rectangles per bar, about a quarter of the markup.
 - The status page lists the resolved incidents of the last 7 days instead of 30; the rest are under Incident history. Open incidents are ordered: what somebody wrote first, the worst first, then the outages the checker opened, folded into one card when there are several.

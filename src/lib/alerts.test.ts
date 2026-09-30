@@ -256,6 +256,32 @@ describe("PagerDuty, Opsgenie and ntfy", () => {
   });
 });
 
+describe("a monitor that goes down from slow", () => {
+  it("closes its slow alert on a pager before opening the down one", async () => {
+    const { calls, fetchFn } = fakeFetch();
+    const deps = { send: null, from: "", fetch: fetchFn };
+    const down = { ...DOWN, wasSlow: true };
+    await sendAlerts([{ pagerduty: "R0UT1NG" }], down, deps);
+    expect(calls.map((c) => JSON.parse(c.body))).toMatchObject([
+      {
+        event_action: "resolve",
+        dedup_key: "statoss:webhooks.cc:Redirector:slow",
+      },
+      { event_action: "trigger", dedup_key: "statoss:webhooks.cc:Redirector" },
+    ]);
+    calls.length = 0;
+    await sendAlerts([{ opsgenie: "KEY" }], down, deps);
+    expect(calls.map((c) => c.url)).toEqual([
+      "https://api.opsgenie.com/v2/alerts/statoss%3Awebhooks.cc%3ARedirector%3Aslow/close?identifierType=alias",
+      "https://api.opsgenie.com/v2/alerts",
+    ]);
+    calls.length = 0;
+    // Without slowness before it, only the down alert.
+    await sendAlerts([{ pagerduty: "R0UT1NG" }], DOWN, deps);
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe("retries", () => {
   function failing(times: number) {
     let n = 0;
