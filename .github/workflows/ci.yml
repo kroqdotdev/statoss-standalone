@@ -17,7 +17,37 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Stops on a known high or critical vulnerability in a dependency.
+      - run: pnpm audit --audit-level=high
       - run: pnpm lint
       - run: pnpm format:check
+      - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  # The browser journeys: the built server against a seeded database, at
+  # desktop and phone width, every screen measured for sideways overflow.
+  journeys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - run: pnpm e2e
+        env:
+          CI: "1"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

@@ -55,3 +55,8 @@ next-env.d.ts
 # local config (copy of config.example.yaml) and incidents
 /config.yaml
 /incidents/
+
+# browser journeys
+/.e2e/
+/test-results/
+/playwright-report/

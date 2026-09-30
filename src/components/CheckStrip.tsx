@@ -305,7 +305,13 @@ export function CheckStrip({
         onPointerDown={onPointer}
         onPointerLeave={() => setActive(null)}
         onClick={(e) => open(indexAt(e))}
-        onBlur={() => setActive(null)}
+        onBlur={(e) => {
+          // Into the panel of checks, the bar stays read out: dropping the
+          // readout would shorten it, move the panel up under a finger
+          // half way through a tap, and land the tap on another bar.
+          if (!e.currentTarget.parentElement?.contains(e.relatedTarget))
+            setActive(null);
+        }}
         onKeyDown={onKey}
       >
         <svg
