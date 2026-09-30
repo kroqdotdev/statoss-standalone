@@ -39,6 +39,12 @@ export interface StripSpan {
   to: number | null;
 }
 
+/** A deploy: a version and the moment it went out. */
+export interface StripMark {
+  at: number;
+  label: string;
+}
+
 interface Props {
   buckets: Bucket[];
   range: RangeKey;
@@ -56,6 +62,8 @@ interface Props {
   kind?: "checks" | "states";
   /** Incidents and windows to name on the bars they touched. */
   spans?: StripSpan[];
+  /** Deploys, drawn as dashed lines and named on their bars. */
+  marks?: StripMark[];
 }
 
 /**
@@ -106,6 +114,13 @@ function touching(spans: StripSpan[], b: Bucket, bucketMs: number): string {
   return ` ${hit
     .map((s) => `${s.maintenance ? "Maintenance" : "Incident"}: ${s.title}.`)
     .join(" ")}`;
+}
+
+/** The deploys that went out inside a bucket, as the end of its line. */
+function deployed(marks: StripMark[], b: Bucket, bucketMs: number): string {
+  const hit = marks.filter((m) => m.at >= b.ts && m.at < b.ts + bucketMs);
+  if (hit.length === 0) return "";
+  return ` Deploy: ${hit.map((m) => m.label).join(", ")}.`;
 }
 
 function describeBucket(
@@ -186,6 +201,7 @@ export function CheckStrip({
   timed = true,
   kind = "checks",
   spans = [],
+  marks = [],
 }: Props) {
   const [active, setActive] = useState<number | null>(null);
   /** The bucket whose checks are open in the panel, by its start. */
@@ -255,7 +271,7 @@ export function CheckStrip({
       ? windowLine
       : `${describeBucket(activeBucket, range, zone, kind)}${
           activeBucket.total > 0 || activeBucket.maintenance > 0 ? "." : ""
-        }${touching(spans, activeBucket, bucketMs)}`;
+        }${touching(spans, activeBucket, bucketMs)}${deployed(marks, activeBucket, bucketMs)}`;
   const openedIndex =
     opened === null ? -1 : buckets.findIndex((b) => b.ts === opened);
 
@@ -326,6 +342,21 @@ export function CheckStrip({
             style={{ top: `${(thresholdTop / H) * pixels}px` }}
           />
         )}
+        {marks
+          .filter(
+            (m) => m.at >= buckets[0].ts && m.at < buckets[0].ts + n * bucketMs,
+          )
+          .map((m) => (
+            <div
+              key={`${m.at}-${m.label}`}
+              aria-hidden="true"
+              className="pointer-events-none absolute top-0 border-l border-dashed border-muted opacity-80"
+              style={{
+                left: `${((m.at - buckets[0].ts) / (n * bucketMs)) * 100}%`,
+                height: pixels,
+              }}
+            />
+          ))}
         <div className="h-px w-full bg-rule-strong" />
         <div className="relative h-5 text-[11px] leading-none text-muted">
           {ticks.map((t) => (

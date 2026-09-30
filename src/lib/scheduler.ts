@@ -46,6 +46,7 @@ import { readIncidentFiles } from "./incident-files";
 import { inMaintenance, maintenanceView } from "./incidents";
 import { dueNotices } from "./notices";
 import { applyResult, type CheckVerdict } from "./state";
+import { refreshVendors } from "./vendors";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MINUTE_MS = 60_000;
@@ -389,6 +390,13 @@ export function startScheduler(): void {
   let lastPruneDay = "";
   const run = skipWhileRunning(async () => {
     try {
+      // Not awaited: a slow vendor must not hold up the checks.
+      void refreshVendors(config, Date.now()).then(
+        (read) => {
+          if (read) bumpDataVersion();
+        },
+        (err: unknown) => console.error("[vendors] refresh failed", err),
+      );
       await tick(deps);
       sendDueNotices(
         config,

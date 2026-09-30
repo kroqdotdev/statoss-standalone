@@ -137,6 +137,12 @@ sites:
     #     description: iOS and Android
     #   - name: Card payments
     #     state: operational # operational, degraded, partial or major
+    #   # A component can follow a vendor's status page (Statuspage,
+    #   # incident.io or StatOSS), or one part of it. It is shown under
+    #   # Third-party services and does not move the headline.
+    #   - name: GitHub Actions
+    #     vendor: https://www.githubstatus.com
+    #     part: Actions
     # Optional. Planned work. Checks during a window are shown but not
     # counted, and no alert goes out. Times are UTC unless a zone is given.
     # maintenance:

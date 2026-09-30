@@ -11,11 +11,13 @@ import {
   unlockToken,
 } from "./access";
 import { readAsset } from "./assets";
+import { describeBudget } from "./budget";
 import { checkDetail, MAX_DETAIL_WINDOW_MS } from "./check-detail";
 import { findSiteByHost, getConfig, siteUrl } from "./config";
 import { bumpDataVersion } from "./data-version";
-import { getDb, recordHeartbeat } from "./db";
+import { getDb, listDeploys, recordDeploy, recordHeartbeat } from "./db";
 import { FEED_DAYS, openImpacts } from "./incidents";
+import { handleMcp, mcpOverLimit, siteTools } from "./mcp";
 import {
   badgeJson,
   badgeSvg,
@@ -84,6 +86,7 @@ export async function statusJsonResponse(request: Request): Promise<Response> {
     statusJson(getDb(), site, incidents, now, {
       budget: siteBudget(getDb(), site, now),
       checkIntervalSeconds: getConfig().checkIntervalSeconds,
+      deploys: listDeploys(getDb(), site.name, 0, now + 1, 5),
     }),
     {
       headers: { ...CORS, "cache-control": cache(site, 30) },
@@ -265,4 +268,178 @@ export async function checksResponse(request: Request): Promise<Response> {
     // A bar in the past does not change; the current one does.
     { headers: { "cache-control": cache(site, to < Date.now() ? 300 : 15) } },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Deploy markers.
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function bearer(request: Request): string {
+  const header = request.headers.get("authorization") ?? "";
+  return /^Bearer\s+(.+)$/i.exec(header)?.[1] ?? "";
+}
+
+function json(status: number, body: unknown): Response {
+  return Response.json(body, {
+    status,
+    headers: { "cache-control": "no-store" },
+  });
+}
+
+/**
+ * POST /deploys, from CI: {"version": "v1.2.3"}, with `note`, `url` and
+ * `at` when wanted, and the DEPLOY_TOKEN as a bearer token. There is no
+ * such address until the token is set.
+ */
+export async function deployPostResponse(request: Request): Promise<Response> {
+  const token = process.env.DEPLOY_TOKEN;
+  const site = await hostSite();
+  if (!token || !site) return notFound();
+  if (!sameToken(token, bearer(request)))
+    return json(401, { error: "Send the deploy token as a bearer token." });
+  const body: unknown = await request.json().catch(() => null);
+  const field = (name: string): unknown =>
+    typeof body === "object" && body !== null
+      ? (body as Record<string, unknown>)[name]
+      : undefined;
+  const version = field("version");
+  if (typeof version !== "string" || !/^\S.{0,59}$/.test(version.trim()))
+    return json(400, { error: "version: 1 to 60 characters." });
+  const note = field("note");
+  if (note !== undefined && (typeof note !== "string" || note.length > 200))
+    return json(400, { error: "note: at most 200 characters." });
+  const url = field("url");
+  if (
+    url !== undefined &&
+    (typeof url !== "string" ||
+      !/^https?:\/\/\S+$/.test(url) ||
+      url.length > 500)
+  )
+    return json(400, { error: "url: an http or https address." });
+  const now = Date.now();
+  const given = field("at");
+  const at =
+    given === undefined
+      ? now
+      : typeof given === "number"
+        ? given
+        : typeof given === "string"
+          ? Date.parse(given)
+          : NaN;
+  // A marker may be filed a little late, not ahead of time.
+  if (!Number.isFinite(at) || at > now + 5 * 60_000 || at < now - 400 * DAY_MS)
+    return json(400, {
+      error: "at: a time in the past, in ISO 8601 or milliseconds.",
+    });
+  const deploy = recordDeploy(getDb(), site.name, {
+    version: version.trim(),
+    note: typeof note === "string" && note.trim() ? note.trim() : null,
+    url: typeof url === "string" ? url : null,
+    at,
+  });
+  bumpDataVersion();
+  return json(201, { ...deploy, at: new Date(deploy.at).toISOString() });
+}
+
+/** GET /deploys: the site's markers of the last 90 days, newest first. */
+export async function deployListResponse(request: Request): Promise<Response> {
+  const site = await currentSite(request);
+  if (site instanceof Response) return site;
+  const now = Date.now();
+  return Response.json(
+    listDeploys(getDb(), site.name, now - 90 * DAY_MS, now + 1).map((d) => ({
+      ...d,
+      at: new Date(d.at).toISOString(),
+    })),
+    { headers: { ...CORS, "cache-control": cache(site, 60) } },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// For programs that read: an MCP endpoint and llms.txt.
+
+/** POST /mcp: the site's status, incidents and error budget as MCP tools. */
+export async function mcpResponse(request: Request): Promise<Response> {
+  const site = await currentSite(request);
+  if (site instanceof Response) return site;
+  const db = getDb();
+  const config = getConfig();
+  return handleMcp(
+    request,
+    siteTools(site.name, {
+      status: () => {
+        const now = Date.now();
+        return statusJson(db, site, liveSite(site, now).incidents, now, {
+          budget: siteBudget(db, site, now),
+          checkIntervalSeconds: config.checkIntervalSeconds,
+          deploys: listDeploys(db, site.name, 0, now + 1, 5),
+        });
+      },
+      incidents: () => {
+        const now = Date.now();
+        const { current, past } = liveSite(site, now, FEED_DAYS).incidents;
+        return [...current, ...past].sort((a, b) => b.startedAt - a.startedAt);
+      },
+      budget: () => {
+        const now = Date.now();
+        const budget = siteBudget(db, site, now);
+        return budget ? describeBudget(budget, now) : null;
+      },
+    }),
+    { name: `${site.name} status`, version: "1" },
+    (messages) => mcpOverLimit(site.host.toLowerCase(), messages, Date.now()),
+  );
+}
+
+/** GET /llms.txt: where a program should read this site from. */
+export async function llmsResponse(request: Request): Promise<Response> {
+  const site = await currentSite(request);
+  if (site instanceof Response) return site;
+  const base = siteUrl(site).replace(/\/$/, "");
+  const rows = [
+    ...site.monitors.map(
+      (m) => `- ${m.name}${m.group ? ` (${m.group})` : ""}, ${m.type}`,
+    ),
+    ...site.components.map(
+      (c) =>
+        `- ${c.name}${c.group ? ` (${c.group})` : ""}, component${
+          c.vendor ? `, follows ${c.vendor}` : ""
+        }`,
+    ),
+  ].join("\n");
+  const text = `# ${site.name} status
+
+> ${site.description ?? `The current status of ${site.name}, updated as every check runs.`}
+
+This is a StatOSS status page. Read it as a machine through the links below rather than scraping the HTML.
+${
+  site.password
+    ? `
+The page is password-protected. Every link below answers 401 without \`?key=<key>\`, the embed key the page's owner shares.
+`
+    : ""
+}
+- Status as JSON: ${base}/status.json
+- Incidents as RSS: ${base}/feed.xml, as Atom: ${base}/feed.atom
+- MCP endpoint (Streamable HTTP, POST JSON-RPC, tools get_status, list_incidents, get_error_budget): ${base}/mcp
+- Badge: ${base}/badge.svg
+- Deploy markers as JSON: ${base}/deploys
+- The page for people: ${base}/
+- Past incidents by month, for people: ${base}/history; each incident at ${base}/incidents/<id>
+
+## Monitors and components
+
+${rows || "- None yet"}
+
+## How to read status.json
+
+site.status is one of operational, degraded, partial, major or unknown. Each monitor has a status of up, slow, down or unknown, a since time, lastCheckedAt, stale (true when its checks have stopped arriving, and its status is then unknown), uptime24h as a percentage and latencyMs24h, the mean response time. Each component has a status of operational, degraded, partial or major; one with a vendor follows that vendor's status page and does not count toward site.status. budget, when the site has an uptime target, holds the month so far. incidents holds what is open; maintenance holds what is in progress or planned within the next week. Times inside incidents and maintenance are epoch milliseconds; the others are ISO 8601.
+`;
+  return new Response(text, {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": cache(site, 300),
+    },
+  });
 }

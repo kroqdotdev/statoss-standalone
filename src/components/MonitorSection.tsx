@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckStrip, type StripSpan } from "./CheckStrip";
+import { CheckStrip, type StripMark, type StripSpan } from "./CheckStrip";
 import { FailureList } from "./FailureList";
 import { LocalTime } from "./LocalTime";
 import type { MonitorType } from "@/lib/config";
@@ -64,8 +64,11 @@ export function MonitorSection({
   range,
   now,
   stated,
+  marks,
   as: Heading = "h2",
 }: {
+  /** Deploys to draw on the strip. */
+  marks?: StripMark[];
   monitor: MonitorView;
   range: RangeKey;
   now: number;
@@ -147,6 +150,7 @@ export function MonitorSection({
         slowThresholdMs={monitor.slowThresholdMs}
         timed={monitor.timed}
         spans={monitor.spans}
+        marks={marks}
       />
       <FailureList runs={monitor.runs} now={now} />
     </section>

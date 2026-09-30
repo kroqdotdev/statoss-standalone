@@ -4,6 +4,7 @@ import type { MonitorView } from "@/components/MonitorSection";
 import { errorBudget, monthTotals, type ErrorBudget } from "./budget";
 import { cached, cachedFor } from "./cache";
 import { componentBuckets } from "./component-history";
+import { vendorView, type VendorView } from "./vendors";
 import {
   getConfig,
   LATENCY_TYPES,
@@ -160,6 +161,8 @@ export interface ComponentView {
   /** The states it was in over the range, as bars. Absent when not asked for. */
   buckets?: Bucket[];
   spans?: StripSpan[];
+  /** Set when it follows a vendor's status page. */
+  vendor?: VendorView;
 }
 
 export interface SiteRows {
@@ -181,14 +184,23 @@ export function componentViews(
     now: number;
   },
 ): ComponentView[] {
+  // The clock is read only when a component follows a vendor.
+  const at = history?.now ?? Date.now();
   return site.components.map((c) => {
+    const vendor = c.vendor
+      ? vendorView(c.vendor, c.part ?? null, at)
+      : undefined;
     const view: ComponentView = {
       name: c.name,
       group: c.group ?? null,
       description: c.description ?? null,
-      state: componentState(c.state, stated.get(c.name)),
+      // The vendor's state, or the configured one while it cannot be read;
+      // an incident of our own that names it can still say worse.
+      state: componentState(vendor?.state ?? c.state, stated.get(c.name)),
+      ...(vendor ? { vendor } : {}),
     };
-    if (!history) return view;
+    // A vendor's row is compact and draws no strip.
+    if (!history || vendor) return view;
     const spec = RANGES[history.range];
     const { start, end } = rangeWindow(spec, history.now);
     return {
@@ -254,7 +266,10 @@ export function siteStatuses(
   const stated = statedByName(current, rowNames(site), now);
   return [
     ...site.monitors.map((cp) => liveStatus(db, config, site, cp, now).status),
-    ...componentViews(site, stated).map((c) => componentStatus(c.state)),
+    // A vendor's trouble is the vendor's: it is shown, not counted.
+    ...componentViews(site, stated)
+      .filter((c) => !c.vendor)
+      .map((c) => componentStatus(c.state)),
   ];
 }
 
