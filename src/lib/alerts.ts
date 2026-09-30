@@ -23,6 +23,10 @@ export interface AlertEvent {
   thresholdMs?: number | null;
   /** went-down: the time of the first failed check of the outage. */
   failingSince?: number | null;
+  /** went-down: the monitor was slow until now, and its slow alert is still open on a pager. */
+  wasSlow?: boolean;
+  /** When the state the alert is about began, so a late retry can tell it is still that one. */
+  stateSince?: number;
   now: number;
 }
 
@@ -255,6 +259,8 @@ export interface Message {
   pager: {
     action: "trigger" | "resolve";
     key: string;
+    /** Other alerts this one closes first, by key. */
+    closes?: string[];
     severity: "critical" | "warning";
     source: string;
     component: string;
@@ -278,9 +284,12 @@ const NTFY: Record<AlertKind | NoticeKind, { priority: string; tags: string }> =
 
 export function alertMessage(event: AlertEvent): Message {
   const { subject, lines } = describeAlert(event);
-  // Down and slow are two alerts on a pager, each closed by its own end.
+  // Down and slow are two alerts on a pager, each closed by its own end;
+  // a monitor that goes down from slow closes its slow alert on the way,
+  // since no "back to normal" will come for it.
   const slowness =
     event.kind === "went-slow" || event.kind === "back-to-normal";
+  const key = `statoss:${event.site}:${event.monitor}`;
   return {
     event: event.kind,
     subject,
@@ -293,7 +302,10 @@ export function alertMessage(event: AlertEvent): Message {
         event.kind === "recovered" || event.kind === "back-to-normal"
           ? "resolve"
           : "trigger",
-      key: `statoss:${event.site}:${event.monitor}${slowness ? ":slow" : ""}`,
+      key: slowness ? `${key}:slow` : key,
+      ...(event.kind === "went-down" && event.wasSlow
+        ? { closes: [`${key}:slow`] }
+        : {}),
       severity: slowness ? "warning" : "critical",
       source: event.url || event.site,
       component: event.monitor,
@@ -422,6 +434,24 @@ export function channelOf(d: Destination): ChannelName {
 }
 
 /**
+ * Closes other alerts on a pager beside the one being sent, never before
+ * it: a close that fails is logged and must not hold up or sink the alert
+ * itself, least of all a monitor going down.
+ */
+function closeAside(
+  keys: string[] | undefined,
+  subject: string,
+  close: (key: string) => Promise<void>,
+): void {
+  for (const key of keys ?? [])
+    close(key).catch((err: unknown) =>
+      console.error(
+        `[alerts] closing ${key} for "${subject}" failed: ${reasonOf(err)}`,
+      ),
+    );
+}
+
+/**
  * Sends one message to one destination. Null when the destination has no
  * use for it: an email without SMTP, a notice to a pager.
  */
@@ -469,7 +499,20 @@ function deliver(
       {},
     );
   if ("pagerduty" in d) {
-    if (message.pager === null) return null;
+    const pager = message.pager;
+    if (pager === null) return null;
+    closeAside(pager.closes, message.subject, (closed) =>
+      post(
+        deps.fetch,
+        PAGERDUTY_EVENTS,
+        JSON.stringify({
+          routing_key: d.pagerduty,
+          event_action: "resolve",
+          dedup_key: closed,
+        }),
+        {},
+      ),
+    );
     return post(
       deps.fetch,
       PAGERDUTY_EVENTS,
@@ -481,19 +524,23 @@ function deliver(
     if (message.pager === null) return null;
     const base = opsgenieBase(d.region === "eu");
     const headers = { authorization: `GenieKey ${d.opsgenie}` };
-    return message.pager.action === "trigger"
+    const pager = message.pager;
+    const close = (key: string) =>
+      post(
+        deps.fetch,
+        `${base}/v2/alerts/${encodeURIComponent(key)}/close?identifierType=alias`,
+        JSON.stringify({ source: "StatOSS", note: message.subject }),
+        headers,
+      );
+    closeAside(pager.closes, message.subject, close);
+    return pager.action === "trigger"
       ? post(
           deps.fetch,
           `${base}/v2/alerts`,
           JSON.stringify(opsgeniePayload(message)),
           headers,
         )
-      : post(
-          deps.fetch,
-          `${base}/v2/alerts/${encodeURIComponent(message.pager.key)}/close?identifierType=alias`,
-          JSON.stringify({ source: "StatOSS", note: message.subject }),
-          headers,
-        );
+      : close(pager.key);
   }
   if ("ntfy" in d)
     return post(
@@ -501,7 +548,7 @@ function deliver(
       d.ntfy,
       text,
       {
-        title: message.subject,
+        title: headerText(message.subject),
         priority: message.ntfy.priority,
         tags: message.ntfy.tags,
         click: message.pageUrl,
@@ -514,6 +561,17 @@ function deliver(
     "x-statoss-event": message.event,
     "x-statoss-signature": signWebhook(d.secret, body),
   });
+}
+
+/**
+ * Text for an HTTP header: one line, and RFC 2047 encoded when it is not
+ * plain ASCII, which ntfy reads and fetch would otherwise refuse.
+ */
+export function headerText(text: string): string {
+  const line = text.replace(/[\r\n]+/g, " ").trim();
+  return /^[\x20-\x7e]*$/.test(line)
+    ? line
+    : `=?UTF-8?B?${Buffer.from(line, "utf8").toString("base64")}?=`;
 }
 
 function reasonOf(err: unknown): string {

@@ -370,7 +370,8 @@ ${monitor}
       "example.com",
       "expects a ping",
     ]);
-    expect(monitorIntervalSeconds(monitors[6], 60)).toBe(86_400);
+    // A heartbeat is judged every round; its own interval is when pings are due.
+    expect(monitorIntervalSeconds(monitors[6], 60)).toBe(60);
   });
 
   it.each([
@@ -564,5 +565,42 @@ ${component}
     ["      - name: x\n        vendor: ftp://example.com", "vendor"],
   ])("rejects %s", (component, message) => {
     expect(() => parseConfig(withComponent(component))).toThrow(message);
+  });
+});
+
+describe("names and windows that would collide", () => {
+  it("refuses row names that make the same anchor", () => {
+    expect(() =>
+      parseConfig(`
+sites:
+  - name: s
+    host: h
+    monitors:
+      - name: API v2
+        url: https://example.com
+    components:
+      - name: API-v2
+`),
+    ).toThrow('names "API v2" and "API-v2" are too alike');
+  });
+
+  it("refuses two windows with one title in one minute", () => {
+    expect(() =>
+      parseConfig(`
+sites:
+  - name: s
+    host: h
+    monitors:
+      - name: m
+        url: https://example.com
+    maintenance:
+      - title: Upgrade
+        start: 2026-10-01T01:00:05Z
+        end: 2026-10-01T02:00:00Z
+      - title: Upgrade
+        start: 2026-10-01T01:00:40Z
+        end: 2026-10-01T03:00:00Z
+`),
+    ).toThrow("same title and start in the same minute");
   });
 });

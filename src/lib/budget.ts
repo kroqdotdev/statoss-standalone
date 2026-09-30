@@ -81,7 +81,9 @@ export function minutesCovered(
     totals.hours !== undefined
       ? Math.min(spanMinutes, totals.hours * 60)
       : spanMinutes;
-  return Math.round((part / totals.total) * covered);
+  // Kept to the fraction: with a target close to 100% the allowance can be
+  // under a minute, and rounding would hide it being spent.
+  return (part / totals.total) * covered;
 }
 
 /**
@@ -159,12 +161,19 @@ export function describeBudget(b: ErrorBudget, now: number): string {
   const month = monthName(now).split(" ")[0];
   if (b.uptime === null)
     return `${month}: no checks yet against a ${b.target}% target.`;
+  // "the 43 min downtime budget", or for a target that leaves under a
+  // minute, "the downtime budget of under a minute".
+  const small = b.budgetMinutes > 0 && b.budgetMinutes < 1;
+  const budget = (word: string) =>
+    small
+      ? `the ${word} of under a minute`
+      : `the ${formatMinutes(b.budgetMinutes)} ${word}`;
   const spent =
     b.downMinutes === 0
-      ? `None of the ${formatMinutes(b.budgetMinutes)} downtime budget spent`
+      ? `None of ${budget("downtime budget")} spent`
       : b.remainingMinutes >= 0
-        ? `${formatMinutes(b.downMinutes)} of the ${formatMinutes(b.budgetMinutes)} downtime budget spent`
-        : `${formatMinutes(b.downMinutes)} down, ${formatMinutes(-b.remainingMinutes)} over the ${formatMinutes(b.budgetMinutes)} budget`;
+        ? `${formatMinutes(b.downMinutes)} of ${budget("downtime budget")} spent`
+        : `${formatMinutes(b.downMinutes)} down, ${formatMinutes(-b.remainingMinutes)} over ${budget("budget")}`;
   // The month's total, not a streak: the monitor rows show streaks.
   const slow =
     b.slowMinutes > 0 ? ` ${formatMinutes(b.slowMinutes)} slow in total.` : "";

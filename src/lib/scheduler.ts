@@ -12,6 +12,7 @@ import { monitorSpec, runCheck } from "./checker";
 import type { CheckOutcome, CheckSpec } from "./checker";
 import {
   getConfig,
+  heartbeatDeadlineSeconds,
   HISTORY_DAYS,
   LATENCY_TYPES,
   monitorIntervalSeconds,
@@ -62,6 +63,8 @@ export interface Job {
   spec: CheckSpec;
   /** Seconds between this monitor's checks. */
   intervalSeconds: number;
+  /** A heartbeat: how often its pings are due. */
+  pingIntervalSeconds?: number;
   /** A successful check slower than this is slow. Null turns it off. */
   slowThresholdMs: number | null;
   destinations: Destination[];
@@ -84,6 +87,12 @@ export function loadJobs(config: AppConfig): Job[] {
       pageUrl,
       spec: monitorSpec(cp),
       intervalSeconds: monitorIntervalSeconds(cp, config.checkIntervalSeconds),
+      ...(cp.type === "heartbeat"
+        ? {
+            pingIntervalSeconds:
+              cp.intervalSeconds ?? config.checkIntervalSeconds,
+          }
+        : {}),
       slowThresholdMs: cp.slowThresholdMs ?? null,
       destinations,
       repeatMinutes,
@@ -104,6 +113,8 @@ export interface SchedulerDeps {
   spreadMs?: number;
   /** When each job last ran, kept between ticks. */
   lastRun?: Map<string, number>;
+  /** The jobs running now, so a slow one is not started again beside itself. */
+  running?: Set<string>;
 }
 
 function isSlow(job: Job, outcome: CheckOutcome): boolean {
@@ -124,7 +135,8 @@ function fire(deps: SchedulerDeps, job: Job, event: AlertEvent): void {
 
 /**
  * A heartbeat's check: whether its job pinged within the monitor's
- * interval. Null before the first ping ever, when there is nothing to judge.
+ * interval and a little grace. Null before the first ping ever, when there
+ * is nothing to judge.
  */
 export function heartbeatOutcome(
   lastPingAt: number | null,
@@ -132,7 +144,8 @@ export function heartbeatOutcome(
   now: number,
 ): CheckOutcome | null {
   if (lastPingAt === null) return null;
-  const ok = now - lastPingAt <= intervalSeconds * 1000;
+  const ok =
+    now - lastPingAt <= heartbeatDeadlineSeconds(intervalSeconds) * 1000;
   return { ok, statusCode: null, latencyMs: 0, error: ok ? null : "no ping" };
 }
 
@@ -143,7 +156,7 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
     job.type === "heartbeat"
       ? heartbeatOutcome(
           lastHeartbeat(db, job.site, job.monitor),
-          job.intervalSeconds,
+          job.pingIntervalSeconds ?? job.intervalSeconds,
           deps.now(),
         )
       : await deps.check(job.spec);
@@ -190,6 +203,8 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
         transition === "went-down"
           ? failingSince(db, job.site, job.monitor)
           : null,
+      wasSlow: transition === "went-down" && prev?.status === "slow",
+      stateSince: next.since,
       latencyMs: outcome.latencyMs,
       thresholdMs: job.slowThresholdMs,
     });
@@ -204,6 +219,7 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
       kind: "still-down",
       error: outcome.error,
       downSince: next.since,
+      stateSince: next.since,
     });
   }
   setState(db, {
@@ -222,11 +238,19 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
   }
 }
 
-/** The jobs whose interval has passed since they last ran. */
+const jobKey = (job: Job) => `${job.site}\0${job.monitor}`;
+
+/**
+ * The jobs whose interval has passed since they last ran, and that are not
+ * still running from an earlier round: two checks of one monitor at once
+ * would race on its state and could alert twice.
+ */
 export function dueJobs(deps: SchedulerDeps, now: number): Job[] {
   const lastRun = (deps.lastRun ??= new Map());
+  const running = (deps.running ??= new Set());
   return deps.jobs.filter((job) => {
-    const last = lastRun.get(`${job.site}\0${job.monitor}`);
+    if (running.has(jobKey(job))) return false;
+    const last = lastRun.get(jobKey(job));
     // A second of slack, so a timer that fires a moment early still counts.
     return (
       last === undefined || now - last >= job.intervalSeconds * 1000 - 1000
@@ -248,9 +272,16 @@ export async function tick(deps: SchedulerDeps): Promise<void> {
   // abandon the others mid-flight or release the overlap guard early.
   const results = await Promise.allSettled(
     jobs.map(async (job, i) => {
-      deps.lastRun?.set(`${job.site}\0${job.monitor}`, started);
+      deps.lastRun?.set(jobKey(job), started);
       if (gap > 0 && i > 0) await deps.sleep?.(Math.round(i * gap));
-      await runJob(deps, job);
+      // Marked as running only once it runs: waiting for its place in the
+      // spread, a heartbeat can still be judged at once after a ping.
+      deps.running?.add(jobKey(job));
+      try {
+        await runJob(deps, job);
+      } finally {
+        deps.running?.delete(jobKey(job));
+      }
       // Per job, not per tick: the page should not wait out the spread.
       bumpDataVersion();
     }),
@@ -261,32 +292,6 @@ export async function tick(deps: SchedulerDeps): Promise<void> {
     }
   }
   bumpDataVersion();
-}
-
-/**
- * Wraps `task` so that a call made while a previous call is still running is
- * skipped instead of overlapping. A tick can take as long as the check
- * timeout, and two overlapping ticks would race on monitor_state and
- * could alert twice.
- */
-export function skipWhileRunning(
-  task: () => Promise<void>,
-  onSkip: () => void = () =>
-    console.warn("[scheduler] previous tick still running, skipping"),
-): () => Promise<void> {
-  let running = false;
-  return async () => {
-    if (running) {
-      onSkip();
-      return;
-    }
-    running = true;
-    try {
-      await task();
-    } finally {
-      running = false;
-    }
-  };
 }
 
 /** The live alert sender: SMTP from the config, fetch for the rest. */
@@ -303,13 +308,19 @@ export function liveAlertDeps(config: AppConfig): AlertDeps {
 
 /**
  * Whether an alert is still true of its monitor, asked before a retry. A
- * "went down" for a monitor that has recovered since would only confuse.
+ * "went down" for a monitor that has recovered since, or that has gone
+ * down again since, would only confuse.
  */
 export function alertStillHolds(
   db: Database.Database,
-  event: Pick<AlertEvent, "site" | "monitor" | "kind">,
+  event: Pick<AlertEvent, "site" | "monitor" | "kind" | "stateSince">,
 ): boolean {
-  const status = getState(db, event.site, event.monitor)?.status;
+  const state = getState(db, event.site, event.monitor);
+  // Another spell in the same state since, such as a second outage: the
+  // alert was about the first one.
+  if (event.stateSince !== undefined && state?.since !== event.stateSince)
+    return false;
+  const status = state?.status;
   const expected: Record<AlertKind, boolean> = {
     "went-down": status === "down",
     "still-down": status === "down",
@@ -357,7 +368,32 @@ export function spreadMs(checkIntervalSeconds: number): number {
   return Math.min(45_000, checkIntervalSeconds * 750);
 }
 
-const globals = globalThis as { __statusSchedulerStarted?: boolean };
+const globals = globalThis as {
+  __statusSchedulerStarted?: boolean;
+  __statusSchedulerDeps?: SchedulerDeps;
+};
+
+/**
+ * Judges a heartbeat monitor at once, after a ping, rather than at its next
+ * turn: a daily job's recovery should not wait a day to be seen. Only a
+ * monitor that is not up is judged early; an up one has nothing to gain.
+ */
+export async function judgeHeartbeat(site: string, monitor: string) {
+  const deps = globals.__statusSchedulerDeps;
+  const job = deps?.jobs.find((j) => j.site === site && j.monitor === monitor);
+  if (!deps || !job || job.type !== "heartbeat") return;
+  if (getState(deps.db, site, monitor)?.status === "up") return;
+  const running = (deps.running ??= new Set());
+  const key = `${site}\0${monitor}`;
+  if (running.has(key)) return;
+  running.add(key);
+  try {
+    await runJob(deps, job);
+  } finally {
+    running.delete(key);
+  }
+  bumpDataVersion();
+}
 
 export function startScheduler(): void {
   if (globals.__statusSchedulerStarted) return;
@@ -374,7 +410,16 @@ export function startScheduler(): void {
     );
   }
   const alertDeps = liveAlertDeps(config);
+  // When each monitor last ran, from the database: a restart does not run
+  // everything at once again, which for domains and certificates would
+  // ask the registries more often than their floor.
+  const lastRun = new Map<string, number>();
+  for (const job of jobs) {
+    const checkedAt = getState(db, job.site, job.monitor)?.checkedAt;
+    if (checkedAt) lastRun.set(`${job.site}\0${job.monitor}`, checkedAt);
+  }
   const deps: SchedulerDeps = {
+    lastRun,
     jobs,
     db,
     check: runCheck,
@@ -388,7 +433,10 @@ export function startScheduler(): void {
   };
 
   let lastPruneDay = "";
-  const run = skipWhileRunning(async () => {
+  // Rounds may overlap: a round whose last checks are still waiting on a
+  // timeout does not hold up the next, which starts what is due and not
+  // running (see dueJobs).
+  const run = async () => {
     try {
       // Not awaited: a slow vendor must not hold up the checks.
       void refreshVendors(config, Date.now()).then(
@@ -418,7 +466,8 @@ export function startScheduler(): void {
     } catch (err) {
       console.error("[scheduler] tick failed", err);
     }
-  });
+  };
+  globals.__statusSchedulerDeps = deps;
 
   console.log(
     `[scheduler] started: ${config.sites.length} site(s), ${jobs.length} monitor(s), every ${config.checkIntervalSeconds}s`,

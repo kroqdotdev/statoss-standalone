@@ -53,10 +53,13 @@ export function mayView(
 }
 
 // ---------------------------------------------------------------------------
-// A brake on guessing: a handful of wrong passwords a minute per site.
+// A brake on guessing: ten wrong passwords a minute from one address, and a
+// hundred a minute on one site from all of them. One visitor guessing does
+// not lock everyone else out; many together still cannot guess quickly.
 
 const WINDOW_MS = 60_000;
 export const MAX_FAILURES = 10;
+export const MAX_SITE_FAILURES = 100;
 
 const globals = globalThis as {
   __statusUnlockFailures?: Map<string, number[]>;
@@ -67,19 +70,46 @@ function failures(): Map<string, number[]> {
   return globals.__statusUnlockFailures;
 }
 
-/** Whether the site has had too many wrong passwords in the last minute. */
-export function tooManyFailures(host: string, now: number): boolean {
-  const recent = (failures().get(host) ?? []).filter(
-    (at) => now - at < WINDOW_MS,
-  );
-  failures().set(host, recent);
-  return recent.length >= MAX_FAILURES;
+function recent(key: string, now: number): number[] {
+  const list = (failures().get(key) ?? []).filter((at) => now - at < WINDOW_MS);
+  if (list.length === 0) failures().delete(key);
+  else failures().set(key, list);
+  return list;
 }
 
-export function noteFailure(host: string, now: number): void {
-  const list = failures().get(host) ?? [];
-  list.push(now);
-  failures().set(host, list);
+/**
+ * Who is guessing, as far as the request says: the first address the
+ * reverse proxy forwarded, or one bucket for requests that came direct.
+ */
+export function clientOf(headers: Headers): string {
+  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || headers.get("x-real-ip")?.trim() || "direct";
+}
+
+/** Whether this address, or the site as a whole, has had too many wrong passwords. */
+export function tooManyFailures(
+  host: string,
+  client: string,
+  now: number,
+): boolean {
+  return (
+    recent(`${host}\0${client}`, now).length >= MAX_FAILURES ||
+    recent(host, now).length >= MAX_SITE_FAILURES
+  );
+}
+
+/** Above this many keys, the expired ones are swept out on the next failure. */
+const SWEEP_AT = 500;
+
+export function noteFailure(host: string, client: string, now: number): void {
+  // Addresses that never come back would otherwise stay for good.
+  if (failures().size > SWEEP_AT)
+    for (const key of [...failures().keys()]) recent(key, now);
+  for (const key of [`${host}\0${client}`, host]) {
+    const list = failures().get(key) ?? [];
+    list.push(now);
+    failures().set(key, list);
+  }
 }
 
 /** For tests. */

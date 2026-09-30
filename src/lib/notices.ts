@@ -20,6 +20,12 @@ interface Candidate {
   key: string;
   /** The moment the notice is about. */
   at: number;
+  /**
+   * What the marker is dated, which is how long it is kept: a window's
+   * markers are dated by its end, so one planned far ahead is not
+   * forgotten, and announced again, before it has happened.
+   */
+  keepFrom?: number;
   event: Omit<NoticeEvent, "site" | "pageUrl" | "now">;
 }
 
@@ -31,11 +37,13 @@ function candidates(view: IncidentView, now: number): Candidate[] {
     const body = view.updates[0]?.body;
     const window = { ...base, start, end, body };
     const list: Candidate[] = [];
+    const keepFrom = end;
     // Announced when it is first seen, whenever that is, while it is ahead.
     if (start > now)
       list.push({
         key: `${view.id}:scheduled`,
         at: now,
+        keepFrom,
         event: { ...window, kind: "maintenance-scheduled", at: now },
       });
     if (start <= now)
@@ -99,7 +107,7 @@ export function dueNotices(
   for (const view of views) {
     for (const c of candidates(view, now)) {
       if (wasNotified(db, site.name, c.key)) continue;
-      markNotified(db, site.name, c.key, now);
+      markNotified(db, site.name, c.key, Math.max(now, c.keepFrom ?? now));
       if (now - c.at > NOTICE_WINDOW_MS) continue;
       due.push({ ...c.event, site: site.name, pageUrl: siteUrl(site), now });
     }

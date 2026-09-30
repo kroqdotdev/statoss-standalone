@@ -37,6 +37,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- After a restart a monitor waits out what is left of its interval from its last check instead of running at once, so certificates and domains keep to their hourly and six-hourly floors through restarts.
+- Two rows whose names make the same anchor on the page (like "API v2" and "API-v2"), and two maintenance windows with one title starting in the same minute, are refused by the configuration.
+- A round no longer waits for the last one to finish. With a short `checkIntervalSeconds` and a check waiting on its timeout, every other round used to be skipped; now only that monitor waits.
 - Moving from a bar to the list of its checks keeps the bar read out, so on a phone the list no longer moves under a finger half way through a tap.
 - A strip is drawn as one SVG path per colour instead of two or three rectangles per bar, about a quarter of the markup.
 - The status page lists the resolved incidents of the last 7 days instead of 30; the rest are under Incident history. Open incidents are ordered: what somebody wrote first, the worst first, then the outages the checker opened, folded into one card when there are several.

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearFailures,
+  clientOf,
   MAX_FAILURES,
+  MAX_SITE_FAILURES,
   mayView,
   noteFailure,
   passwordMatches,
@@ -52,12 +54,40 @@ describe("password pages", () => {
 describe("the brake on guessing", () => {
   beforeEach(clearFailures);
 
-  it("stops after ten wrong passwords in a minute, and lets go after it", () => {
-    for (let i = 0; i < MAX_FAILURES - 1; i++) noteFailure("h", 1000 + i);
-    expect(tooManyFailures("h", 2000)).toBe(false);
-    noteFailure("h", 2000);
-    expect(tooManyFailures("h", 2001)).toBe(true);
-    expect(tooManyFailures("other", 2001)).toBe(false);
-    expect(tooManyFailures("h", 62_001)).toBe(false);
+  it("stops one address after ten wrong passwords in a minute, and lets go after it", () => {
+    for (let i = 0; i < MAX_FAILURES - 1; i++) noteFailure("h", "a", 1000 + i);
+    expect(tooManyFailures("h", "a", 2000)).toBe(false);
+    noteFailure("h", "a", 2000);
+    expect(tooManyFailures("h", "a", 2001)).toBe(true);
+    // Somebody else on the same site is not held up by it.
+    expect(tooManyFailures("h", "b", 2001)).toBe(false);
+    expect(tooManyFailures("other", "a", 2001)).toBe(false);
+    expect(tooManyFailures("h", "a", 62_001)).toBe(false);
+  });
+
+  it("stops the whole site after a hundred a minute from anywhere", () => {
+    for (let i = 0; i < MAX_SITE_FAILURES; i++)
+      noteFailure("h", `client-${i}`, 1000);
+    expect(tooManyFailures("h", "new", 1001)).toBe(true);
+  });
+
+  it("forgets addresses whose failures have expired, once there are many", () => {
+    for (let i = 0; i < 600; i++) noteFailure("h", `old-${i}`, 1000);
+    noteFailure("h", "new", 120_000);
+    expect(tooManyFailures("h", "old-1", 120_001)).toBe(false);
+    const size = (
+      globalThis as { __statusUnlockFailures?: Map<string, number[]> }
+    ).__statusUnlockFailures?.size;
+    expect(size).toBeLessThan(10);
+  });
+
+  it("knows the address the proxy forwarded", () => {
+    expect(
+      clientOf(new Headers({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" })),
+    ).toBe("203.0.113.9");
+    expect(clientOf(new Headers({ "x-real-ip": "203.0.113.7" }))).toBe(
+      "203.0.113.7",
+    );
+    expect(clientOf(new Headers())).toBe("direct");
   });
 });

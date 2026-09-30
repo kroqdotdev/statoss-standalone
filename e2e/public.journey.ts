@@ -34,8 +34,9 @@ test.describe("the status page", () => {
       "Partial outage",
     );
     await expect(page.locator("#row-card-payments")).toContainText("Degraded");
+    // Waiting, unless the desktop run's journey below has pinged it.
     await expect(page.locator("#row-nightly-backup")).toContainText(
-      "Waiting for the first ping",
+      /Waiting for the first ping|Up for/,
     );
     // The check that answers 503 goes down after two rounds.
     await expect(page.locator("#row-exports")).toContainText("Down for", {
@@ -61,11 +62,12 @@ test.describe("the status page", () => {
     // The newest bar, then back to the outage five hours ago.
     await page.keyboard.press("End");
     const bar = page.locator("#row-website").locator("p[aria-live]");
-    for (let i = 0; i < 75; i++) {
-      if ((await bar.textContent())?.includes("failed check")) break;
-      await page.keyboard.press("ArrowLeft");
+    let outage = false;
+    for (let i = 0; i < 75 && !outage; i++) {
+      outage = (await bar.textContent())?.includes("failed check") ?? false;
+      if (!outage) await page.keyboard.press("ArrowLeft");
     }
-    await expect(bar).toContainText("failed check");
+    expect(outage).toBe(true);
     await page.keyboard.press("Enter");
     const panel = page.getByRole("region", { name: /^Checks for Website/ });
     await expect(panel).toContainText("HTTP 503");
@@ -79,11 +81,13 @@ test.describe("the status page", () => {
     await strip.focus();
     await page.keyboard.press("End");
     const readout = page.locator("#row-website").locator("p[aria-live]");
-    for (let i = 0; i < 45; i++) {
-      if ((await readout.textContent())?.includes("Deploy: v1.4.0")) break;
-      await page.keyboard.press("ArrowLeft");
+    let deploy = false;
+    for (let i = 0; i < 45 && !deploy; i++) {
+      deploy =
+        (await readout.textContent())?.includes("Deploy: v1.4.0.") ?? false;
+      if (!deploy) await page.keyboard.press("ArrowLeft");
     }
-    await expect(readout).toContainText("Deploy: v1.4.0.");
+    expect(deploy).toBe(true);
   });
 
   test("has a year of history on the longer views", async ({ page, fits }) => {
@@ -239,6 +243,12 @@ test.describe("for programs", () => {
     expect((await request.get("/heartbeat/journey-heartbeat")).status()).toBe(
       200,
     );
+    // A ping is judged at once: the monitor is up without waiting its turn.
+    const status = await (await request.get("/status.json")).json();
+    expect(
+      status.monitors.find((m: { name: string }) => m.name === "Nightly backup")
+        .status,
+    ).toBe("up");
     expect((await request.get("/heartbeat/some-other-token")).status()).toBe(
       404,
     );

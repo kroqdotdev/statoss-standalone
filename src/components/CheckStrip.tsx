@@ -3,6 +3,7 @@
 import {
   useId,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type PointerEvent,
@@ -203,10 +204,23 @@ export function CheckStrip({
   spans = [],
   marks = [],
 }: Props) {
-  const [active, setActive] = useState<number | null>(null);
+  // The bar read out, by its time rather than its place: when the page
+  // refreshes into a new slot the bars move one to the left, and the
+  // readout should stay with the bar, not the place.
+  const [activeTs, setActiveTs] = useState<number | null>(null);
+  const activeIndex =
+    activeTs === null ? -1 : buckets.findIndex((b) => b.ts === activeTs);
+  const active = activeIndex < 0 ? null : activeIndex;
+  const setActive = (
+    next: number | null | ((cur: number | null) => number | null),
+  ) => {
+    const index = typeof next === "function" ? next(active) : next;
+    setActiveTs(index === null ? null : (buckets[index]?.ts ?? null));
+  };
   /** The bucket whose checks are open in the panel, by its start. */
   const [opened, setOpened] = useState<number | null>(null);
   const readoutId = useId();
+  const stripRef = useRef<HTMLDivElement>(null);
   const zone = useViewerZone();
   const n = buckets.length;
   const { bucketMs } = RANGES[range];
@@ -276,7 +290,15 @@ export function CheckStrip({
     opened === null ? -1 : buckets.findIndex((b) => b.ts === opened);
 
   return (
-    <div>
+    <div
+      onBlur={(e) => {
+        // Only when focus leaves the strip and its panel together: into the
+        // panel the bar stays read out, since dropping the readout would
+        // shorten it, move the panel up under a finger half way through a
+        // tap, and land the tap on another bar.
+        if (!e.currentTarget.contains(e.relatedTarget)) setActive(null);
+      }}
+    >
       <div className="mb-2 flex items-baseline justify-between gap-4 text-[13px] leading-snug">
         <p
           id={readoutId}
@@ -300,18 +322,13 @@ export function CheckStrip({
         }.`}
         aria-describedby={readoutId}
         tabIndex={0}
+        ref={stripRef}
         className={`relative select-none rounded-[2px] ${opens ? "cursor-pointer" : ""}`}
         onPointerMove={onPointer}
         onPointerDown={onPointer}
         onPointerLeave={() => setActive(null)}
         onClick={(e) => open(indexAt(e))}
-        onBlur={(e) => {
-          // Into the panel of checks, the bar stays read out: dropping the
-          // readout would shorten it, move the panel up under a finger
-          // half way through a tap, and land the tap on another bar.
-          if (!e.currentTarget.parentElement?.contains(e.relatedTarget))
-            setActive(null);
-        }}
+
         onKeyDown={onKey}
       >
         <svg
@@ -386,7 +403,12 @@ export function CheckStrip({
           label={bucketLabel(opened, range, zone)}
           dayLong={bucketMs >= DAY_MS}
           timed={timed}
-          onClose={() => setOpened(null)}
+          onClose={() => {
+            setOpened(null);
+            setActive(null);
+            // Back to the strip, where the keys that opened it were.
+            stripRef.current?.focus();
+          }}
         />
       )}
     </div>

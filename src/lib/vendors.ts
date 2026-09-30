@@ -19,7 +19,8 @@ export const VENDOR_STALE_MS = 30 * 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
-export type VendorState = "up" | "slow" | "down";
+/** unknown: the page itself does not know, which is no reading at all. */
+export type VendorState = "up" | "slow" | "down" | "unknown";
 
 export interface VendorComponent {
   name: string;
@@ -118,7 +119,7 @@ export function parseStatuspage(body: unknown, pageUrl: string): VendorReading {
 
 const STATOSS_STATES: Record<string, VendorState> = {
   operational: "up",
-  unknown: "up",
+  unknown: "unknown",
   degraded: "slow",
   partial: "slow",
   major: "down",
@@ -150,7 +151,9 @@ export function parseStatoss(body: unknown, pageUrl: string): VendorReading {
           ? "down"
           : text(m.status) === "slow"
             ? "slow"
-            : "up",
+            : text(m.status) === "up"
+              ? "up"
+              : "unknown",
     })),
     incidents: list(body.incidents)
       .filter(isObject)
@@ -340,10 +343,11 @@ export async function refreshVendors(
   return due.length > 0;
 }
 
-const STATES: Record<VendorState, ComponentState> = {
+const STATES: Record<VendorState, ComponentState | null> = {
   up: "operational",
   slow: "degraded",
   down: "major",
+  unknown: null,
 };
 
 /** What a component on this page shows for its vendor. */
@@ -386,7 +390,8 @@ export function vendorView(
         name,
         url: link,
       })),
-      problem: null,
+      problem:
+        reading.state === "unknown" ? "does not know its own state" : null,
     };
   const key = part.trim().toLowerCase();
   const found = reading.components.find(
@@ -394,6 +399,8 @@ export function vendorView(
   );
   if (!found)
     return { ...base, state: null, problem: `has no part named "${part}"` };
+  if (found.state === "unknown")
+    return { ...base, state: null, problem: "does not know that part's state" };
   return {
     ...base,
     state: STATES[found.state],

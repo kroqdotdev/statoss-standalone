@@ -419,6 +419,9 @@ function certificateCheck(spec: CheckSpec): Promise<CheckOutcome> {
     socket.once("error", (err) => finish(failed(start, errorCode(err))));
     socket.once("secureConnect", () => {
       const latencyMs = Date.now() - start;
+      // The date is read whether or not the certificate is trusted, so an
+      // expired one still says when it expired.
+      const validTo = Date.parse(socket.getPeerCertificate()?.valid_to ?? "");
       if (!socket.authorized) {
         const reason: unknown = socket.authorizationError;
         return finish({
@@ -428,9 +431,9 @@ function certificateCheck(spec: CheckSpec): Promise<CheckOutcome> {
           error: `certificate invalid (${
             reason instanceof Error ? errorCode(reason) : String(reason)
           })`,
+          expiresAt: Number.isNaN(validTo) ? null : validTo,
         });
       }
-      const validTo = Date.parse(socket.getPeerCertificate().valid_to);
       finish(
         Number.isNaN(validTo)
           ? {

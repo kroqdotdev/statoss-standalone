@@ -25,7 +25,8 @@ async function load(props: Props) {
   if (!site) return null;
   // A locked page's incidents are locked with it; the form is on the page.
   if (locked) redirect("/");
-  const view = findIncident(getDb(), config, site, decodeURIComponent(id));
+  // Next hands the id over decoded already.
+  const view = findIncident(getDb(), config, site, id, Date.now());
   return view ? { site, view } : null;
 }
 

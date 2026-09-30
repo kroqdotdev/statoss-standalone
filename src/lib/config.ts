@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
-import { isTimeZone } from "./format";
+import { isTimeZone, rowId } from "./format";
 
 /** The request methods a monitor can use. */
 export const METHODS = [
@@ -179,6 +179,15 @@ const monitorSchema = z
     keywordMode: m.keywordMode ?? "present",
   }));
 
+/**
+ * How long a heartbeat may go without a ping: its interval, and a tenth of
+ * that (a minute at least) of grace, since a job does not finish at the
+ * same second every time.
+ */
+export function heartbeatDeadlineSeconds(intervalSeconds: number): number {
+  return intervalSeconds + Math.max(60, intervalSeconds / 10);
+}
+
 /** What a monitor points at, in words: the URL, "host:port", "A example.com". */
 export function monitorTarget(m: {
   type: MonitorType;
@@ -205,12 +214,15 @@ export function monitorTarget(m: {
 
 /**
  * Seconds between a monitor's checks: the default, the type's floor, or the
- * monitor's own when that is longer.
+ * monitor's own when that is longer. A heartbeat is judged every round,
+ * so that it goes down as soon as a ping is overdue; its own interval is
+ * how often the pings are due (see heartbeatDeadlineSeconds).
  */
 export function monitorIntervalSeconds(
   m: { type: MonitorType; intervalSeconds?: number },
   defaultSeconds: number,
 ): number {
+  if (m.type === "heartbeat") return defaultSeconds;
   return Math.max(
     defaultSeconds,
     TYPE_MIN_INTERVAL_SECONDS[m.type] ?? 0,
@@ -514,6 +526,29 @@ const siteObjectSchema = z
         message: `monitor name "${name}" is used more than once`,
       });
     }
+    // Names that make the same anchor on the page, like "API v2" and
+    // "API-v2", would link one row's incidents to the other.
+    const anchors = names.map((n) => rowId(n));
+    for (const anchor of duplicates(anchors)) {
+      const alike = names.filter((n) => rowId(n) === anchor);
+      if (new Set(alike).size > 1)
+        ctx.addIssue({
+          code: "custom",
+          path: ["monitors"],
+          message: `names ${alike.map((n) => `"${n}"`).join(" and ")} are too alike; change one`,
+        });
+    }
+    // A window is known by its start, to the minute, and its title.
+    const windows = site.maintenance.map(
+      (w) => `${Math.floor(w.start / 60_000)}\0${w.title}`,
+    );
+    if (duplicates(windows).length > 0)
+      ctx.addIssue({
+        code: "custom",
+        path: ["maintenance"],
+        message:
+          "two maintenance windows have the same title and start in the same minute",
+      });
     site.maintenance.forEach((window, i) => {
       for (const name of window.monitors ?? []) {
         if (!names.includes(name))

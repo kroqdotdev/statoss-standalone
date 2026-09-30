@@ -8,7 +8,6 @@ import {
   heartbeatOutcome,
   loadJobs,
   spreadMs,
-  skipWhileRunning,
   tick,
   type Job,
   type SchedulerDeps,
@@ -284,41 +283,6 @@ sites:
   });
 });
 
-describe("skipWhileRunning", () => {
-  it("skips calls that arrive while the task is still running", async () => {
-    let release!: () => void;
-    const task = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-        }),
-    );
-    const onSkip = vi.fn();
-    const run = skipWhileRunning(task, onSkip);
-
-    const first = run();
-    await run();
-    expect(task).toHaveBeenCalledOnce();
-    expect(onSkip).toHaveBeenCalledOnce();
-
-    release();
-    await first;
-    const third = run();
-    release();
-    await third;
-    expect(task).toHaveBeenCalledTimes(2);
-  });
-
-  it("releases the guard when the task throws", async () => {
-    const task = vi.fn().mockRejectedValueOnce(new Error("boom"));
-    const run = skipWhileRunning(task, () => {});
-    await expect(run()).rejects.toThrow("boom");
-    task.mockResolvedValueOnce(undefined);
-    await run();
-    expect(task).toHaveBeenCalledTimes(2);
-  });
-});
-
 describe("intervals", () => {
   const config = parseConfig(`
 checkIntervalSeconds: 60
@@ -403,8 +367,9 @@ sites:
   });
 
   it("passes inside the interval and fails past it", () => {
-    expect(heartbeatOutcome(0, 3600, 3_600_000)?.ok).toBe(true);
-    expect(heartbeatOutcome(0, 3600, 3_600_001)).toMatchObject({
+    // An hour and its grace of six minutes.
+    expect(heartbeatOutcome(0, 3600, 3_960_000)?.ok).toBe(true);
+    expect(heartbeatOutcome(0, 3600, 3_960_001)).toMatchObject({
       ok: false,
       error: "no ping",
     });
@@ -465,5 +430,98 @@ describe("alertStillHolds", () => {
     const event = deps.alertSpy.mock.calls[0][1];
     expect(event.kind).toBe("went-down");
     expect(event.failingSince).toBeLessThan(event.now);
+  });
+});
+
+describe("overlapping rounds", () => {
+  it("starts what is due beside a round that is still waiting, but never one monitor twice", async () => {
+    let release: () => void = () => {};
+    const slow = new Promise<CheckOutcome>((resolve) => {
+      release = () =>
+        resolve({ ok: true, statusCode: 200, latencyMs: 9000, error: null });
+    });
+    let time = 0;
+    const deps: SchedulerDeps = {
+      jobs: loadJobs(CONFIG).map((job) => ({ ...job, intervalSeconds: 10 })),
+      db: openDb(":memory:"),
+      check: vi.fn().mockReturnValueOnce(slow),
+      alert: vi.fn(),
+      now: () => time,
+    };
+    const first = tick(deps);
+    time = 10_000;
+    await tick(deps);
+    // Its check is still out, so the next round leaves it alone.
+    expect(deps.check).toHaveBeenCalledTimes(1);
+    release();
+    await first;
+    time = 20_000;
+    expect(dueJobs(deps, time)).toHaveLength(1);
+  });
+});
+
+describe("heartbeat grace", () => {
+  it("allows a tenth of the interval, and a minute at least, before a miss", () => {
+    const day = 86_400;
+    expect(heartbeatOutcome(0, day, (day + 8_000) * 1000)?.ok).toBe(true);
+    expect(heartbeatOutcome(0, day, (day + 8_641) * 1000)?.ok).toBe(false);
+    expect(heartbeatOutcome(0, 60, 120_000)?.ok).toBe(true);
+    expect(heartbeatOutcome(0, 60, 120_001)?.ok).toBe(false);
+  });
+});
+
+describe("alerts about a spell that is over", () => {
+  it("are dropped when the monitor went down again since", async () => {
+    const deps = makeDeps([
+      { ok: false },
+      { ok: false },
+      { ok: true },
+      { ok: false },
+      { ok: false },
+    ]);
+    await tick(deps);
+    await tick(deps);
+    const first = deps.alertSpy.mock.calls[0][1];
+    expect(alertStillHolds(deps.db, first)).toBe(true);
+    await tick(deps);
+    await tick(deps);
+    await tick(deps);
+    // Down again, but in a second outage: the first one's alert is stale.
+    expect(state(deps)?.status).toBe("down");
+    expect(alertStillHolds(deps.db, first)).toBe(false);
+    expect(alertStillHolds(deps.db, deps.alertSpy.mock.calls[2][1])).toBe(true);
+  });
+
+  it("marks a down alert that follows slowness, so a pager closes the slow one", async () => {
+    const config = parseConfig(`
+alerts:
+  to:
+    - pagerduty: R0UT1NG
+sites:
+  - name: webhooks.cc
+    host: status.webhooks.cc
+    monitors:
+      - name: Main site
+        url: https://webhooks.cc
+        slowThresholdMs: 100
+`);
+    const deps = makeDeps(
+      [
+        { ok: true, latencyMs: 500 },
+        { ok: true, latencyMs: 500 },
+        { ok: false },
+        { ok: false },
+      ],
+      config,
+    );
+    for (let i = 0; i < 4; i++) await tick(deps);
+    const kinds = deps.alertSpy.mock.calls.map((c) => [
+      c[1].kind,
+      c[1].wasSlow,
+    ]);
+    expect(kinds).toEqual([
+      ["went-slow", false],
+      ["went-down", true],
+    ]);
   });
 });

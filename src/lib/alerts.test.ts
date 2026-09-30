@@ -6,6 +6,7 @@ import {
   formatDuration,
   RETRY_DELAYS_MS,
   describeNotice,
+  headerText,
   sendAlerts,
   sendNotice,
   signWebhook,
@@ -256,6 +257,47 @@ describe("PagerDuty, Opsgenie and ntfy", () => {
   });
 });
 
+describe("a monitor that goes down from slow", () => {
+  it("closes its slow alert on a pager before opening the down one", async () => {
+    const { calls, fetchFn } = fakeFetch();
+    const deps = { send: null, from: "", fetch: fetchFn };
+    const down = { ...DOWN, wasSlow: true };
+    await sendAlerts([{ pagerduty: "R0UT1NG" }], down, deps);
+    expect(calls.map((c) => JSON.parse(c.body))).toMatchObject([
+      {
+        event_action: "resolve",
+        dedup_key: "statoss:webhooks.cc:Redirector:slow",
+      },
+      { event_action: "trigger", dedup_key: "statoss:webhooks.cc:Redirector" },
+    ]);
+    calls.length = 0;
+    await sendAlerts([{ opsgenie: "KEY" }], down, deps);
+    expect(calls.map((c) => c.url)).toEqual([
+      "https://api.opsgenie.com/v2/alerts/statoss%3Awebhooks.cc%3ARedirector%3Aslow/close?identifierType=alias",
+      "https://api.opsgenie.com/v2/alerts",
+    ]);
+    calls.length = 0;
+    // A close that fails does not hold up the down alert.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const flaky = vi.fn(
+      async (url: string | URL | Request, init?: RequestInit) =>
+        String(init?.body).includes('"resolve"')
+          ? new Response("no", { status: 500 })
+          : new Response("ok", { status: 202 }),
+    ) as unknown as typeof fetch;
+    const results = await sendAlerts([{ pagerduty: "R0UT1NG" }], down, {
+      send: null,
+      from: "",
+      fetch: flaky,
+    });
+    expect(results).toEqual([{ channel: "pagerduty", ok: true }]);
+    vi.restoreAllMocks();
+    // Without slowness before it, only the down alert.
+    await sendAlerts([{ pagerduty: "R0UT1NG" }], DOWN, deps);
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe("retries", () => {
   function failing(times: number) {
     let n = 0;
@@ -398,5 +440,19 @@ describe("notices", () => {
       status: "Identified",
       monitors: ["API"],
     });
+  });
+});
+
+describe("headerText", () => {
+  it("keeps plain text, joins lines, and encodes the rest for ntfy", () => {
+    expect(headerText("shop: API is down")).toBe("shop: API is down");
+    expect(headerText("two\nlines")).toBe("two lines");
+    const encoded = headerText("Café: 接口 is down");
+    expect(encoded).toMatch(/^=\?UTF-8\?B\?[A-Za-z0-9+/=]+\?=$/);
+    expect(Buffer.from(encoded.slice(10, -2), "base64").toString("utf8")).toBe(
+      "Café: 接口 is down",
+    );
+    // What fetch would have refused goes through as a header now.
+    expect(() => new Headers({ title: encoded })).not.toThrow();
   });
 });

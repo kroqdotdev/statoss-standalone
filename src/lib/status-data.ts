@@ -100,7 +100,7 @@ export function monitorView(
     since: state?.since ?? null,
     ...data,
     last24h,
-    spans: stripSpans(views, cp.name, start, end),
+    spans: stripSpans(views, cp.name, start, end, now),
   };
 }
 
@@ -136,10 +136,13 @@ export function stripSpans(
   name: string,
   start: number,
   end: number,
+  now: number = end,
 ): StripSpan[] {
   return views
     .filter((v) => {
       if (v.auto) return false;
+      // An incident dated ahead is not told before its time.
+      if (v.kind === "incident" && v.startedAt > now) return false;
       if (v.monitors.length > 0 && !v.monitors.includes(name)) return false;
       const to = v.kind === "maintenance" ? v.endsAt : v.resolvedAt;
       return v.startedAt < end && (to === null || to > start);
@@ -213,7 +216,7 @@ export function componentViews(
         spec,
         history.now,
       ),
-      spans: stripSpans(history.views, c.name, start, end),
+      spans: stripSpans(history.views, c.name, start, end, history.now),
     };
   });
 }
@@ -283,13 +286,14 @@ export function siteIncidentViews(
   config: AppConfig,
   site: SiteConfig,
   since: number,
+  /** Which window `since` is, for the cache: the page's and the feeds' differ. */
+  window = since === 0 ? "all" : String(since),
 ): IncidentView[] {
   return [
     ...(readIncidentFiles(config).get(site.name) ?? []),
     ...site.maintenance.map((window) => maintenanceView(window)),
-    ...cached(
-      `incidents\0${site.name}\0${since === 0 ? "all" : "recent"}`,
-      () => autoIncidents(db, site.name, since).map(autoIncidentView),
+    ...cached(`incidents\0${site.name}\0${window}`, () =>
+      autoIncidents(db, site.name, since).map(autoIncidentView),
     ),
   ];
 }
@@ -304,17 +308,27 @@ export function siteIncidents(
 ): SiteIncidents {
   // Rounded to the hour, so the cached list is not thrown away each request.
   const since = Math.floor((now - days * DAY_MS) / HOUR_MS) * HOUR_MS;
-  return splitIncidents(siteIncidentViews(db, config, site, since), now, days);
+  return splitIncidents(
+    siteIncidentViews(db, config, site, since, `${days}d`),
+    now,
+    days,
+  );
 }
 
-/** One incident or window by its id, or undefined. */
+/**
+ * One incident or window by its id, or undefined. An incident dated ahead
+ * is not there until its time; a planned window is.
+ */
 export function findIncident(
   db: Database.Database,
   config: AppConfig,
   site: SiteConfig,
   id: string,
+  now: number,
 ): IncidentView | undefined {
-  return siteIncidentViews(db, config, site, 0).find((v) => v.id === id);
+  return siteIncidentViews(db, config, site, 0).find(
+    (v) => v.id === id && (v.kind === "maintenance" || v.startedAt <= now),
+  );
 }
 
 /** The live pieces the route handlers need for a site. */

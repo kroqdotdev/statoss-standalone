@@ -17,6 +17,8 @@ describe("accent", () => {
   it("puts black or white on a button, whichever reads", () => {
     expect(inkOn("#ffd400")).toBe("#161715");
     expect(inkOn("#6d2a7a")).toBe("#ffffff");
+    // Mid green: white reads at about 3:1, the ink at nearly 6.
+    expect(inkOn("#00aa00")).toBe("#161715");
   });
 
   it("makes the properties the page root takes, or none", () => {
