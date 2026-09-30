@@ -2,8 +2,9 @@ import { notFound } from "next/navigation";
 import { SitePage } from "@/components/SitePage";
 import { Unlock } from "@/components/Unlock";
 import { assetSrc } from "@/lib/assets";
-import { getDb } from "@/lib/db";
+import { getDb, listDeploys } from "@/lib/db";
 import { pageSite } from "@/lib/page-site";
+import { rangeWindow } from "@/lib/queries";
 import { RANGES, parseRange } from "@/lib/ranges";
 import { statedByName } from "@/lib/stated";
 import {
@@ -46,6 +47,7 @@ export default async function StatusPage(props: PageProps<"/">) {
   const incidents = siteIncidents(db, config, site, now);
   // Everything ever written, for naming on the bars it touched.
   const views = siteIncidentViews(db, config, site, 0);
+  const window = rangeWindow(RANGES[range], now);
   const stated = statedByName(incidents.current, rowNames(site), now);
 
   return (
@@ -56,6 +58,14 @@ export default async function StatusPage(props: PageProps<"/">) {
       supportUrl={site.supportUrl ?? null}
       foldGroups={site.foldGroups}
       defaultRange={site.defaultRange}
+      deploys={
+        site.showDeploys
+          ? listDeploys(db, site.name, window.start, window.end).map((d) => ({
+              at: d.at,
+              label: d.version,
+            }))
+          : []
+      }
       monitors={site.monitors.map((cp) =>
         monitorView(
           db,

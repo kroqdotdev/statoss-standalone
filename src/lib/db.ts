@@ -48,6 +48,15 @@ CREATE TABLE IF NOT EXISTS component_state (
   at INTEGER NOT NULL,
   PRIMARY KEY (site, component, at)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS deploy (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site TEXT NOT NULL,
+  version TEXT NOT NULL,
+  note TEXT,
+  url TEXT,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deploy_site_at ON deploy(site, at);
 CREATE TABLE IF NOT EXISTS notified (
   site TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -359,6 +368,7 @@ export function pruneOldChecks(
     )
     .run(historyBefore);
   db.prepare("DELETE FROM notified WHERE at < ?").run(historyBefore);
+  db.prepare("DELETE FROM deploy WHERE at < ?").run(historyBefore);
   return checks.changes + hours.changes + incidents.changes;
 }
 
@@ -498,4 +508,44 @@ export function failingSince(
     )
     .get(site, monitor, site, monitor) as { ts: number | null };
   return row.ts;
+}
+
+// ---------------------------------------------------------------------------
+// Deploy markers: a version and the moment it went out, posted from CI.
+
+export interface DeployRow {
+  id: number;
+  version: string;
+  note: string | null;
+  url: string | null;
+  at: number;
+}
+
+export function recordDeploy(
+  db: Database.Database,
+  site: string,
+  deploy: Omit<DeployRow, "id">,
+): DeployRow {
+  const result = db
+    .prepare(
+      "INSERT INTO deploy (site, version, note, url, at) VALUES (?, ?, ?, ?, ?)",
+    )
+    .run(site, deploy.version, deploy.note, deploy.url, deploy.at);
+  return { id: Number(result.lastInsertRowid), ...deploy };
+}
+
+/** A site's deploys in [since, until), newest first. */
+export function listDeploys(
+  db: Database.Database,
+  site: string,
+  since: number,
+  until: number,
+  limit = 200,
+): DeployRow[] {
+  return db
+    .prepare(
+      `SELECT id, version, note, url, at FROM deploy
+       WHERE site = ? AND at >= ? AND at < ? ORDER BY at DESC LIMIT ?`,
+    )
+    .all(site, since, until, limit) as DeployRow[];
 }

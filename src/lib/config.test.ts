@@ -535,3 +535,34 @@ sites:
     expect(config.sites[0].components[0].state).toBe("operational");
   });
 });
+
+describe("vendor components", () => {
+  const withComponent = (component: string) => `
+sites:
+  - name: s
+    host: h
+    components:
+${component}
+`;
+
+  it("follow a status page, or one part of it", () => {
+    const c = parseConfig(
+      withComponent(`      - name: GitHub
+        vendor: https://www.githubstatus.com/
+        part: Git Operations`),
+    ).sites[0].components[0];
+    expect(c).toMatchObject({
+      vendor: "https://www.githubstatus.com",
+      part: "Git Operations",
+      state: "operational",
+    });
+  });
+
+  it.each([
+    ["      - name: x\n        part: API", "part needs a vendor"],
+    ["      - name: x\n        vendor: githubstatus.com", "vendor"],
+    ["      - name: x\n        vendor: ftp://example.com", "vendor"],
+  ])("rejects %s", (component, message) => {
+    expect(() => parseConfig(withComponent(component))).toThrow(message);
+  });
+});

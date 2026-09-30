@@ -9,6 +9,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Six more kinds of monitor, chosen with `type`: `tcp`, `dns`, `ping`, `certificate`, `domain` and `heartbeat`. Certificate and domain monitors fail inside a warning window before expiry and show the date on the page and in `status.json`; a heartbeat gives a scheduled job a URL to ping at `/heartbeat/<token>` and goes down after two intervals without one.
 - `intervalSeconds` on a monitor, for one that should be checked less often than the rest.
 - The image carries `ping`.
+- Vendor components: a component with `vendor` follows a Statuspage, incident.io or StatOSS status page, or one `part` of it, and is shown under Third-party services with the vendor's open incidents. A vendor's trouble does not move the headline, the badge or `status.json`'s site status.
+- Deploy markers: with `DEPLOY_TOKEN` set, `POST /deploys` from CI draws a dashed line with the version on every strip of the site. `GET /deploys` lists them and `status.json` carries the last five.
+- A read-only MCP endpoint at `/mcp` with `get_status`, `list_incidents` and `get_error_budget`, and `/llms.txt`, next to every page.
 - Every bar on a strip opens a list of the checks behind it: when each ran, what it found and its response time. A bar older than the checks that are kept shows its hours' totals.
 - Pointing at a bar names the incidents and maintenance windows that touched it.
 - Components draw a strip of the states they were in.

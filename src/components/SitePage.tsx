@@ -1,5 +1,7 @@
 import { AutoRefresh } from "./AutoRefresh";
+import type { StripMark } from "./CheckStrip";
 import { ComponentRow } from "./ComponentRow";
+import { VendorSection } from "./VendorSection";
 import { MonitorSection, type MonitorView } from "./MonitorSection";
 import { CurrentIncidents, PastIncidents } from "./IncidentList";
 import { RangeSwitch } from "./RangeSwitch";
@@ -68,7 +70,15 @@ const GROUP_TONE: Record<ReturnType<typeof overallStatus>, string> = {
 };
 
 /** What the colours mean, as colours. */
-function Legend({ slow, checks }: { slow: boolean; checks: boolean }) {
+function Legend({
+  slow,
+  checks,
+  deploys,
+}: {
+  slow: boolean;
+  checks: boolean;
+  deploys: boolean;
+}) {
   const items: Array<[string, string]> = checks
     ? [
         ["bg-up-soft", "response time"],
@@ -91,6 +101,15 @@ function Legend({ slow, checks }: { slow: boolean; checks: boolean }) {
           {label}
         </span>
       ))}
+      {deploys && (
+        <span className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="block h-3 border-l border-dashed border-muted"
+          />
+          deploy
+        </span>
+      )}
     </div>
   );
 }
@@ -117,7 +136,10 @@ export function SitePage({
   supportUrl = null,
   foldGroups = false,
   defaultRange,
+  deploys = [],
 }: {
+  /** Deploy markers inside the range, for the strips. */
+  deploys?: StripMark[];
   name: string;
   /** Where the logo is, or null for none. */
   logo?: string | null;
@@ -142,9 +164,13 @@ export function SitePage({
   /** Days single checks are kept, which is how far back failed runs go. */
   retentionDays?: number;
 }) {
+  // A component that follows a vendor has its own section further down.
+  const vendors = components.filter((c) => c.vendor);
   const rows: Row[] = [
     ...monitors.map((view) => ({ kind: "monitor" as const, view })),
-    ...components.map((view) => ({ kind: "component" as const, view })),
+    ...components
+      .filter((c) => !c.vendor)
+      .map((view) => ({ kind: "component" as const, view })),
   ];
   const groups = groupRows(rows);
   const grouped = groups.some((g) => g.name !== null);
@@ -156,6 +182,7 @@ export function SitePage({
         range={range}
         now={now}
         stated={stated.get(r.view.name)}
+        marks={deploys}
         as={as}
       />
     ) : (
@@ -185,7 +212,7 @@ export function SitePage({
           openImpacts(incidents.current),
         )}
         monitors={monitors}
-        components={components}
+        components={components.filter((c) => !c.vendor)}
         now={now}
         incidents={incidents.current.filter(
           (i) => i.kind === "incident" && i.impact !== "none",
@@ -215,6 +242,7 @@ export function SitePage({
         <div className="mt-12 flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3 pb-5 sm:mt-16">
           <RangeSwitch current={range} fallback={defaultRange} />
           <Legend
+            deploys={monitors.length > 0 && deploys.length > 0}
             checks={monitors.length > 0}
             slow={
               monitors.length > 0
@@ -272,6 +300,8 @@ export function SitePage({
             })
           : rows.map((r) => row(r, "h2"))}
       </div>
+
+      <VendorSection vendors={vendors} />
 
       <PastIncidents
         incidents={incidents.past}

@@ -193,6 +193,9 @@ Open `https://status.example.com` to see the page.
 | `sites[].monitors[].keyword`         | no       |                  | Text the response body must contain.                                                                         |
 | `sites[].monitors[].keywordMode`     | no       | `present`        | `absent` fails the check when the keyword is found.                                                          |
 | `sites[].monitors[].slowThresholdMs` | no       |                  | A successful response slower than this counts as slow. At most 9999. For http, tcp, dns and ping.            |
+| `sites[].components[].vendor`        | no       |                  | A vendor's status page to follow. See Vendor components.                                                     |
+| `sites[].components[].part`          | no       |                  | One component on the vendor's page, by its name there.                                                       |
+| `sites[].showDeploys`                | no       | `true`           | `false` keeps deploy markers off the strips.                                                                 |
 | `sites[].maintenance[].title`        | yes      |                  | Shown on the page while the window is planned, running, or in the last 30 days.                              |
 | `sites[].maintenance[].start`, `end` | yes      |                  | ISO 8601. A date and time without a zone is read as UTC.                                                     |
 | `sites[].maintenance[].monitors`     | no       | all              | Names of the monitors the window covers.                                                                     |
@@ -276,6 +279,7 @@ Environment variables:
 | Variable        | Default                        | Description                                         |
 | --------------- | ------------------------------ | --------------------------------------------------- |
 | `SMTP_PASS`     |                                | SMTP password, only needed with email destinations. |
+| `DEPLOY_TOKEN`  |                                | Turns on `POST /deploys` for deploy markers.        |
 | `CONFIG_PATH`   | `./config.yaml`                | Path of the configuration file.                     |
 | `INCIDENTS_DIR` | `incidents` next to the config | Folder of incident files.                           |
 | `DB_PATH`       | `./data/status.db`             | Path of the SQLite database.                        |
@@ -354,6 +358,38 @@ A component has a strip too: each bar is the worst state it was in during that t
 
 Its state is the one in the configuration (`operational` unless you say otherwise), or the one an open incident gives it when that is worse. A component that is not operational counts toward the headline, the badge and `status.json` the way a monitor does: `degraded` like slow, `partial` and `major` like down.
 
+### Vendor components
+
+A component can follow somebody else's status page, so that your page says "GitHub: degraded" without you writing anything:
+
+```yaml
+components:
+  - name: GitHub
+    vendor: https://www.githubstatus.com
+  - name: GitHub Actions
+    vendor: https://www.githubstatus.com
+    part: Actions # one component on that page, by its name there
+```
+
+`vendor` is the address of a public status page run on Atlassian Statuspage or incident.io (both serve `/api/v2/summary.json`) or of another StatOSS page, hosted or standalone (`/status.json`). Each page is read every five minutes, whatever the number of components that follow it.
+
+Vendor components sit in their own section, Third-party services, one row each: the state, whose report it is, and links to up to three of the vendor's open incidents. Without `part` the component follows the whole page; with it, that one part, and only the incidents that touch it. **A vendor's trouble does not move your headline, your badge or `status.json`'s `site.status`.** If that is what you want, open an incident of your own and name the component.
+
+A vendor that cannot be read keeps its last reading for 30 minutes; after that the component shows the `state` from the configuration (`operational` unless you set one) and the row says the page could not be read. The reason is logged with `[vendors]` in front.
+
+### Deploy markers
+
+With the `DEPLOY_TOKEN` environment variable set, your deploy pipeline can tell the page when a release went out:
+
+```sh
+curl -fsS -X POST https://status.example.com/deploys \
+  -H "Authorization: Bearer $DEPLOY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"version": "v1.4.0"}'
+```
+
+`version` is up to 60 characters. Optional: `note` (up to 200 characters), `url` (the release's page), and `at` (ISO 8601 or milliseconds, in the past; now when left out). The request goes to the hostname of the site the deploy belongs to. Every strip of that site then carries a dashed line at that moment, the bar under it names the version, and `status.json` lists the last five under `deploys`. `GET /deploys` lists the last 90 days. `showDeploys: false` on a site keeps the lines off its page. Without the token there is no such address.
+
 ### When checks stop
 
 A state is only as good as the last check behind it. If a monitor has had no check for three of its intervals, and five minutes at the least, the page says "Last checked 12 min ago" in grey instead of "Up", the monitor counts as unknown in the headline and the badge, and `status.json` marks it `stale`. This is what you see for a moment after the server has been off for a while.
@@ -393,7 +429,7 @@ sites:
 
 A site with a `password` shows a form instead of the page. The right password opens the page, its incident pages and the history on that browser for 30 days. The cookie does not hold the password, and changing the password locks every browser out again. Ten wrong passwords in a minute pause the form for that site.
 
-`status.json`, the badges, the feeds and the widget are locked too and answer 401. An embed has no cookie, so give it the `embedKey`: `/badge.svg?key=...`, `/status.json?key=...`, `<script src="https://status.internal.example/widget.js?key=..."></script>`. Anyone who can read the page that embeds it can read the key, so it is a lesser secret than the password. A password page is never offered to search engines. Heartbeat pings need no password; their token is the secret.
+`status.json`, the badges, the feeds, the widget, `/checks`, `/deploys`, `/mcp` and `/llms.txt` are locked too and answer 401. An embed has no cookie, so give it the `embedKey`: `/badge.svg?key=...`, `/status.json?key=...`, `<script src="https://status.internal.example/widget.js?key=..."></script>`. Anyone who can read the page that embeds it can read the key, so it is a lesser secret than the password. A password page is never offered to search engines. Heartbeat pings and posted deploy markers need no password; their tokens are the secret.
 
 ### Endpoints
 
@@ -407,6 +443,9 @@ Next to every page, on the same hostname:
 | `/feed.xml`    | An RSS feed of the incidents and maintenance of the last 30 days. Each entry links to the incident's page and carries the window's times, every update with its status word, and the post-mortem.                                                        |
 | `/feed.atom`   | The same as an Atom feed.                                                                                                                                                                                                                                |
 | `/checks`      | The checks behind one bar, which the page asks for when a bar is opened: `?monitor=<name>&from=<ms>&to=<ms>`, a day at most. Failures are given in the page's words ("Timed out", "HTTP 503"), never the stored error.                                   |
+| `/deploys`     | Deploy markers of the last 90 days. `POST` adds one; see Deploy markers.                                                                                                                                                                                 |
+| `/mcp`         | A Model Context Protocol endpoint (Streamable HTTP: JSON-RPC by `POST`) with three tools that read: `get_status`, `list_incidents` and `get_error_budget`. Up to 120 messages a minute for each site.                                                    |
+| `/llms.txt`    | Where a program should read the site from, and how to read `status.json`.                                                                                                                                                                                |
 | `/widget.js`   | A script that draws a status dot and a link where it is placed: `<script src="https://status.example.com/widget.js"></script>`. Override the words with `data-operational`, `data-degraded`, `data-partial`, `data-major` and `data-unknown` attributes. |
 
 The JSON and badge endpoints allow cross-origin requests.

@@ -407,13 +407,32 @@ export type ComponentState = (typeof COMPONENT_STATES)[number];
  * A part of the product with no check, such as a mobile app. Its state is
  * what the file says, or what an open incident that names it says.
  */
-const componentSchema = z.object({
-  name: z.string().min(1),
-  group: z.string().min(1).optional(),
-  /** A line under the name. */
-  description: z.string().min(1).optional(),
-  state: z.enum(COMPONENT_STATES).default("operational"),
-});
+const componentSchema = z
+  .object({
+    name: z.string().min(1),
+    group: z.string().min(1).optional(),
+    /** A line under the name. */
+    description: z.string().min(1).optional(),
+    state: z.enum(COMPONENT_STATES).default("operational"),
+    /**
+     * A vendor's public status page to follow (Statuspage, incident.io or
+     * StatOSS). The component's state is then the vendor's, and `state`
+     * only what it shows while the vendor cannot be read.
+     */
+    vendor: z
+      .url({ protocol: /^https?$/ })
+      .transform((url) => {
+        const u = new URL(url);
+        return `${u.origin}${u.pathname.replace(/\/+$/, "")}`;
+      })
+      .optional(),
+    /** One part of the vendor's page to follow, by its name there. */
+    part: z.string().min(1).optional(),
+  })
+  .refine((c) => c.part === undefined || c.vendor !== undefined, {
+    message: "part needs a vendor",
+    path: ["part"],
+  });
 
 /** Days the hourly totals, resolved outages and sent notices are kept. */
 export const HISTORY_DAYS = 400;
@@ -462,6 +481,8 @@ const siteObjectSchema = z
     noindex: z.boolean().default(false),
     /** The view the page opens on. */
     defaultRange: z.enum(["24h", "7d", "90d", "1y"]).default("24h"),
+    /** false keeps deploy markers off the strips. */
+    showDeploys: z.boolean().default(true),
     /** true folds away the groups in which everything is up. */
     foldGroups: z.boolean().default(false),
     /** With a password, the page and its endpoints are locked. */

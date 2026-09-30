@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import type { ErrorBudget } from "./budget";
 import { siteUrl, type ComponentState, type SiteConfig } from "./config";
-import { getState } from "./db";
+import { getState, type DeployRow } from "./db";
 import { formatUtcStamp } from "./format";
 import {
   openImpacts,
@@ -60,7 +60,14 @@ export interface StatusJson {
     name: string;
     group: string | null;
     status: ComponentState;
+    /**
+     * The vendor status page it follows, when it does. A component with a
+     * vendor does not count toward site.status.
+     */
+    vendor?: string;
   }>;
+  /** The latest deploy markers, newest first. */
+  deploys?: Array<{ version: string; at: string; url: string | null }>;
   incidents: IncidentView[];
   maintenance: IncidentView[];
 }
@@ -71,9 +78,13 @@ export function statusJson(
   site: SiteConfig,
   incidents: SiteIncidents,
   now: number,
-  options: { budget?: ErrorBudget | null; checkIntervalSeconds?: number } = {},
+  options: {
+    budget?: ErrorBudget | null;
+    checkIntervalSeconds?: number;
+    deploys?: DeployRow[];
+  } = {},
 ): StatusJson {
-  const { budget = null, checkIntervalSeconds = 60 } = options;
+  const { budget = null, checkIntervalSeconds = 60, deploys = [] } = options;
   const stated = statedByName(incidents.current, rowNames(site), now);
   const live = site.monitors.map((cp) =>
     liveStatus(db, { checkIntervalSeconds }, site, cp, now),
@@ -116,7 +127,9 @@ export function statusJson(
       status: pageOverall(
         [
           ...live.map((l) => l.status),
-          ...components.map((c) => componentStatus(c.state)),
+          ...components
+            .filter((c) => !c.vendor)
+            .map((c) => componentStatus(c.state)),
         ],
         openImpacts(incidents.current),
       ),
@@ -142,7 +155,17 @@ export function statusJson(
       name: c.name,
       group: c.group,
       status: c.state,
+      ...(c.vendor ? { vendor: c.vendor.url } : {}),
     })),
+    ...(deploys.length > 0
+      ? {
+          deploys: deploys.map((d) => ({
+            version: d.version,
+            at: new Date(d.at).toISOString(),
+            url: d.url,
+          })),
+        }
+      : {}),
     incidents: incidents.current.filter((i) => i.kind === "incident"),
     maintenance: incidents.current.filter((i) => i.kind === "maintenance"),
   };

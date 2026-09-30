@@ -7,6 +7,8 @@ import {
   autoIncidents,
   getState,
   insertCheck,
+  listDeploys,
+  recordDeploy,
   openAutoIncident,
   openDb,
   pruneOldChecks,
@@ -326,5 +328,40 @@ describe("hourly totals", () => {
     ]);
     second.close();
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("deploys", () => {
+  it("keeps a site's markers and lists those of a window, newest first", () => {
+    const db = memDb();
+    recordDeploy(db, "s", { version: "v1", note: null, url: null, at: 1000 });
+    recordDeploy(db, "s", {
+      version: "v2",
+      note: "Hotfix",
+      url: "https://example.com/r/2",
+      at: 2000,
+    });
+    recordDeploy(db, "other", {
+      version: "x",
+      note: null,
+      url: null,
+      at: 1500,
+    });
+    expect(listDeploys(db, "s", 0, 3000).map((d) => d.version)).toEqual([
+      "v2",
+      "v1",
+    ]);
+    expect(listDeploys(db, "s", 1500, 3000)).toEqual([
+      {
+        id: 2,
+        version: "v2",
+        note: "Hotfix",
+        url: "https://example.com/r/2",
+        at: 2000,
+      },
+    ]);
+    expect(listDeploys(db, "s", 0, 3000, 1)).toHaveLength(1);
+    pruneOldChecks(db, 0, 1500);
+    expect(listDeploys(db, "s", 0, 3000).map((d) => d.version)).toEqual(["v2"]);
   });
 });
