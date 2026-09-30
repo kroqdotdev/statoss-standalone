@@ -1,9 +1,12 @@
 import type Database from "better-sqlite3";
 import {
   sendAlerts,
+  sendNotice,
   smtpSend,
   type AlertDeps,
   type AlertEvent,
+  type AlertKind,
+  type NoticeEvent,
 } from "./alerts";
 import { monitorSpec, runCheck } from "./checker";
 import type { CheckOutcome, CheckSpec } from "./checker";
@@ -14,6 +17,7 @@ import {
   monitorTarget,
   siteDestinations,
   siteRepeatMinutes,
+  siteSendsUpdates,
   siteUrl,
   type AppConfig,
   type Destination,
@@ -21,6 +25,7 @@ import {
   type MonitorType,
 } from "./config";
 import {
+  failingSince,
   getDb,
   getState,
   insertCheck,
@@ -32,7 +37,9 @@ import {
   touchChecked,
 } from "./db";
 import { bumpDataVersion } from "./data-version";
-import { inMaintenance } from "./incidents";
+import { readIncidentFiles } from "./incident-files";
+import { inMaintenance, maintenanceView } from "./incidents";
+import { dueNotices } from "./notices";
 import { applyResult, type CheckVerdict } from "./state";
 
 const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
@@ -172,6 +179,10 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
       kind: transition,
       error: outcome.error,
       downSince: prev?.since,
+      failingSince:
+        transition === "went-down"
+          ? failingSince(db, job.site, job.monitor)
+          : null,
       latencyMs: outcome.latencyMs,
       thresholdMs: job.slowThresholdMs,
     });
@@ -278,7 +289,56 @@ export function liveAlertDeps(config: AppConfig): AlertDeps {
     send: smtp ? smtpSend(smtp) : null,
     from: smtp?.from ?? "",
     fetch,
+    // unref: a pending retry must not keep a stopping process alive.
+    schedule: (task, delayMs) => void setTimeout(task, delayMs).unref(),
   };
+}
+
+/**
+ * Whether an alert is still true of its monitor, asked before a retry. A
+ * "went down" for a monitor that has recovered since would only confuse.
+ */
+export function alertStillHolds(
+  db: Database.Database,
+  event: Pick<AlertEvent, "site" | "monitor" | "kind">,
+): boolean {
+  const status = getState(db, event.site, event.monitor)?.status;
+  const expected: Record<AlertKind, boolean> = {
+    "went-down": status === "down",
+    "still-down": status === "down",
+    recovered: status !== "down",
+    "went-slow": status === "slow",
+    "back-to-normal": status === "up",
+  };
+  return expected[event.kind];
+}
+
+/**
+ * Sends the incident updates and maintenance notices that are due, to each
+ * site's destinations. Marks them as sent first, so a slow destination
+ * cannot make a notice go twice.
+ */
+export function sendDueNotices(
+  config: AppConfig,
+  db: Database.Database,
+  send: (destinations: Destination[], event: NoticeEvent) => Promise<unknown>,
+  now: number,
+): void {
+  const files = readIncidentFiles(config);
+  for (const site of config.sites) {
+    const views = [
+      ...(files.get(site.name) ?? []),
+      ...site.maintenance.map((window) => maintenanceView(window)),
+    ];
+    const due = dueNotices(db, site, views, now);
+    if (!siteSendsUpdates(config, site)) continue;
+    const destinations = siteDestinations(config, site);
+    if (destinations.length === 0) continue;
+    for (const event of due)
+      send(destinations, event).catch((err: unknown) => {
+        console.error("[scheduler] notice failed", err);
+      });
+  }
 }
 
 /**
@@ -310,7 +370,10 @@ export function startScheduler(): void {
     jobs,
     db,
     check: runCheck,
-    alert: (destinations, event) => sendAlerts(destinations, event, alertDeps),
+    alert: (destinations, event) =>
+      sendAlerts(destinations, event, alertDeps, () =>
+        alertStillHolds(db, event),
+      ),
     now: Date.now,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     spreadMs: spreadMs(config.checkIntervalSeconds),
@@ -320,6 +383,12 @@ export function startScheduler(): void {
   const run = skipWhileRunning(async () => {
     try {
       await tick(deps);
+      sendDueNotices(
+        config,
+        db,
+        (destinations, event) => sendNotice(destinations, event, alertDeps),
+        Date.now(),
+      );
       const day = new Date().toISOString().slice(0, 10);
       if (day !== lastPruneDay) {
         lastPruneDay = day;

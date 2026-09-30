@@ -6,6 +6,7 @@ import {
   findSiteByHost,
   parseConfig,
   parseTimestamp,
+  siteSendsUpdates,
   siteDestinations,
   siteRepeatMinutes,
   siteUrl,
@@ -395,5 +396,73 @@ ${monitor}
     ],
   ])("rejects %s", (monitor, message) => {
     expect(() => parseConfig(site(monitor))).toThrow(message);
+  });
+});
+
+describe("more destinations", () => {
+  const withTo = (to: string) => `
+alerts:
+  to:
+${to}
+sites:
+  - name: s
+    host: h
+    monitors:
+      - name: m
+        url: https://example.com
+`;
+
+  it("reads PagerDuty, Opsgenie and ntfy", () => {
+    const config = parseConfig(
+      withTo(`    - pagerduty: R0UT1NG
+    - opsgenie: KEY
+      region: eu
+    - opsgenie: KEY2
+    - ntfy: https://ntfy.sh/mytopic
+      token: tk_1
+    - ntfy: https://ntfy.example.com/ops`),
+    );
+    expect(config.alerts?.to).toEqual([
+      { pagerduty: "R0UT1NG" },
+      { opsgenie: "KEY", region: "eu" },
+      { opsgenie: "KEY2", region: "us" },
+      { ntfy: "https://ntfy.sh/mytopic", token: "tk_1" },
+      { ntfy: "https://ntfy.example.com/ops" },
+    ]);
+    expect(siteSendsUpdates(config, config.sites[0])).toBe(true);
+  });
+
+  it.each([
+    ["    - opsgenie: KEY\n      region: asia", "region: eu"],
+    ["    - ntfy: mytopic", "topic's URL"],
+    ["    - pagerduty: KEY\n      extra: 1", "pagerduty"],
+  ])("rejects %s", (to, message) => {
+    expect(() => parseConfig(withTo(to))).toThrow(message);
+  });
+
+  it("lets a site, or every site, keep updates to the page", () => {
+    const config = parseConfig(`
+alerts:
+  to:
+    - slack: https://hooks.slack.com/x
+  updates: false
+sites:
+  - name: a
+    host: a
+    monitors:
+      - name: m
+        url: https://example.com
+  - name: b
+    host: b
+    alerts:
+      updates: true
+    monitors:
+      - name: m
+        url: https://example.com
+`);
+    expect(config.sites.map((s) => siteSendsUpdates(config, s))).toEqual([
+      false,
+      true,
+    ]);
   });
 });

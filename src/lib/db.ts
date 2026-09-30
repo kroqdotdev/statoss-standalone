@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS monitor_state (
   expires_at INTEGER,
   PRIMARY KEY (site, monitor)
 );
+CREATE TABLE IF NOT EXISTS notified (
+  site TEXT NOT NULL,
+  key TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (site, key)
+);
 CREATE TABLE IF NOT EXISTS heartbeat (
   site TEXT NOT NULL,
   monitor TEXT NOT NULL,
@@ -253,6 +259,7 @@ export function pruneOldChecks(db: Database.Database, before: number): number {
       "DELETE FROM auto_incident WHERE resolved_at IS NOT NULL AND resolved_at < ?",
     )
     .run(before);
+  db.prepare("DELETE FROM notified WHERE at < ?").run(before);
   return checks.changes + incidents.changes;
 }
 
@@ -333,4 +340,48 @@ export function autoIncidents(
        ORDER BY started_at DESC`,
     )
     .all(site, since) as AutoIncidentRow[];
+}
+
+// ---------------------------------------------------------------------------
+// Notices: which incident updates and maintenance stages have been sent.
+
+export function wasNotified(
+  db: Database.Database,
+  site: string,
+  key: string,
+): boolean {
+  return (
+    db
+      .prepare("SELECT 1 FROM notified WHERE site = ? AND key = ?")
+      .get(site, key) !== undefined
+  );
+}
+
+export function markNotified(
+  db: Database.Database,
+  site: string,
+  key: string,
+  now: number,
+): void {
+  db.prepare(
+    "INSERT OR IGNORE INTO notified (site, key, at) VALUES (?, ?, ?)",
+  ).run(site, key, now);
+}
+
+/** The time of the first failed check since the monitor last passed one. */
+export function failingSince(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+): number | null {
+  const row = db
+    .prepare(
+      `SELECT MIN(ts) AS ts FROM checks
+       WHERE site = ? AND monitor = ? AND ok = 0 AND maintenance = 0
+         AND ts > COALESCE(
+           (SELECT MAX(ts) FROM checks
+            WHERE site = ? AND monitor = ? AND ok = 1 AND maintenance = 0), 0)`,
+    )
+    .get(site, monitor, site, monitor) as { ts: number | null };
+  return row.ts;
 }

@@ -3,6 +3,7 @@ import type { CheckOutcome } from "./checker";
 import { parseConfig } from "./config";
 import { autoIncidents, getState, openDb, recordHeartbeat } from "./db";
 import {
+  alertStillHolds,
   dueJobs,
   heartbeatOutcome,
   loadJobs,
@@ -440,5 +441,29 @@ sites:
       l: number | null;
     };
     expect(row.l).toBeNull();
+  });
+});
+
+describe("alertStillHolds", () => {
+  it("drops a down alert once the monitor is back, and a recovery once it is down again", async () => {
+    const deps = makeDeps([{ ok: false }, { ok: false }, { ok: true }]);
+    const at = { site: "webhooks.cc", monitor: "Main site" };
+    await tick(deps);
+    await tick(deps);
+    expect(alertStillHolds(deps.db, { ...at, kind: "went-down" })).toBe(true);
+    expect(alertStillHolds(deps.db, { ...at, kind: "recovered" })).toBe(false);
+    await tick(deps);
+    expect(alertStillHolds(deps.db, { ...at, kind: "went-down" })).toBe(false);
+    expect(alertStillHolds(deps.db, { ...at, kind: "recovered" })).toBe(true);
+  });
+
+  it("gives a down alert the time of the first failed check", async () => {
+    const deps = makeDeps([{ ok: true }, { ok: false }, { ok: false }]);
+    await tick(deps);
+    await tick(deps);
+    await tick(deps);
+    const event = deps.alertSpy.mock.calls[0][1];
+    expect(event.kind).toBe("went-down");
+    expect(event.failingSince).toBeLessThan(event.now);
   });
 });

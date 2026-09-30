@@ -92,7 +92,7 @@ export function siteIncidents(
   const since = now - INCIDENT_HISTORY_DAYS * DAY_MS;
   const views = [
     ...(readIncidentFiles(config).get(site.name) ?? []),
-    ...site.maintenance.map(maintenanceView),
+    ...site.maintenance.map((window) => maintenanceView(window)),
     ...cached(`incidents\0${site.name}`, () =>
       autoIncidents(db, site.name, since).map(autoIncidentView),
     ),

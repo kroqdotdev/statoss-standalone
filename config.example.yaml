@@ -15,13 +15,22 @@ alerts:
     user: smtp-user@example.com
     from: status@example.com
   # Where alerts go, for every site that has no list of its own.
-  # Each entry is one of email, slack, discord, or webhook with a secret.
+  # Each entry is one of email, slack, discord, webhook with a secret,
+  # pagerduty, opsgenie or ntfy.
   to:
     - email: alerts@example.com
     # - slack: https://hooks.slack.com/services/T000/B000/XXXX
     # - discord: https://discord.com/api/webhooks/000/XXXX
     # - webhook: https://example.com/statoss
     #   secret: ${WEBHOOK_SECRET}
+    # - pagerduty: ${PAGERDUTY_KEY}
+    # - opsgenie: ${OPSGENIE_KEY}
+    #   region: eu
+    # - ntfy: https://ntfy.sh/my-topic
+    #   token: ${NTFY_TOKEN}
+  # Optional. false keeps incident updates and maintenance notices on the
+  # page and sends them nowhere. Default: true.
+  # updates: true
   # Optional. Send "still down" notices this many minutes apart while a
   # monitor stays down. 0 (the default) sends none.
   repeatMinutes: 0

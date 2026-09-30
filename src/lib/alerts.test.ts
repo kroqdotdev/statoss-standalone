@@ -4,12 +4,16 @@ import {
   buildAlertEmail,
   describeAlert,
   formatDuration,
+  RETRY_DELAYS_MS,
+  describeNotice,
   sendAlerts,
+  sendNotice,
   signWebhook,
   slackPayload,
   webhookPayload,
   type AlertEvent,
   type Mail,
+  type NoticeEvent,
 } from "./alerts";
 
 const NOW = 1_700_000_000_000;
@@ -187,5 +191,212 @@ describe("sendAlerts", () => {
     ]);
     expect(errorSpy).toHaveBeenCalledTimes(2);
     errorSpy.mockRestore();
+  });
+});
+
+describe("PagerDuty, Opsgenie and ntfy", () => {
+  it("opens on PagerDuty when a monitor goes down and resolves under the same key", async () => {
+    const { calls, fetchFn } = fakeFetch();
+    const deps = { send: null, from: "", fetch: fetchFn };
+    await sendAlerts([{ pagerduty: "R0UT1NG" }], DOWN, deps);
+    await sendAlerts(
+      [{ pagerduty: "R0UT1NG" }],
+      { ...DOWN, kind: "recovered" },
+      deps,
+    );
+    expect(calls.map((c) => c.url)).toEqual([
+      "https://events.pagerduty.com/v2/enqueue",
+      "https://events.pagerduty.com/v2/enqueue",
+    ]);
+    const [open, close] = calls.map((c) => JSON.parse(c.body));
+    expect(open).toMatchObject({
+      routing_key: "R0UT1NG",
+      event_action: "trigger",
+      dedup_key: "statoss:webhooks.cc:Redirector",
+      payload: { severity: "critical", component: "Redirector" },
+    });
+    expect(close).toMatchObject({
+      event_action: "resolve",
+      dedup_key: "statoss:webhooks.cc:Redirector",
+    });
+  });
+
+  it("creates on Opsgenie and closes by alias, in the region named", async () => {
+    const { calls, fetchFn } = fakeFetch();
+    const deps = { send: null, from: "", fetch: fetchFn };
+    const to = [{ opsgenie: "KEY", region: "eu" as const }];
+    await sendAlerts(to, { ...DOWN, kind: "went-slow" }, deps);
+    await sendAlerts(to, { ...DOWN, kind: "back-to-normal" }, deps);
+    expect(calls[0].url).toBe("https://api.eu.opsgenie.com/v2/alerts");
+    expect(calls[0].headers.authorization).toBe("GenieKey KEY");
+    expect(JSON.parse(calls[0].body)).toMatchObject({
+      alias: "statoss:webhooks.cc:Redirector:slow",
+      priority: "P3",
+    });
+    expect(calls[1].url).toBe(
+      "https://api.eu.opsgenie.com/v2/alerts/statoss%3Awebhooks.cc%3ARedirector%3Aslow/close?identifierType=alias",
+    );
+  });
+
+  it("posts plain text to ntfy with the title, priority and token as headers", async () => {
+    const { calls, fetchFn } = fakeFetch();
+    await sendAlerts(
+      [{ ntfy: "https://ntfy.sh/mytopic", token: "tk_1" }],
+      DOWN,
+      { send: null, from: "", fetch: fetchFn },
+    );
+    expect(calls[0].url).toBe("https://ntfy.sh/mytopic");
+    expect(calls[0].headers).toMatchObject({
+      title: "webhooks.cc: Redirector is down",
+      priority: "5",
+      authorization: "Bearer tk_1",
+      click: "https://status.webhooks.cc",
+    });
+    expect(calls[0].body).toContain("is failing");
+  });
+});
+
+describe("retries", () => {
+  function failing(times: number) {
+    let n = 0;
+    return vi.fn(async () =>
+      n++ < times
+        ? new Response("no", { status: 500 })
+        : new Response("ok", { status: 200 }),
+    ) as unknown as typeof fetch;
+  }
+
+  it("tries a failed send again after one, five and fifteen minutes, then gives up", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchFn = failing(99);
+    const queue: Array<[() => void, number]> = [];
+    const deps = {
+      send: null,
+      from: "",
+      fetch: fetchFn,
+      schedule: (task: () => void, ms: number) => void queue.push([task, ms]),
+    };
+    const first = await sendAlerts(
+      [{ slack: "https://hooks.slack.com/x" }],
+      DOWN,
+      deps,
+    );
+    expect(first).toEqual([
+      { channel: "slack", ok: false, error: "hooks.slack.com answered 500" },
+    ]);
+    const waits: number[] = [];
+    while (queue.length > 0) {
+      const [task, ms] = queue.shift()!;
+      waits.push(ms);
+      task();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(waits).toEqual(RETRY_DELAYS_MS);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+    vi.restoreAllMocks();
+  });
+
+  it("stops retrying once a send gets through", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchFn = failing(1);
+    const queue: Array<() => void> = [];
+    await sendAlerts([{ slack: "https://hooks.slack.com/x" }], DOWN, {
+      send: null,
+      from: "",
+      fetch: fetchFn,
+      schedule: (task) => void queue.push(task),
+    });
+    queue.shift()!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(queue).toHaveLength(0);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
+  });
+
+  it("drops a retry the monitor has overtaken", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchFn = failing(99);
+    const queue: Array<() => void> = [];
+    await sendAlerts(
+      [{ slack: "https://hooks.slack.com/x" }],
+      DOWN,
+      {
+        send: null,
+        from: "",
+        fetch: fetchFn,
+        schedule: (task) => void queue.push(task),
+      },
+      () => false,
+    );
+    queue.shift()!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(queue).toHaveLength(0);
+    vi.restoreAllMocks();
+  });
+});
+
+describe("notices", () => {
+  const UPDATE: NoticeEvent = {
+    kind: "incident-update",
+    site: "webhooks.cc",
+    pageUrl: "https://status.webhooks.cc",
+    id: "2026-09-12-elevated-api-errors",
+    title: "Elevated API errors",
+    status: "Identified",
+    body: "A connection limit was reached.",
+    monitors: ["API"],
+    at: NOW,
+    now: NOW,
+  };
+
+  it("words an incident update and a maintenance window", () => {
+    expect(describeNotice(UPDATE)).toEqual({
+      subject: "webhooks.cc: Elevated API errors (Identified)",
+      lines: [
+        "A connection limit was reached.",
+        "Affects: API",
+        "Time: 2023-11-14 22:13 UTC",
+      ],
+    });
+    expect(
+      describeNotice({
+        ...UPDATE,
+        kind: "maintenance-scheduled",
+        title: "Database upgrade",
+        body: undefined,
+        monitors: [],
+        start: NOW,
+        end: NOW + 3_600_000,
+      }),
+    ).toEqual({
+      subject: "webhooks.cc: maintenance planned, Database upgrade",
+      lines: ["Window: 2023-11-14 22:13 UTC to 2023-11-14 23:13 UTC"],
+    });
+  });
+
+  it("goes to chat, mail and webhooks but pages nobody", async () => {
+    const { calls, fetchFn } = fakeFetch();
+    const results = await sendNotice(
+      [
+        { slack: "https://hooks.slack.com/x" },
+        { pagerduty: "R0UT1NG" },
+        { opsgenie: "KEY" },
+        { webhook: "https://example.com/hook", secret: "s" },
+      ],
+      UPDATE,
+      { send: null, from: "", fetch: fetchFn },
+    );
+    expect(results.map((r) => r.channel)).toEqual(["slack", "webhook"]);
+    expect(calls[1].headers["x-statoss-event"]).toBe("incident-update");
+    expect(JSON.parse(calls[1].body)).toMatchObject({
+      event: "incident-update",
+      id: "2026-09-12-elevated-api-errors",
+      status: "Identified",
+      monitors: ["API"],
+    });
   });
 });
