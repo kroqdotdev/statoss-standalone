@@ -12,6 +12,7 @@ import {
   rowNames,
   siteBudget,
   siteIncidents,
+  siteIncidentViews,
 } from "@/lib/status-data";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,8 @@ export default async function StatusPage(props: PageProps<"/">) {
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
   const incidents = siteIncidents(db, config, site, now);
+  // Everything ever written, for naming on the bars it touched.
+  const views = siteIncidentViews(db, config, site, 0);
   const stated = statedByName(incidents.current, rowNames(site), now);
 
   return (
@@ -62,9 +65,10 @@ export default async function StatusPage(props: PageProps<"/">) {
           now,
           config.retentionDays,
           config.checkIntervalSeconds,
+          views,
         ),
       )}
-      components={componentViews(site, stated)}
+      components={componentViews(site, stated, { db, views, range, now })}
       stated={stated}
       incidents={incidents}
       budget={siteBudget(db, site, now)}

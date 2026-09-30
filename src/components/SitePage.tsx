@@ -68,13 +68,18 @@ const GROUP_TONE: Record<ReturnType<typeof overallStatus>, string> = {
 };
 
 /** What the colours mean, as colours. */
-function Legend({ slow }: { slow: boolean }) {
-  const items: Array<[string, string]> = [
-    ["bg-up-soft", "response time"],
-    ["bg-timeout", "timeout"],
-    ["bg-fail", "failed"],
-  ];
-  if (slow) items.push(["bg-slow", "slow"]);
+function Legend({ slow, checks }: { slow: boolean; checks: boolean }) {
+  const items: Array<[string, string]> = checks
+    ? [
+        ["bg-up-soft", "response time"],
+        ["bg-timeout", "timeout"],
+        ["bg-fail", "failed"],
+      ]
+    : [
+        ["bg-up-soft", "operational"],
+        ["bg-fail", "outage"],
+      ];
+  if (slow) items.push(["bg-slow", checks ? "slow" : "degraded"]);
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] leading-snug text-muted">
       {items.map(([color, label]) => (
@@ -158,6 +163,7 @@ export function SitePage({
         key={r.view.name}
         component={r.view}
         stated={stated.get(r.view.name)}
+        range={range}
         as={as}
       />
     );
@@ -205,14 +211,21 @@ export function SitePage({
       </p>
       <CurrentIncidents incidents={incidents.current} now={now} />
 
-      {monitors.length > 0 && (
+      {rows.length > 0 && (
         <div className="mt-12 flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3 pb-5 sm:mt-16">
           <RangeSwitch current={range} fallback={defaultRange} />
-          <Legend slow={monitors.some((cp) => cp.slowThresholdMs !== null)} />
+          <Legend
+            checks={monitors.length > 0}
+            slow={
+              monitors.length > 0
+                ? monitors.some((cp) => cp.slowThresholdMs !== null)
+                : true
+            }
+          />
         </div>
       )}
 
-      <div className={monitors.length > 0 ? "" : "mt-12 sm:mt-16"}>
+      <div className={rows.length > 0 ? "" : "mt-12 sm:mt-16"}>
         {grouped
           ? groups.map((group) => {
               const statuses = group.rows.map(rowStatus);

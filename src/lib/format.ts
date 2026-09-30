@@ -106,6 +106,12 @@ export function formatUtcClock(ts: number, zone = "UTC"): string {
   return `${pad(p.hour)}:${pad(p.minute)}`;
 }
 
+/** "14:32:07", for a list of checks that may be seconds apart. */
+export function formatUtcClockSeconds(ts: number, zone = "UTC"): string {
+  // Zones are offset by whole minutes, so the seconds are UTC's.
+  return `${formatUtcClock(ts, zone)}:${pad(new Date(ts).getUTCSeconds())}`;
+}
+
 /** "2023-11-14 22:13 UTC". */
 export function formatUtcStamp(ts: number, zone = "UTC"): string {
   const p = parts(ts, zone);

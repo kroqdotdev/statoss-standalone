@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckStrip } from "./CheckStrip";
+import { CheckStrip, type StripSpan } from "./CheckStrip";
 import { FailureList } from "./FailureList";
 import { LocalTime } from "./LocalTime";
 import type { MonitorType } from "@/lib/config";
@@ -36,6 +36,8 @@ export interface MonitorView {
   runs: FailureRun[];
   /** Totals for the fixed last-24-hours window, used by the headline. */
   last24h: WindowSummary;
+  /** Incidents and windows to name on the bars they touched. */
+  spans?: StripSpan[];
 }
 
 function statusLine(cp: MonitorView, now: number): string {
@@ -144,6 +146,7 @@ export function MonitorSection({
         name={monitor.name}
         slowThresholdMs={monitor.slowThresholdMs}
         timed={monitor.timed}
+        spans={monitor.spans}
       />
       <FailureList runs={monitor.runs} now={now} />
     </section>

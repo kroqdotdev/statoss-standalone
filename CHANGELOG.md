@@ -9,6 +9,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Six more kinds of monitor, chosen with `type`: `tcp`, `dns`, `ping`, `certificate`, `domain` and `heartbeat`. Certificate and domain monitors fail inside a warning window before expiry and show the date on the page and in `status.json`; a heartbeat gives a scheduled job a URL to ping at `/heartbeat/<token>` and goes down after two intervals without one.
 - `intervalSeconds` on a monitor, for one that should be checked less often than the rest.
 - The image carries `ping`.
+- Every bar on a strip opens a list of the checks behind it: when each ran, what it found and its response time. A bar older than the checks that are kept shows its hours' totals.
+- Pointing at a bar names the incidents and maintenance windows that touched it.
+- Components draw a strip of the states they were in.
 - The look of a page, per site: `logo`, `favicon`, `accent`, `theme` (light, dark or the visitor's system), `description` and `supportUrl`. Under the headline the page says when it was updated and offers Get updates and Contact support.
 - Times follow the visitor: every time on the page is written in the browser's own time zone, and the foot of the page names it. `timezone` is the zone used until the browser has loaded.
 - Password pages: `password` on a site locks the page, its incident pages, the history and every endpoint. `embedKey` lets a badge, `status.json`, a feed or the widget in with `?key=`.
@@ -30,6 +33,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- A strip is drawn as one SVG path per colour instead of two or three rectangles per bar, about a quarter of the markup.
 - The status page lists the resolved incidents of the last 7 days instead of 30; the rest are under Incident history. Open incidents are ordered: what somebody wrote first, the worst first, then the outages the checker opened, folded into one card when there are several.
 - A site may have no monitors. It says nothing is checked yet, and its state is unknown instead of up.
 - A feed entry's guid is `urn:statoss:incident:<id>` and no longer changes with each update, so feed readers will show current entries once more.

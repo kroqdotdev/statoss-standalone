@@ -41,6 +41,13 @@ CREATE TABLE IF NOT EXISTS check_hour (
   latency_n INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (site, monitor, ts)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS component_state (
+  site TEXT NOT NULL,
+  component TEXT NOT NULL,
+  state TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (site, component, at)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS notified (
   site TEXT NOT NULL,
   key TEXT NOT NULL,

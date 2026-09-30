@@ -37,6 +37,10 @@ import {
   setState,
   touchChecked,
 } from "./db";
+import {
+  pruneComponentStates,
+  recordComponentStates,
+} from "./component-history";
 import { bumpDataVersion } from "./data-version";
 import { readIncidentFiles } from "./incident-files";
 import { inMaintenance, maintenanceView } from "./incidents";
@@ -361,6 +365,7 @@ export function startScheduler(): void {
   const config = getConfig();
   const db = getDb();
   const jobs = loadJobs(config);
+  recordComponentStates(db, config.sites, Date.now());
 
   if (config.alerts?.smtp && !process.env.SMTP_PASS) {
     console.warn(
@@ -399,6 +404,7 @@ export function startScheduler(): void {
           Date.now() - config.retentionDays * DAY_MS,
           Date.now() - HISTORY_DAYS * DAY_MS,
         );
+        pruneComponentStates(db, Date.now() - HISTORY_DAYS * DAY_MS);
         if (deleted > 0) console.log(`[scheduler] pruned ${deleted} old rows`);
       }
     } catch (err) {
