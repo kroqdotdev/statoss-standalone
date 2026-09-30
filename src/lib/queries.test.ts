@@ -7,6 +7,8 @@ import {
   failureRuns,
   parseRange,
   rangeWindow,
+  rollupSeries,
+  rollupSummary,
   windowSummary,
 } from "./queries";
 
@@ -50,7 +52,10 @@ describe("rangeWindow", () => {
 describe("parseRange", () => {
   it("accepts known keys and falls back to the default", () => {
     expect(parseRange("7d")).toBe("7d");
-    expect(parseRange("1y")).toBe(DEFAULT_RANGE);
+    expect(parseRange("1y")).toBe("1y");
+    expect(parseRange("2y")).toBe(DEFAULT_RANGE);
+    expect(parseRange("toString")).toBe(DEFAULT_RANGE);
+    expect(parseRange(undefined, "90d")).toBe("90d");
     expect(parseRange(undefined)).toBe(DEFAULT_RANGE);
     expect(parseRange(["24h"])).toBe(DEFAULT_RANGE);
   });
@@ -272,5 +277,46 @@ describe("failureRuns", () => {
     const db = openDb(":memory:");
     seed(db, NOW - 60_000, 1, 100);
     expect(failureRuns(db, "s", "c", NOW - DAY, NOW + 1)).toEqual([]);
+  });
+});
+
+describe("rollups", () => {
+  it("draw the long ranges from the hourly totals, the same as the checks would", () => {
+    const db = openDb(":memory:");
+    const HOUR = 60 * 60 * 1000;
+    seed(db, NOW - 3 * DAY, 1, 100);
+    seed(db, NOW - 3 * DAY + 60_000, 1, 300);
+    seed(db, NOW - 3 * DAY + 2 * HOUR, 0, 50);
+    seed(db, NOW - 60_000, 1, 80);
+    for (const key of ["7d", "90d", "1y"] as const) {
+      const fromHours = rollupSeries(db, "s", "c", RANGES[key], NOW);
+      const fromChecks = bucketSeries(db, "s", "c", RANGES[key], NOW);
+      expect(fromHours).toEqual(fromChecks);
+    }
+    const day = rollupSeries(db, "s", "c", RANGES["1y"], NOW).filter(
+      (b) => b.total > 0,
+    );
+    expect(day).toHaveLength(2);
+    expect(day[0]).toMatchObject({ total: 3, up: 2, latencyMs: 200 });
+  });
+
+  it("sum a window, with the hours that had checks and the readings behind the mean", () => {
+    const db = openDb(":memory:");
+    seed(db, NOW - 2 * DAY, 1, 100);
+    seed(db, NOW - 2 * DAY + 1000, 0, 10);
+    seed(db, NOW - DAY, 1, 300);
+    expect(rollupSummary(db, "s", "c", NOW - 3 * DAY, NOW)).toEqual({
+      total: 3,
+      up: 2,
+      timeouts: 0,
+      slow: 0,
+      maintenance: 0,
+      latencyMs: 200,
+      latencyN: 2,
+      hours: 2,
+    });
+    expect(
+      rollupSummary(db, "s", "c", NOW - 10 * DAY, NOW - 5 * DAY),
+    ).toMatchObject({ total: 0, latencyMs: null, hours: 0 });
   });
 });

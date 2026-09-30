@@ -37,7 +37,7 @@ interface Props {
 
 function bucketLabel(ts: number, range: RangeKey): string {
   const { bucketMs } = RANGES[range];
-  if (range === "90d") return formatUtcDay(ts);
+  if (bucketMs === DAY_MS) return formatUtcDay(ts);
   const end = formatUtcClock(ts + bucketMs);
   return range === "7d"
     ? `${formatUtcWeekdayClock(ts)} to ${end}`
@@ -91,7 +91,7 @@ function axisTicks(
       ticks.push({ index, label: formatUtcClock(b.ts) });
     } else if (range === "7d" && b.ts % DAY_MS === 0) {
       ticks.push({ index, label: formatUtcWeekdayClock(b.ts).slice(0, 3) });
-    } else if (range === "90d" && d.getUTCDate() === 1) {
+    } else if ((range === "90d" || range === "1y") && d.getUTCDate() === 1) {
       ticks.push({ index, label: formatUtcDay(b.ts).slice(2) });
     }
   });

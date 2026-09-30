@@ -28,6 +28,19 @@ CREATE TABLE IF NOT EXISTS monitor_state (
   expires_at INTEGER,
   PRIMARY KEY (site, monitor)
 );
+CREATE TABLE IF NOT EXISTS check_hour (
+  site TEXT NOT NULL,
+  monitor TEXT NOT NULL,
+  ts INTEGER NOT NULL,
+  total INTEGER NOT NULL DEFAULT 0,
+  up INTEGER NOT NULL DEFAULT 0,
+  timeouts INTEGER NOT NULL DEFAULT 0,
+  slow INTEGER NOT NULL DEFAULT 0,
+  maintenance INTEGER NOT NULL DEFAULT 0,
+  latency_sum INTEGER NOT NULL DEFAULT 0,
+  latency_n INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (site, monitor, ts)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS notified (
   site TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -110,6 +123,8 @@ export interface CheckRow {
   error: string | null;
   /** 1 when the check ran inside a maintenance window: shown, not counted. */
   maintenance?: 0 | 1;
+  /** A successful check over the monitor's slow threshold at the time. */
+  slow?: boolean;
 }
 
 export interface StateRow {
@@ -138,6 +153,7 @@ export function openDb(
   renameCheckpoints(db);
   db.exec(SCHEMA);
   migrate(db);
+  backfillHours(db);
   return db;
 }
 
@@ -148,20 +164,83 @@ export function getDb(): Database.Database {
   return globals.__statusDb;
 }
 
-export function insertCheck(db: Database.Database, row: CheckRow): void {
-  db.prepare(
-    `INSERT INTO checks (site, monitor, ts, ok, status_code, latency_ms, error, maintenance)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    row.site,
-    row.monitor,
-    row.ts,
-    row.ok,
-    row.statusCode,
-    row.latencyMs,
-    row.error,
-    row.maintenance ?? 0,
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * The hourly totals of a database that has checks but no totals yet: one
+ * from before 0.3, on its first start. Slow counts start at zero, since the
+ * threshold of the time is not known; the strips judge slowness by the
+ * hour's mean response time anyway.
+ */
+function backfillHours(db: Database.Database): void {
+  if (db.prepare("SELECT 1 FROM check_hour LIMIT 1").get() !== undefined)
+    return;
+  if (db.prepare("SELECT 1 FROM checks LIMIT 1").get() === undefined) return;
+  db.exec(
+    `INSERT INTO check_hour
+       (site, monitor, ts, total, up, timeouts, slow, maintenance, latency_sum, latency_n)
+     SELECT site, monitor, (ts / ${HOUR_MS}) * ${HOUR_MS},
+            SUM(maintenance = 0),
+            SUM(ok = 1 AND maintenance = 0),
+            SUM(ok = 0 AND maintenance = 0 AND error = 'timeout'),
+            0,
+            SUM(maintenance = 1),
+            COALESCE(SUM(CASE WHEN ok = 1 AND maintenance = 0 THEN latency_ms END), 0),
+            SUM(ok = 1 AND maintenance = 0 AND latency_ms IS NOT NULL)
+     FROM checks
+     GROUP BY site, monitor, (ts / ${HOUR_MS}) * ${HOUR_MS}`,
   );
+}
+
+/**
+ * Stores one check and adds it to its hour's totals, together. The totals
+ * are what the longer views and the error budget read, and they outlive
+ * the rows themselves.
+ */
+export function insertCheck(db: Database.Database, row: CheckRow): void {
+  const maintenance = row.maintenance ?? 0;
+  const counted = maintenance === 0 ? 1 : 0;
+  const passed = counted && row.ok ? 1 : 0;
+  const timed = passed && row.latencyMs !== null ? 1 : 0;
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO checks (site, monitor, ts, ok, status_code, latency_ms, error, maintenance)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      row.site,
+      row.monitor,
+      row.ts,
+      row.ok,
+      row.statusCode,
+      row.latencyMs,
+      row.error,
+      maintenance,
+    );
+    db.prepare(
+      `INSERT INTO check_hour
+         (site, monitor, ts, total, up, timeouts, slow, maintenance, latency_sum, latency_n)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(site, monitor, ts) DO UPDATE SET
+         total = total + excluded.total,
+         up = up + excluded.up,
+         timeouts = timeouts + excluded.timeouts,
+         slow = slow + excluded.slow,
+         maintenance = maintenance + excluded.maintenance,
+         latency_sum = latency_sum + excluded.latency_sum,
+         latency_n = latency_n + excluded.latency_n`,
+    ).run(
+      row.site,
+      row.monitor,
+      Math.floor(row.ts / HOUR_MS) * HOUR_MS,
+      counted,
+      passed,
+      counted && !row.ok && row.error === "timeout" ? 1 : 0,
+      passed && row.slow ? 1 : 0,
+      maintenance,
+      timed ? (row.latencyMs ?? 0) : 0,
+      timed,
+    );
+  })();
 }
 
 export function getState(
@@ -252,15 +331,43 @@ export function lastHeartbeat(
   return row?.at ?? null;
 }
 
-export function pruneOldChecks(db: Database.Database, before: number): number {
-  const checks = db.prepare("DELETE FROM checks WHERE ts < ?").run(before);
+/**
+ * The daily tidy. Checks older than `checksBefore` go; their hourly totals,
+ * resolved outages and the record of notices stay until `historyBefore`.
+ */
+export function pruneOldChecks(
+  db: Database.Database,
+  checksBefore: number,
+  historyBefore: number,
+): number {
+  const checks = db
+    .prepare("DELETE FROM checks WHERE ts < ?")
+    .run(checksBefore);
+  const hours = db
+    .prepare("DELETE FROM check_hour WHERE ts < ?")
+    .run(historyBefore);
   const incidents = db
     .prepare(
       "DELETE FROM auto_incident WHERE resolved_at IS NOT NULL AND resolved_at < ?",
     )
-    .run(before);
-  db.prepare("DELETE FROM notified WHERE at < ?").run(before);
-  return checks.changes + incidents.changes;
+    .run(historyBefore);
+  db.prepare("DELETE FROM notified WHERE at < ?").run(historyBefore);
+  return checks.changes + hours.changes + incidents.changes;
+}
+
+/** Whether a monitor's most recent counted check passed, or null without one. */
+export function lastCheckOk(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+): boolean | null {
+  const row = db
+    .prepare(
+      `SELECT ok FROM checks WHERE site = ? AND monitor = ? AND maintenance = 0
+       ORDER BY ts DESC LIMIT 1`,
+    )
+    .get(site, monitor) as { ok: number } | undefined;
+  return row === undefined ? null : row.ok === 1;
 }
 
 // ---------------------------------------------------------------------------

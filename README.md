@@ -10,7 +10,8 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 ## Features
 
 - **Every failed check is visible.** Each monitor has a strip of bars. Bar height is response time. A mark at the top of a bar shows the failed checks in that time slot: amber for a timeout, red for any other failure. One failed check out of 1,440 in a day still gets a visible mark.
-- **Three views.** The last 24 hours in 5-minute slots, 7 days in 1-hour slots, or 90 days in 1-day slots. Point at a bar, or use the arrow keys, to read the numbers for one slot.
+- **Four views.** The last 24 hours in 5-minute slots, 7 days in 1-hour slots, and 90 days or a year in 1-day slots. Point at a bar, or use the arrow keys, to read the numbers for one slot.
+- **An error budget.** Give a site an uptime target and the page says how much of the month's allowance of downtime is spent.
 - **Failed checks are listed.** Consecutive failures are grouped into runs. Each run shows the reason (timeout, HTTP status, keyword, or connection error), when it started, and how long the monitor did not respond.
 - **Seven kinds of monitor.** HTTP, TCP port, DNS, ping, certificate expiry, domain expiry, and a heartbeat that a scheduled job pings.
 - **Any request.** An HTTP monitor can use any method, send headers and a body, expect an exact status, and require a keyword in the response, or require its absence.
@@ -33,7 +34,7 @@ The checker runs inside the server process:
 3. A monitor becomes **down** after 2 failed checks in a row and **up** again after 1 successful check. With a `slowThresholdMs`, it becomes **slow** after 2 successful checks over the threshold and back to normal after 1 under it. Each change of state sends one alert to every destination of the site. With `repeatMinutes`, a monitor that stays down sends a "still down" notice at that interval.
 4. A monitor going down opens an incident on the page; the first success after it resolves the incident.
 5. Checks made inside a maintenance window are stored with a flag. The page shows them in grey and leaves them out of every total, and they change no state and send no alert.
-6. Results are kept for 90 days. Older rows are deleted once a day.
+6. Every check is kept for `retentionDays` (90 unless you change it). Each check is also added to its hour's totals, which are kept for 400 days and are what the 7-day, 90-day and 1-year views and the error budget read. Older rows are deleted once a day.
 
 The server reads the `Host` header of each request and shows the site with the matching hostname. Any other hostname gets a 404. All times on the page are UTC.
 
@@ -163,6 +164,7 @@ Open `https://status.example.com` to see the page.
 | `sites[].name`                       | yes      |                  | Shown in the headline, for example `example.com is up.`                                                      |
 | `sites[].host`                       | yes      |                  | Hostname that serves this site's page. Must be unique.                                                       |
 | `sites[].url`                        | no       | `https://<host>` | Where alerts and feeds link to.                                                                              |
+| `sites[].uptimeTarget`               | no       |                  | Percent of checks that should pass each month, for example `99.9`. Shows the error budget.                   |
 | `sites[].alerts`                     | no       |                  | `false` to send no alerts for this site, or an object with `to`, `repeatMinutes` and `updates` for it alone. |
 | `sites[].monitors[].name`            | yes      |                  | Shown above the strip. Must be unique within the site.                                                       |
 | `sites[].monitors[].type`            | no       | `http`           | `http`, `tcp`, `dns`, `ping`, `certificate`, `domain` or `heartbeat`. See Monitor types.                     |
@@ -266,7 +268,15 @@ Environment variables:
 
 The Docker image sets `CONFIG_PATH=/data/config.yaml` and `DB_PATH=/data/status.db`, so incidents live in `/data/incidents`. Docker Compose mounts `./data` there.
 
-Renaming a monitor starts a new history under the new name. The old rows stay until they are 90 days old.
+Renaming a monitor starts a new history under the new name. The old rows stay until they are as old as `retentionDays`, and the old totals for 400 days.
+
+### History and the error budget
+
+The 24-hour view is drawn from the checks themselves and follows every check. The 7-day, 90-day and 1-year views are drawn from hourly totals, and are read again every 5 minutes (7 days) or 15 minutes (90 days and a year), or at once when a monitor changes state. The list of failed checks under a strip goes back as far as `retentionDays`; with a shorter retention the page says so under the longer views.
+
+A database from 0.2 gets its hourly totals filled in from its checks on the first start, so the 90-day view looks the same as before and the year fills up from there.
+
+With `uptimeTarget: 99.9` on a site, the foot of the page carries one sentence for the calendar month (UTC), for example "September so far: 99.97% up against a 99.9% target. 12 min of the 43 min downtime budget spent." The allowance is the month's length times what the target leaves over. Time down is the share of failed checks, across all the site's monitors, applied to the hours that had checks, so a monitor added late in the month is not counted as up before it existed. Checks made during maintenance spend nothing. `status.json` carries the same figures under `budget`.
 
 ### Incidents
 

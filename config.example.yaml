@@ -6,6 +6,10 @@
 # The number of seconds between checks. Minimum: 10.
 checkIntervalSeconds: 60
 
+# Optional. Days every single check is kept, 2 to 400. Default: 90. The
+# hourly totals behind the longer views are kept for 400 days regardless.
+# retentionDays: 90
+
 # Optional. Remove this block to disable alerts.
 alerts:
   # Needed for email destinations. The password comes from SMTP_PASS.
@@ -41,6 +45,9 @@ sites:
     host: status.example.com # the hostname that serves this status page
     # Optional. Where alerts link to. Default: https://<host>
     # url: https://status.example.com
+    # Optional. Percent of checks that should pass each month. The page then
+    # says how much of the month's downtime budget is spent.
+    # uptimeTarget: 99.9
     # Optional. A list of destinations for this site only, or false to
     # send no alerts for it.
     # alerts:

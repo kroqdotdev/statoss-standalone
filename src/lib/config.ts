@@ -394,12 +394,17 @@ function duplicates(values: string[]): string[] {
   return [...dupes];
 }
 
+/** Days the hourly totals, resolved outages and sent notices are kept. */
+export const HISTORY_DAYS = 400;
+
 const siteObjectSchema = z
   .object({
     name: z.string().min(1),
     host: z.string().min(1),
     /** Where the page lives, for links in alerts. Default: https://<host>. */
     url: z.url().optional(),
+    /** Uptime to hold each month, in percent. Shows the error budget. */
+    uptimeTarget: z.number().min(50).lt(100).optional(),
     monitors: z.array(monitorSchema).min(1),
     /** false turns alerts off for this site. */
     alerts: z.union([z.literal(false), siteAlertsSchema]).optional(),
@@ -431,6 +436,11 @@ const siteSchema = z.preprocess(monitorsFromCheckpoints, siteObjectSchema);
 const configSchema = z
   .object({
     checkIntervalSeconds: z.number().int().min(10).default(60),
+    /**
+     * Days every single check is kept. The hourly totals behind the 7-day,
+     * 90-day and 1-year views are kept for 400 days whatever this says.
+     */
+    retentionDays: z.number().int().min(2).max(HISTORY_DAYS).default(90),
     alerts: alertsSchema.optional(),
     sites: z.array(siteSchema).min(1),
   })
