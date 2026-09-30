@@ -548,7 +548,7 @@ function deliver(
       d.ntfy,
       text,
       {
-        title: message.subject,
+        title: headerText(message.subject),
         priority: message.ntfy.priority,
         tags: message.ntfy.tags,
         click: message.pageUrl,
@@ -561,6 +561,17 @@ function deliver(
     "x-statoss-event": message.event,
     "x-statoss-signature": signWebhook(d.secret, body),
   });
+}
+
+/**
+ * Text for an HTTP header: one line, and RFC 2047 encoded when it is not
+ * plain ASCII, which ntfy reads and fetch would otherwise refuse.
+ */
+export function headerText(text: string): string {
+  const line = text.replace(/[\r\n]+/g, " ").trim();
+  return /^[\x20-\x7e]*$/.test(line)
+    ? line
+    : `=?UTF-8?B?${Buffer.from(line, "utf8").toString("base64")}?=`;
 }
 
 function reasonOf(err: unknown): string {

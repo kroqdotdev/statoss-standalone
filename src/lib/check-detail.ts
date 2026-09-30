@@ -37,7 +37,8 @@ export interface CheckDetail {
   timeouts: number;
   slow: number;
   maintenance: number;
-  latency: { mean: number; min: number; max: number } | null;
+  /** min and max are null when the figures come from the hours' totals, which keep a mean only. */
+  latency: { mean: number; min: number | null; max: number | null } | null;
   checks: DetailCheck[];
   /**
    * all: every check in the window is listed. trouble: there were too
@@ -123,11 +124,7 @@ export function checkDetail(
           latency:
             hours.latencyMs === null
               ? null
-              : {
-                  mean: hours.latencyMs,
-                  min: hours.latencyMs,
-                  max: hours.latencyMs,
-                },
+              : { mean: hours.latencyMs, min: null, max: null },
         }
       : {
           total: totals.total,

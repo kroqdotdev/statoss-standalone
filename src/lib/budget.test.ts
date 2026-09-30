@@ -126,3 +126,19 @@ describe("monthTotals", () => {
     expect(combine([])).toMatchObject({ total: 0, latencyMs: null });
   });
 });
+
+describe("an allowance under a minute", () => {
+  it("is not hidden by rounding", () => {
+    // One failed check in 360 over an hour: about a sixth of a minute down.
+    const b = errorBudget(
+      totals({ total: 360, up: 359, hours: 1 }),
+      99.9999,
+      NOW,
+    );
+    expect(b.downMinutes).toBeCloseTo(1 / 6, 5);
+    expect(b.remainingMinutes).toBeLessThan(0);
+    expect(describeBudget(b, NOW)).toContain(
+      "under a minute down, under a minute over the budget of under a minute",
+    );
+  });
+});

@@ -120,6 +120,24 @@ describe("following a vendor", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
+  it("takes a StatOSS page that does not know its state as no reading", async () => {
+    await refreshVendors(
+      CONFIG,
+      0,
+      answering({
+        "/status.json": {
+          site: { name: "Other", status: "unknown" },
+          monitors: [{ name: "REST API", status: "unknown" }],
+        },
+      }),
+    );
+    expect(vendorView(URL_, null, 0)).toMatchObject({
+      state: null,
+      problem: "does not know its own state",
+    });
+    expect(vendorView(URL_, "REST API", 0).state).toBeNull();
+  });
+
   it("keeps one address per vendor, without its trailing slash", () => {
     expect(vendorUrls(CONFIG)).toEqual([URL_]);
   });

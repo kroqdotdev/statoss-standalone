@@ -98,3 +98,19 @@ describe("dueNotices", () => {
     expect(dueNotices(db, SITE, [view], NOW)).toEqual([]);
   });
 });
+
+describe("markers of what was sent", () => {
+  it("are kept until a window planned far ahead is over", () => {
+    const db = openDb(":memory:");
+    const DAY = 24 * 60 * MIN;
+    const view = maintenanceView({
+      title: "Far off",
+      start: NOW + 500 * DAY,
+      end: NOW + 500 * DAY + 60 * MIN,
+    });
+    expect(dueNotices(db, SITE, [view], NOW)).toHaveLength(1);
+    // The daily tidy removes markers older than 400 days: not this one.
+    db.prepare("DELETE FROM notified WHERE at < ?").run(NOW + 100 * DAY);
+    expect(dueNotices(db, SITE, [view], NOW + 101 * DAY)).toEqual([]);
+  });
+});

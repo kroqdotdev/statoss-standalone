@@ -6,6 +6,7 @@ import {
   formatDuration,
   RETRY_DELAYS_MS,
   describeNotice,
+  headerText,
   sendAlerts,
   sendNotice,
   signWebhook,
@@ -439,5 +440,19 @@ describe("notices", () => {
       status: "Identified",
       monitors: ["API"],
     });
+  });
+});
+
+describe("headerText", () => {
+  it("keeps plain text, joins lines, and encodes the rest for ntfy", () => {
+    expect(headerText("shop: API is down")).toBe("shop: API is down");
+    expect(headerText("two\nlines")).toBe("two lines");
+    const encoded = headerText("Café: 接口 is down");
+    expect(encoded).toMatch(/^=\?UTF-8\?B\?[A-Za-z0-9+/=]+\?=$/);
+    expect(Buffer.from(encoded.slice(10, -2), "base64").toString("utf8")).toBe(
+      "Café: 接口 is down",
+    );
+    // What fetch would have refused goes through as a header now.
+    expect(() => new Headers({ title: encoded })).not.toThrow();
   });
 });

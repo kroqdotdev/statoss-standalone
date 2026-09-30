@@ -159,7 +159,7 @@ export function rollupSummary(
               CASE WHEN SUM(latency_n) > 0
                    THEN ROUND(SUM(latency_sum) * 1.0 / SUM(latency_n)) END AS latencyMs,
               COALESCE(SUM(latency_n), 0) AS latencyN,
-              COUNT(*) AS hours
+              COALESCE(SUM(total > 0), 0) AS hours
        FROM check_hour
        WHERE site = ? AND monitor = ? AND ts >= ? AND ts < ?`,
     )

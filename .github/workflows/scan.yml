@@ -15,6 +15,7 @@ on:
       - Dockerfile
       - package.json
       - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - .grype.yaml
       - .github/workflows/scan.yml
   push:
@@ -23,6 +24,7 @@ on:
       - Dockerfile
       - package.json
       - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - .grype.yaml
       - .github/workflows/scan.yml
 

@@ -69,10 +69,11 @@ export function accentShades(hex: string): { day: string; night: string } {
   };
 }
 
-/** Whether black or white reads better on a colour. */
+/** Whether the page's ink or white reads better on a colour, by contrast. */
 export function inkOn(hex: string): string {
-  const [r, g, b] = toRgb(hex);
-  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#161715" : "#ffffff";
+  const dark = "#161715";
+  const light = "#ffffff";
+  return contrast(hex, dark) >= contrast(hex, light) ? dark : light;
 }
 
 /**

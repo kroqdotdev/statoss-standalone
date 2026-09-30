@@ -540,12 +540,18 @@ export function listDeploys(
   site: string,
   since: number,
   until: number,
-  limit = 200,
+  /** Left out, every one in the window. */
+  limit?: number,
 ): DeployRow[] {
   return db
     .prepare(
       `SELECT id, version, note, url, at FROM deploy
-       WHERE site = ? AND at >= ? AND at < ? ORDER BY at DESC LIMIT ?`,
+       WHERE site = ? AND at >= ? AND at < ? ORDER BY at DESC
+       ${limit === undefined ? "" : "LIMIT ?"}`,
     )
-    .all(site, since, until, limit) as DeployRow[];
+    .all(
+      ...(limit === undefined
+        ? [site, since, until]
+        : [site, since, until, limit]),
+    ) as DeployRow[];
 }

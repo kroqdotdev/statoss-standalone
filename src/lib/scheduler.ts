@@ -12,6 +12,7 @@ import { monitorSpec, runCheck } from "./checker";
 import type { CheckOutcome, CheckSpec } from "./checker";
 import {
   getConfig,
+  heartbeatDeadlineSeconds,
   HISTORY_DAYS,
   LATENCY_TYPES,
   monitorIntervalSeconds,
@@ -62,6 +63,8 @@ export interface Job {
   spec: CheckSpec;
   /** Seconds between this monitor's checks. */
   intervalSeconds: number;
+  /** A heartbeat: how often its pings are due. */
+  pingIntervalSeconds?: number;
   /** A successful check slower than this is slow. Null turns it off. */
   slowThresholdMs: number | null;
   destinations: Destination[];
@@ -84,6 +87,12 @@ export function loadJobs(config: AppConfig): Job[] {
       pageUrl,
       spec: monitorSpec(cp),
       intervalSeconds: monitorIntervalSeconds(cp, config.checkIntervalSeconds),
+      ...(cp.type === "heartbeat"
+        ? {
+            pingIntervalSeconds:
+              cp.intervalSeconds ?? config.checkIntervalSeconds,
+          }
+        : {}),
       slowThresholdMs: cp.slowThresholdMs ?? null,
       destinations,
       repeatMinutes,
@@ -135,10 +144,8 @@ export function heartbeatOutcome(
   now: number,
 ): CheckOutcome | null {
   if (lastPingAt === null) return null;
-  // A job does not finish at the same second every time: a tenth of the
-  // interval, and a minute at least, is allowed on top.
-  const grace = Math.max(60, intervalSeconds / 10);
-  const ok = now - lastPingAt <= (intervalSeconds + grace) * 1000;
+  const ok =
+    now - lastPingAt <= heartbeatDeadlineSeconds(intervalSeconds) * 1000;
   return { ok, statusCode: null, latencyMs: 0, error: ok ? null : "no ping" };
 }
 
@@ -149,7 +156,7 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
     job.type === "heartbeat"
       ? heartbeatOutcome(
           lastHeartbeat(db, job.site, job.monitor),
-          job.intervalSeconds,
+          job.pingIntervalSeconds ?? job.intervalSeconds,
           deps.now(),
         )
       : await deps.check(job.spec);
@@ -266,9 +273,11 @@ export async function tick(deps: SchedulerDeps): Promise<void> {
   const results = await Promise.allSettled(
     jobs.map(async (job, i) => {
       deps.lastRun?.set(jobKey(job), started);
+      if (gap > 0 && i > 0) await deps.sleep?.(Math.round(i * gap));
+      // Marked as running only once it runs: waiting for its place in the
+      // spread, a heartbeat can still be judged at once after a ping.
       deps.running?.add(jobKey(job));
       try {
-        if (gap > 0 && i > 0) await deps.sleep?.(Math.round(i * gap));
         await runJob(deps, job);
       } finally {
         deps.running?.delete(jobKey(job));
@@ -401,7 +410,16 @@ export function startScheduler(): void {
     );
   }
   const alertDeps = liveAlertDeps(config);
+  // When each monitor last ran, from the database: a restart does not run
+  // everything at once again, which for domains and certificates would
+  // ask the registries more often than their floor.
+  const lastRun = new Map<string, number>();
+  for (const job of jobs) {
+    const checkedAt = getState(db, job.site, job.monitor)?.checkedAt;
+    if (checkedAt) lastRun.set(`${job.site}\0${job.monitor}`, checkedAt);
+  }
   const deps: SchedulerDeps = {
+    lastRun,
     jobs,
     db,
     check: runCheck,

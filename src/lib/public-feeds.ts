@@ -143,9 +143,9 @@ export function statusJson(
               budget.uptime === null
                 ? null
                 : Math.floor(budget.uptime * 100) / 100,
-            budgetMinutes: budget.budgetMinutes,
-            downMinutes: budget.downMinutes,
-            remainingMinutes: budget.remainingMinutes,
+            budgetMinutes: Math.round(budget.budgetMinutes * 100) / 100,
+            downMinutes: Math.round(budget.downMinutes * 100) / 100,
+            remainingMinutes: Math.round(budget.remainingMinutes * 100) / 100,
           },
         }
       : {}),

@@ -62,11 +62,12 @@ test.describe("the status page", () => {
     // The newest bar, then back to the outage five hours ago.
     await page.keyboard.press("End");
     const bar = page.locator("#row-website").locator("p[aria-live]");
-    for (let i = 0; i < 75; i++) {
-      if ((await bar.textContent())?.includes("failed check")) break;
-      await page.keyboard.press("ArrowLeft");
+    let outage = false;
+    for (let i = 0; i < 75 && !outage; i++) {
+      outage = (await bar.textContent())?.includes("failed check") ?? false;
+      if (!outage) await page.keyboard.press("ArrowLeft");
     }
-    await expect(bar).toContainText("failed check");
+    expect(outage).toBe(true);
     await page.keyboard.press("Enter");
     const panel = page.getByRole("region", { name: /^Checks for Website/ });
     await expect(panel).toContainText("HTTP 503");
@@ -80,11 +81,13 @@ test.describe("the status page", () => {
     await strip.focus();
     await page.keyboard.press("End");
     const readout = page.locator("#row-website").locator("p[aria-live]");
-    for (let i = 0; i < 45; i++) {
-      if ((await readout.textContent())?.includes("Deploy: v1.4.0")) break;
-      await page.keyboard.press("ArrowLeft");
+    let deploy = false;
+    for (let i = 0; i < 45 && !deploy; i++) {
+      deploy =
+        (await readout.textContent())?.includes("Deploy: v1.4.0.") ?? false;
+      if (!deploy) await page.keyboard.press("ArrowLeft");
     }
-    await expect(readout).toContainText("Deploy: v1.4.0.");
+    expect(deploy).toBe(true);
   });
 
   test("has a year of history on the longer views", async ({ page, fits }) => {

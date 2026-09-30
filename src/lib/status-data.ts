@@ -100,7 +100,7 @@ export function monitorView(
     since: state?.since ?? null,
     ...data,
     last24h,
-    spans: stripSpans(views, cp.name, start, end),
+    spans: stripSpans(views, cp.name, start, end, now),
   };
 }
 
@@ -136,10 +136,13 @@ export function stripSpans(
   name: string,
   start: number,
   end: number,
+  now: number = end,
 ): StripSpan[] {
   return views
     .filter((v) => {
       if (v.auto) return false;
+      // An incident dated ahead is not told before its time.
+      if (v.kind === "incident" && v.startedAt > now) return false;
       if (v.monitors.length > 0 && !v.monitors.includes(name)) return false;
       const to = v.kind === "maintenance" ? v.endsAt : v.resolvedAt;
       return v.startedAt < end && (to === null || to > start);
@@ -213,7 +216,7 @@ export function componentViews(
         spec,
         history.now,
       ),
-      spans: stripSpans(history.views, c.name, start, end),
+      spans: stripSpans(history.views, c.name, start, end, history.now),
     };
   });
 }
@@ -312,14 +315,20 @@ export function siteIncidents(
   );
 }
 
-/** One incident or window by its id, or undefined. */
+/**
+ * One incident or window by its id, or undefined. An incident dated ahead
+ * is not there until its time; a planned window is.
+ */
 export function findIncident(
   db: Database.Database,
   config: AppConfig,
   site: SiteConfig,
   id: string,
+  now: number,
 ): IncidentView | undefined {
-  return siteIncidentViews(db, config, site, 0).find((v) => v.id === id);
+  return siteIncidentViews(db, config, site, 0).find(
+    (v) => v.id === id && (v.kind === "maintenance" || v.startedAt <= now),
+  );
 }
 
 /** The live pieces the route handlers need for a site. */

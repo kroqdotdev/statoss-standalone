@@ -33,7 +33,7 @@ You list sites in `config.yaml`. Each site has a hostname and one or more monito
 
 The checker runs inside the server process:
 
-1. Every `checkIntervalSeconds`, it runs every monitor that is due, with a 10-second timeout. A monitor whose last check is still waiting on its timeout is left to finish; the others go ahead. A monitor with `intervalSeconds` runs less often. The checks of one round are spread over the first three quarters of the interval (45 seconds at most) so that they do not slow each other down.
+1. Every `checkIntervalSeconds`, it runs every monitor that is due, with a 10-second timeout. After a restart a monitor is due when its interval has passed since its last check, not at once. A monitor whose last check is still waiting on its timeout is left to finish; the others go ahead. A monitor with `intervalSeconds` runs less often. The checks of one round are spread over the first three quarters of the interval (45 seconds at most) so that they do not slow each other down.
 2. An HTTP check passes on a 2xx response, or on the exact `expectStatus` if you set one, and, with a `keyword`, only when the body contains it (or does not, with `keywordMode: absent`). Bodies are read up to 1 MB.
 3. A monitor becomes **down** after 2 failed checks in a row and **up** again after 1 successful check. With a `slowThresholdMs`, it becomes **slow** after 2 successful checks over the threshold and back to normal after 1 under it. Each change of state sends one alert to every destination of the site. With `repeatMinutes`, a monitor that stays down sends a "still down" notice at that interval.
 4. A monitor going down opens an incident on the page; the first success after it resolves the incident.
@@ -207,15 +207,15 @@ A configuration written for 0.1 that says `checkpoints` where this one says `mon
 
 Every type but `http` takes a `host` instead of a `url`. A field that does not belong to a monitor's type is an error.
 
-| Type          | Fields                                   | Passes when                                                                                                                                                            |
-| ------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `http`        | `url` and the request options above      | The response has a 2xx status, or the one you expect, and the keyword matches.                                                                                         |
-| `tcp`         | `host`, `port`                           | The port accepts a connection.                                                                                                                                         |
-| `dns`         | `host`, `record` (default `A`), `expect` | The name has a record of that type (`A`, `AAAA`, `CNAME`, `MX`, `TXT` or `NS`) and, with `expect`, one answer contains that text.                                      |
-| `ping`        | `host`                                   | One ICMP echo is answered. The image carries `ping`; elsewhere a missing `ping` command is reported as such.                                                           |
-| `certificate` | `host`, `port` (default 443), `warnDays` | The TLS certificate is valid for the host and does not expire within `warnDays` (default 14). Checked once an hour at most.                                            |
-| `domain`      | `host`, `warnDays`                       | The registry (through rdap.org) says the domain does not expire within `warnDays` (default 30). Checked every six hours at most.                                       |
-| `heartbeat`   | `token`, `intervalSeconds`               | Your job requested `/heartbeat/<token>` within the last `intervalSeconds`, with a tenth of it (a minute at least) as grace. Nothing is recorded before the first ping. |
+| Type          | Fields                                   | Passes when                                                                                                                                                                                |
+| ------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `http`        | `url` and the request options above      | The response has a 2xx status, or the one you expect, and the keyword matches.                                                                                                             |
+| `tcp`         | `host`, `port`                           | The port accepts a connection.                                                                                                                                                             |
+| `dns`         | `host`, `record` (default `A`), `expect` | The name has a record of that type (`A`, `AAAA`, `CNAME`, `MX`, `TXT` or `NS`) and, with `expect`, one answer contains that text.                                                          |
+| `ping`        | `host`                                   | One ICMP echo is answered. The image carries `ping`; elsewhere a missing `ping` command is reported as such.                                                                               |
+| `certificate` | `host`, `port` (default 443), `warnDays` | The TLS certificate is valid for the host and does not expire within `warnDays` (default 14). Checked once an hour at most.                                                                |
+| `domain`      | `host`, `warnDays`                       | The registry (through rdap.org) says the domain does not expire within `warnDays` (default 30). Checked every six hours at most.                                                           |
+| `heartbeat`   | `token`, `intervalSeconds`               | Your job requested `/heartbeat/<token>` within the last `intervalSeconds`, with a tenth of it (a minute at least) as grace. Judged every round; nothing is recorded before the first ping. |
 
 ```yaml
 monitors:
@@ -238,9 +238,9 @@ monitors:
     intervalSeconds: 86400
 ```
 
-A heartbeat is for a job that runs on a schedule. End the job with a request to `https://status.example.com/heartbeat/<token>`, with any method, for example `curl -fsS https://status.example.com/heartbeat/$BACKUP_HEARTBEAT`. The token is at least 8 letters, digits, dashes or underscores, and no two monitors may share one. Set `intervalSeconds` to how often the job runs: the monitor goes down after two checks in a row find no ping within the interval and its grace. A ping to a monitor that is down is judged at once, so the recovery shows without waiting for the next check.
+A heartbeat is for a job that runs on a schedule. End the job with a request to `https://status.example.com/heartbeat/<token>`, with any method, for example `curl -fsS https://status.example.com/heartbeat/$BACKUP_HEARTBEAT`. The token is at least 8 letters, digits, dashes or underscores, and no two monitors may share one. Set `intervalSeconds` to how often the job runs. The monitor is judged every round (`checkIntervalSeconds`): it fails once no ping has come for the interval and its grace, and goes down on the second failure in a row, a round later. A ping to a monitor that is down is judged at once, so the recovery shows without waiting for the next round.
 
-Certificate and domain monitors show the date they expire on the page and in `status.json`. They, and heartbeats, have no response time, so their strips are drawn at one height.
+Certificate and domain monitors show the date they expire on the page and in `status.json`, an expired or untrusted certificate included. They, and heartbeats, have no response time, so their strips are drawn at one height.
 
 A destination is one entry in a `to` list, of one of these shapes:
 
