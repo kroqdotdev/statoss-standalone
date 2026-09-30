@@ -71,6 +71,16 @@ describe("the brake on guessing", () => {
     expect(tooManyFailures("h", "new", 1001)).toBe(true);
   });
 
+  it("forgets addresses whose failures have expired, once there are many", () => {
+    for (let i = 0; i < 600; i++) noteFailure("h", `old-${i}`, 1000);
+    noteFailure("h", "new", 120_000);
+    expect(tooManyFailures("h", "old-1", 120_001)).toBe(false);
+    const size = (
+      globalThis as { __statusUnlockFailures?: Map<string, number[]> }
+    ).__statusUnlockFailures?.size;
+    expect(size).toBeLessThan(10);
+  });
+
   it("knows the address the proxy forwarded", () => {
     expect(
       clientOf(new Headers({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" })),

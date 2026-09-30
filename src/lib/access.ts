@@ -98,7 +98,13 @@ export function tooManyFailures(
   );
 }
 
+/** Above this many keys, the expired ones are swept out on the next failure. */
+const SWEEP_AT = 500;
+
 export function noteFailure(host: string, client: string, now: number): void {
+  // Addresses that never come back would otherwise stay for good.
+  if (failures().size > SWEEP_AT)
+    for (const key of [...failures().keys()]) recent(key, now);
   for (const key of [`${host}\0${client}`, host]) {
     const list = failures().get(key) ?? [];
     list.push(now);

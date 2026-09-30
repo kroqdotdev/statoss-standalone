@@ -434,6 +434,24 @@ export function channelOf(d: Destination): ChannelName {
 }
 
 /**
+ * Closes other alerts on a pager beside the one being sent, never before
+ * it: a close that fails is logged and must not hold up or sink the alert
+ * itself, least of all a monitor going down.
+ */
+function closeAside(
+  keys: string[] | undefined,
+  subject: string,
+  close: (key: string) => Promise<void>,
+): void {
+  for (const key of keys ?? [])
+    close(key).catch((err: unknown) =>
+      console.error(
+        `[alerts] closing ${key} for "${subject}" failed: ${reasonOf(err)}`,
+      ),
+    );
+}
+
+/**
  * Sends one message to one destination. Null when the destination has no
  * use for it: an email without SMTP, a notice to a pager.
  */
@@ -483,25 +501,24 @@ function deliver(
   if ("pagerduty" in d) {
     const pager = message.pager;
     if (pager === null) return null;
-    return (async () => {
-      for (const closed of pager.closes ?? [])
-        await post(
-          deps.fetch,
-          PAGERDUTY_EVENTS,
-          JSON.stringify({
-            routing_key: d.pagerduty,
-            event_action: "resolve",
-            dedup_key: closed,
-          }),
-          {},
-        );
-      await post(
+    closeAside(pager.closes, message.subject, (closed) =>
+      post(
         deps.fetch,
         PAGERDUTY_EVENTS,
-        JSON.stringify(pagerdutyPayload(message, d.pagerduty)),
+        JSON.stringify({
+          routing_key: d.pagerduty,
+          event_action: "resolve",
+          dedup_key: closed,
+        }),
         {},
-      );
-    })();
+      ),
+    );
+    return post(
+      deps.fetch,
+      PAGERDUTY_EVENTS,
+      JSON.stringify(pagerdutyPayload(message, d.pagerduty)),
+      {},
+    );
   }
   if ("opsgenie" in d) {
     if (message.pager === null) return null;
@@ -515,17 +532,15 @@ function deliver(
         JSON.stringify({ source: "StatOSS", note: message.subject }),
         headers,
       );
-    return (async () => {
-      for (const closed of pager.closes ?? []) await close(closed);
-      if (pager.action === "trigger")
-        await post(
+    closeAside(pager.closes, message.subject, close);
+    return pager.action === "trigger"
+      ? post(
           deps.fetch,
           `${base}/v2/alerts`,
           JSON.stringify(opsgeniePayload(message)),
           headers,
-        );
-      else await close(pager.key);
-    })();
+        )
+      : close(pager.key);
   }
   if ("ntfy" in d)
     return post(

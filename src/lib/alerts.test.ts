@@ -276,6 +276,21 @@ describe("a monitor that goes down from slow", () => {
       "https://api.opsgenie.com/v2/alerts",
     ]);
     calls.length = 0;
+    // A close that fails does not hold up the down alert.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const flaky = vi.fn(
+      async (url: string | URL | Request, init?: RequestInit) =>
+        String(init?.body).includes('"resolve"')
+          ? new Response("no", { status: 500 })
+          : new Response("ok", { status: 202 }),
+    ) as unknown as typeof fetch;
+    const results = await sendAlerts([{ pagerduty: "R0UT1NG" }], down, {
+      send: null,
+      from: "",
+      fetch: flaky,
+    });
+    expect(results).toEqual([{ channel: "pagerduty", ok: true }]);
+    vi.restoreAllMocks();
     // Without slowness before it, only the down alert.
     await sendAlerts([{ pagerduty: "R0UT1NG" }], DOWN, deps);
     expect(calls).toHaveLength(1);
