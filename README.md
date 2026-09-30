@@ -10,7 +10,7 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 ## Features
 
 - **Every failed check is visible.** Each monitor has a strip of bars. Bar height is response time. A mark at the top of a bar shows the failed checks in that time slot: amber for a timeout, red for any other failure. One failed check out of 1,440 in a day still gets a visible mark.
-- **Four views.** The last 24 hours in 5-minute slots, 7 days in 1-hour slots, and 90 days or a year in 1-day slots. Point at a bar, or use the arrow keys, to read the numbers for one slot.
+- **Four views.** The last 24 hours in 5-minute slots, 7 days in 1-hour slots, and 90 days or a year in 1-day slots. Point at a bar, or use the arrow keys, to read the numbers for one slot and the incidents that touched it. Click a bar, or press Enter, to list the checks behind it.
 - **An error budget.** Give a site an uptime target and the page says how much of the month's allowance of downtime is spent.
 - **Failed checks are listed.** Consecutive failures are grouped into runs. Each run shows the reason (timeout, HTTP status, keyword, or connection error), when it started, and how long the monitor did not respond.
 - **Seven kinds of monitor.** HTTP, TCP port, DNS, ping, certificate expiry, domain expiry, and a heartbeat that a scheduled job pings.
@@ -350,6 +350,8 @@ components:
     state: degraded
 ```
 
+A component has a strip too: each bar is the worst state it was in during that time, green for operational, indigo for degraded and red for an outage. The history is made of two things: the state in the configuration, noted with the time each change was first seen at start, and the incidents that named the component with a state, for as long as each was open. There are no bars from before the component was first in the configuration.
+
 Its state is the one in the configuration (`operational` unless you say otherwise), or the one an open incident gives it when that is worse. A component that is not operational counts toward the headline, the badge and `status.json` the way a monitor does: `degraded` like slow, `partial` and `major` like down.
 
 ### When checks stop
@@ -404,6 +406,7 @@ Next to every page, on the same hostname:
 | `/badge.json`  | The same in the [shields.io endpoint format](https://shields.io/badges/endpoint-badge), for a badge shields.io draws.                                                                                                                                    |
 | `/feed.xml`    | An RSS feed of the incidents and maintenance of the last 30 days. Each entry links to the incident's page and carries the window's times, every update with its status word, and the post-mortem.                                                        |
 | `/feed.atom`   | The same as an Atom feed.                                                                                                                                                                                                                                |
+| `/checks`      | The checks behind one bar, which the page asks for when a bar is opened: `?monitor=<name>&from=<ms>&to=<ms>`, a day at most. Failures are given in the page's words ("Timed out", "HTTP 503"), never the stored error.                                   |
 | `/widget.js`   | A script that draws a status dot and a link where it is placed: `<script src="https://status.example.com/widget.js"></script>`. Override the words with `data-operational`, `data-degraded`, `data-partial`, `data-major` and `data-unknown` attributes. |
 
 The JSON and badge endpoints allow cross-origin requests.

@@ -11,6 +11,7 @@ import {
   unlockToken,
 } from "./access";
 import { readAsset } from "./assets";
+import { checkDetail, MAX_DETAIL_WINDOW_MS } from "./check-detail";
 import { findSiteByHost, getConfig, siteUrl } from "./config";
 import { bumpDataVersion } from "./data-version";
 import { getDb, recordHeartbeat } from "./db";
@@ -231,4 +232,37 @@ export async function unlockResponse(request: Request): Promise<Response> {
     maxAge: UNLOCK_DAYS * 24 * 60 * 60,
   });
   redirect("/");
+}
+
+/**
+ * The checks behind one bar of a monitor's strip, for the panel a bar
+ * opens: /checks?monitor=<name>&from=<ms>&to=<ms>.
+ */
+export async function checksResponse(request: Request): Promise<Response> {
+  const site = await currentSite(request);
+  if (site instanceof Response) return site;
+  const params = new URL(request.url).searchParams;
+  const monitor = site.monitors.find((m) => m.name === params.get("monitor"));
+  const from = Number(params.get("from"));
+  const to = Number(params.get("to"));
+  if (
+    !monitor ||
+    !Number.isSafeInteger(from) ||
+    !Number.isSafeInteger(to) ||
+    to <= from ||
+    to - from > MAX_DETAIL_WINDOW_MS
+  )
+    return new Response("Bad request", { status: 400 });
+  return Response.json(
+    checkDetail(
+      getDb(),
+      site.name,
+      monitor.name,
+      monitor.slowThresholdMs ?? null,
+      from,
+      to,
+    ),
+    // A bar in the past does not change; the current one does.
+    { headers: { "cache-control": cache(site, to < Date.now() ? 300 : 15) } },
+  );
 }

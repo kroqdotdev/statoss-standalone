@@ -1,7 +1,19 @@
 import Link from "next/link";
+import { CheckStrip } from "./CheckStrip";
 import { rowId } from "@/lib/format";
+import type { WindowSummary } from "@/lib/queries";
+import type { RangeKey } from "@/lib/ranges";
 import { COMPONENT_LABELS, type Stated } from "@/lib/stated";
 import type { ComponentView } from "@/lib/status-data";
+
+const NO_CHECKS: WindowSummary = {
+  total: 0,
+  up: 0,
+  timeouts: 0,
+  slow: 0,
+  maintenance: 0,
+  latencyMs: null,
+};
 
 const TONE = {
   operational: "text-up",
@@ -12,15 +24,18 @@ const TONE = {
 
 /**
  * A part of the product with no check: a name, an optional line under it,
- * and its state. No strip and no uptime figure, since nothing measures it.
+ * its state, and a strip of the states it has been in. No uptime figure,
+ * since nothing measures it.
  */
 export function ComponentRow({
   component,
   stated,
+  range,
   as: Heading = "h2",
 }: {
   component: ComponentView;
   stated?: Stated;
+  range: RangeKey;
   as?: "h2" | "h3";
 }) {
   const maintenance = stated?.maintenanceUntil && !stated.impact;
@@ -58,6 +73,19 @@ export function ComponentRow({
         <p className="mt-1.5 text-[13.5px] text-muted">
           {component.description}
         </p>
+      )}
+      {component.buckets && (
+        <div className="mt-3">
+          <CheckStrip
+            buckets={component.buckets}
+            range={range}
+            summary={NO_CHECKS}
+            name={component.name}
+            timed={false}
+            kind="states"
+            spans={component.spans}
+          />
+        </div>
       )}
     </section>
   );

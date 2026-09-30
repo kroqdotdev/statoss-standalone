@@ -1,7 +1,9 @@
 import type Database from "better-sqlite3";
+import type { StripSpan } from "@/components/CheckStrip";
 import type { MonitorView } from "@/components/MonitorSection";
 import { errorBudget, monthTotals, type ErrorBudget } from "./budget";
 import { cached, cachedFor } from "./cache";
+import { componentBuckets } from "./component-history";
 import {
   getConfig,
   LATENCY_TYPES,
@@ -21,6 +23,7 @@ import {
   type SiteIncidents,
 } from "./incidents";
 import {
+  type Bucket,
   bucketSeries,
   failureRuns,
   rangeWindow,
@@ -56,6 +59,7 @@ export function monitorView(
   now: number,
   retentionDays = 90,
   checkIntervalSeconds = 60,
+  views: IncidentView[] = [],
 ): MonitorView {
   const spec = RANGES[range];
   const { start, end } = rangeWindow(spec, now);
@@ -95,6 +99,7 @@ export function monitorView(
     since: state?.since ?? null,
     ...data,
     last24h,
+    spans: stripSpans(views, cp.name, start, end),
   };
 }
 
@@ -120,12 +125,41 @@ export function siteBudget(
   );
 }
 
+/**
+ * The incidents and windows somebody wrote that touch a row inside a
+ * window, for naming on the bars. One that names no rows covers them all.
+ * Outages the checker opened are left out: the bar already shows them.
+ */
+export function stripSpans(
+  views: IncidentView[],
+  name: string,
+  start: number,
+  end: number,
+): StripSpan[] {
+  return views
+    .filter((v) => {
+      if (v.auto) return false;
+      if (v.monitors.length > 0 && !v.monitors.includes(name)) return false;
+      const to = v.kind === "maintenance" ? v.endsAt : v.resolvedAt;
+      return v.startedAt < end && (to === null || to > start);
+    })
+    .map((v) => ({
+      title: v.title,
+      maintenance: v.kind === "maintenance",
+      from: v.startedAt,
+      to: v.kind === "maintenance" ? v.endsAt : v.resolvedAt,
+    }));
+}
+
 /** A component as the page shows it. */
 export interface ComponentView {
   name: string;
   group: string | null;
   description: string | null;
   state: ComponentState;
+  /** The states it was in over the range, as bars. Absent when not asked for. */
+  buckets?: Bucket[];
+  spans?: StripSpan[];
 }
 
 export interface SiteRows {
@@ -139,13 +173,37 @@ export interface SiteRows {
 export function componentViews(
   site: SiteConfig,
   stated: Map<string, Stated>,
+  /** With this, each component gets the strip of its states over the range. */
+  history?: {
+    db: Database.Database;
+    views: IncidentView[];
+    range: RangeKey;
+    now: number;
+  },
 ): ComponentView[] {
-  return site.components.map((c) => ({
-    name: c.name,
-    group: c.group ?? null,
-    description: c.description ?? null,
-    state: componentState(c.state, stated.get(c.name)),
-  }));
+  return site.components.map((c) => {
+    const view: ComponentView = {
+      name: c.name,
+      group: c.group ?? null,
+      description: c.description ?? null,
+      state: componentState(c.state, stated.get(c.name)),
+    };
+    if (!history) return view;
+    const spec = RANGES[history.range];
+    const { start, end } = rangeWindow(spec, history.now);
+    return {
+      ...view,
+      buckets: componentBuckets(
+        history.db,
+        site.name,
+        c.name,
+        history.views,
+        spec,
+        history.now,
+      ),
+      spans: stripSpans(history.views, c.name, start, end),
+    };
+  });
 }
 
 /** Every name on a site that an incident or a window can cover. */
