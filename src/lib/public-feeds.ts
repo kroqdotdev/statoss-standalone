@@ -28,9 +28,12 @@ export interface StatusJson {
   site: { name: string; url: string; status: Overall; updatedAt: string };
   monitors: Array<{
     name: string;
+    type: string;
     group: string | null;
     status: MonitorStatus;
     since: string | null;
+    /** Certificate and domain monitors: when it expires. */
+    expiresAt: string | null;
     uptime24h: number | null;
     latencyMs24h: number | null;
   }>;
@@ -59,9 +62,13 @@ export function statusJson(
     );
     return {
       name: cp.name,
+      type: cp.type,
       group: cp.group ?? null,
       status: (state?.status ?? "unknown") as MonitorStatus,
       since: state ? new Date(state.since).toISOString() : null,
+      expiresAt: state?.expiresAt
+        ? new Date(state.expiresAt).toISOString()
+        : null,
       uptime24h:
         day.total === 0 ? null : Math.round((day.up / day.total) * 10000) / 100,
       latencyMs24h: day.latencyMs,

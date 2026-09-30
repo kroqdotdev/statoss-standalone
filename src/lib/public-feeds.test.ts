@@ -64,17 +64,21 @@ describe("statusJson", () => {
     expect(json.monitors).toEqual([
       {
         name: "Main site",
+        type: "http",
         group: "Web",
         status: "up",
         since: new Date(NOW - 60_000).toISOString(),
+        expiresAt: null,
         uptime24h: 66.67,
         latencyMs24h: 200,
       },
       {
         name: "API",
+        type: "http",
         group: null,
         status: "unknown",
         since: null,
+        expiresAt: null,
         uptime24h: null,
         latencyMs24h: null,
       },

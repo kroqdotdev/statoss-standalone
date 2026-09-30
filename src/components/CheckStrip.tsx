@@ -20,6 +20,8 @@ const MIN_BAR = 4;
 /** Smallest failure mark, so one timeout among 1,440 checks is still seen. */
 const MIN_MARK = 9;
 const CAP = 2.5;
+/** The height of a passed bar on a strip with no response times. */
+const UNTIMED_BAR = 55;
 
 interface Props {
   buckets: Bucket[];
@@ -29,6 +31,8 @@ interface Props {
   name: string;
   /** Draws the slow line and colours buckets over it. */
   slowThresholdMs?: number | null;
+  /** False for checks with no response time: every passed bar is one height. */
+  timed?: boolean;
 }
 
 function bucketLabel(ts: number, range: RangeKey): string {
@@ -101,6 +105,7 @@ export function CheckStrip({
   summary,
   name,
   slowThresholdMs = null,
+  timed = true,
 }: Props) {
   const [active, setActive] = useState<number | null>(null);
   const readoutId = useId();
@@ -148,7 +153,7 @@ export function CheckStrip({
         >
           {readout}
         </p>
-        {summary.latencyMs !== null && (
+        {timed && summary.latencyMs !== null && (
           <p className="shrink-0 text-muted">
             up to {formatCount(Math.round(scaleMax))} ms
           </p>
@@ -171,7 +176,7 @@ export function CheckStrip({
           viewBox={`0 0 ${n} ${H}`}
           preserveAspectRatio="none"
           shapeRendering="crispEdges"
-          className="block h-[72px] w-full"
+          className={`block w-full ${timed ? "h-[72px]" : "h-[32px]"}`}
           aria-hidden="true"
         >
           {buckets.map((b, i) => {
@@ -195,8 +200,11 @@ export function CheckStrip({
               slowThresholdMs !== null &&
               b.latencyMs !== null &&
               b.latencyMs > slowThresholdMs;
-            const h =
-              b.latencyMs === null
+            const h = !timed
+              ? b.up > 0
+                ? UNTIMED_BAR
+                : 0
+              : b.latencyMs === null
                 ? 0
                 : Math.max(MIN_BAR, (b.latencyMs / scaleMax) * H);
             // Failed checks hang from the top rail, sized by their share of

@@ -72,3 +72,19 @@ describe("describeError", () => {
     expect(describeError("connect to internal-db.local failed")).toBe("Failed");
   });
 });
+
+describe("describeError for the other check types", () => {
+  it.each([
+    ["no ping", "No ping"],
+    ["no records", "No DNS records"],
+    ["no reply", "No reply"],
+    ["ping unavailable (not permitted)", "Ping unavailable"],
+    ["certificate expires in 9 days", "Certificate expires in 9 days"],
+    ["domain expired", "Domain expired"],
+    ["certificate invalid (CERT_HAS_EXPIRED)", "Certificate invalid"],
+    ["registry answered 503", "Registry unavailable"],
+    ["ECONNREFUSED", "Connection refused"],
+  ])("%s reads %s", (error, label) => {
+    expect(describeError(error)).toBe(label);
+  });
+});

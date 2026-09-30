@@ -34,6 +34,12 @@ export function formatUtcStamp(ts: number): string {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${formatUtcClock(ts)} UTC`;
 }
 
+/** "12 Aug 2026" in UTC. */
+export function formatUtcDate(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 /** "12 Aug" in UTC. */
 export function formatUtcDay(ts: number): string {
   const d = new Date(ts);
@@ -118,6 +124,17 @@ export function describeError(error: string | null): string {
   if (error === "timeout") return "Timed out";
   if (error === "keyword missing") return "Keyword missing";
   if (error === "keyword present") return "Keyword present";
+  if (error === "no ping") return "No ping";
+  if (error === "no records") return "No DNS records";
+  if (error === "expected record missing") return "Expected record missing";
+  if (error === "no reply") return "No reply";
+  if (error.startsWith("ping unavailable")) return "Ping unavailable";
+  if (error === "domain not registered") return "Domain not registered";
+  // "certificate expires in 9 days", "domain expired": safe to show as is.
+  if (/^(certificate|domain) (expired|expires in \d+ days)$/.test(error))
+    return `${error[0].toUpperCase()}${error.slice(1)}`;
+  if (error.startsWith("certificate invalid")) return "Certificate invalid";
+  if (/^registry answered \d{3}$/.test(error)) return "Registry unavailable";
   const status = /^unexpected status (\d{3})$/.exec(error);
   if (status) return `HTTP ${status[1]}`;
   for (const [pattern, label] of CAUSE_LABELS) {

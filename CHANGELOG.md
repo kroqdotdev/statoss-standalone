@@ -2,6 +2,20 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- Six more kinds of monitor, chosen with `type`: `tcp`, `dns`, `ping`, `certificate`, `domain` and `heartbeat`. Certificate and domain monitors fail inside a warning window before expiry and show the date on the page and in `status.json`; a heartbeat gives a scheduled job a URL to ping at `/heartbeat/<token>` and goes down after two intervals without one.
+- `intervalSeconds` on a monitor, for one that should be checked less often than the rest.
+- The image carries `ping`.
+
+### Changed
+
+- The checks of one round are spread over the first three quarters of the interval, 45 seconds at most, instead of all starting at once, which made each response time count the others' handshakes.
+- `slowThresholdMs` is at most 9999, under the 10-second timeout. A higher value is now an error.
+- The webhook body's `url` is what the monitor points at: the URL, `host:port`, or the host.
+
 ## 0.2.0 - 2026-09-29
 
 ### Added

@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CheckOutcome } from "./checker";
 import { parseConfig } from "./config";
-import { autoIncidents, getState, openDb } from "./db";
+import { autoIncidents, getState, openDb, recordHeartbeat } from "./db";
 import {
+  dueJobs,
+  heartbeatOutcome,
   loadJobs,
+  spreadMs,
   skipWhileRunning,
   tick,
   type Job,
@@ -36,7 +39,8 @@ function makeDeps(
   let time = 1000;
   const alertSpy = vi.fn().mockResolvedValue(undefined);
   return {
-    jobs: loadJobs(config),
+    // The test clock moves a second a call, so every job is due every tick.
+    jobs: loadJobs(config).map((job) => ({ ...job, intervalSeconds: 0 })),
     db: openDb(":memory:"),
     check: vi.fn().mockImplementation(() => {
       const outcome = outcomes[Math.min(call++, outcomes.length - 1)];
@@ -140,8 +144,9 @@ sites:
         url: https://webhooks.cc
 `);
     const deps = makeDeps([{ ok: false }], config);
+    // Two readings of the clock a tick: when it starts, and the check's time.
     let time = 0;
-    deps.now = () => (time += 20_000);
+    deps.now = () => (time += 10_000);
     await tick(deps); // 20 s: first failure
     await tick(deps); // 40 s: down, alert 1
     await tick(deps); // 60 s
@@ -310,5 +315,130 @@ describe("skipWhileRunning", () => {
     task.mockResolvedValueOnce(undefined);
     await run();
     expect(task).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("intervals", () => {
+  const config = parseConfig(`
+checkIntervalSeconds: 60
+sites:
+  - name: s
+    host: h
+    monitors:
+      - name: Web
+        url: https://example.com
+      - name: Hourly
+        url: https://example.com/hourly
+        intervalSeconds: 300
+      - name: Cert
+        type: certificate
+        host: example.com
+      - name: Domain
+        type: domain
+        host: example.com
+`);
+
+  it("gives each job its own interval, never under the type's floor", () => {
+    expect(loadJobs(config).map((j) => j.intervalSeconds)).toEqual([
+      60, 300, 3600, 21_600,
+    ]);
+  });
+
+  it("runs a job only once its interval has passed", async () => {
+    let time = 0;
+    const deps: SchedulerDeps = {
+      jobs: loadJobs(config).slice(0, 2),
+      db: openDb(":memory:"),
+      check: vi
+        .fn()
+        .mockResolvedValue({ ok: true, statusCode: 200, latencyMs: 5 }),
+      alert: vi.fn(),
+      now: () => time,
+    };
+    const names = () => dueJobs(deps, time).map((j) => j.monitor);
+    expect(names()).toEqual(["Web", "Hourly"]);
+    await tick(deps);
+    time = 60_000;
+    expect(names()).toEqual(["Web"]);
+    await tick(deps);
+    time = 300_000;
+    expect(names()).toEqual(["Web", "Hourly"]);
+  });
+
+  it("spreads a tick's checks over part of the interval", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const deps: SchedulerDeps = {
+      jobs: loadJobs(config),
+      db: openDb(":memory:"),
+      check: vi
+        .fn()
+        .mockResolvedValue({ ok: true, statusCode: 200, latencyMs: 5 }),
+      alert: vi.fn(),
+      now: () => 1000,
+      sleep,
+      spreadMs: spreadMs(60),
+    };
+    await tick(deps);
+    expect(spreadMs(60)).toBe(45_000);
+    expect(spreadMs(10)).toBe(7_500);
+    expect(sleep.mock.calls.map((c) => c[0])).toEqual([11_250, 22_500, 33_750]);
+  });
+});
+
+describe("heartbeat", () => {
+  const config = parseConfig(`
+sites:
+  - name: s
+    host: h
+    monitors:
+      - name: Nightly job
+        type: heartbeat
+        token: abcdefgh1234
+        intervalSeconds: 3600
+`);
+
+  it("has nothing to judge before the first ping", () => {
+    expect(heartbeatOutcome(null, 3600, 5000)).toBeNull();
+  });
+
+  it("passes inside the interval and fails past it", () => {
+    expect(heartbeatOutcome(0, 3600, 3_600_000)?.ok).toBe(true);
+    expect(heartbeatOutcome(0, 3600, 3_600_001)).toMatchObject({
+      ok: false,
+      error: "no ping",
+    });
+  });
+
+  it("writes no check until a ping has arrived, then goes down after two misses", async () => {
+    let time = 0;
+    const deps: SchedulerDeps = {
+      jobs: loadJobs(config).map((job) => ({ ...job })),
+      db: openDb(":memory:"),
+      check: vi.fn(),
+      alert: vi.fn().mockResolvedValue(undefined),
+      now: () => time,
+    };
+    const count = () =>
+      (
+        deps.db.prepare("SELECT COUNT(*) AS n FROM checks").get() as {
+          n: number;
+        }
+      ).n;
+    await tick(deps);
+    expect(count()).toBe(0);
+    recordHeartbeat(deps.db, "s", "Nightly job", 1000);
+    time = 3_600_000;
+    await tick(deps);
+    expect(getState(deps.db, "s", "Nightly job")?.status).toBe("up");
+    time = 2 * 3_600_000;
+    await tick(deps);
+    time = 3 * 3_600_000;
+    await tick(deps);
+    expect(getState(deps.db, "s", "Nightly job")?.status).toBe("down");
+    expect(deps.check).not.toHaveBeenCalled();
+    const row = deps.db.prepare("SELECT latency_ms AS l FROM checks").get() as {
+      l: number | null;
+    };
+    expect(row.l).toBeNull();
   });
 });
