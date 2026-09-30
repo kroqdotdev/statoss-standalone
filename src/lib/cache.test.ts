@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cached, clearCache } from "./cache";
+import { cached, cachedFor, clearCache } from "./cache";
 import { bumpDataVersion, getDataVersion } from "./data-version";
 
 describe("cached", () => {
@@ -33,5 +33,19 @@ describe("cached", () => {
     const after = cached("v", compute);
     expect(after).toBe(before + 1);
     expect(compute).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("cachedFor", () => {
+  it("keeps a value for its time, and drops it when the tag changes", () => {
+    clearCache();
+    let n = 0;
+    const get = (tag: string, now: number) =>
+      cachedFor("k", tag, 1000, () => ++n, now);
+    expect(get("a", 0)).toBe(1);
+    expect(get("a", 999)).toBe(1);
+    expect(get("a", 1000)).toBe(2);
+    expect(get("b", 1001)).toBe(3);
+    expect(get("b", 1500)).toBe(3);
   });
 });

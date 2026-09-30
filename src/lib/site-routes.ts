@@ -12,7 +12,7 @@ import {
   widgetJs,
 } from "./public-feeds";
 import { pageOverall } from "./state";
-import { liveSite } from "./status-data";
+import { liveSite, siteBudget } from "./status-data";
 
 /**
  * The route handlers that live next to a status page: status.json, the
@@ -42,9 +42,12 @@ export async function statusJsonResponse(): Promise<Response> {
   if (!site) return notFound();
   const now = Date.now();
   const { incidents } = liveSite(site, now);
-  return Response.json(statusJson(getDb(), site, incidents, now), {
-    headers: { ...CORS, "cache-control": "public, max-age=30" },
-  });
+  return Response.json(
+    statusJson(getDb(), site, incidents, now, siteBudget(getDb(), site, now)),
+    {
+      headers: { ...CORS, "cache-control": "public, max-age=30" },
+    },
+  );
 }
 
 async function overallNow(

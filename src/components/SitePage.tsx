@@ -9,8 +9,11 @@ import {
   openImpacts,
   type SiteIncidents,
 } from "@/lib/incidents";
-import type { RangeKey } from "@/lib/ranges";
+import { describeBudget, type ErrorBudget } from "@/lib/budget";
+import { RANGES, type RangeKey } from "@/lib/ranges";
 import { overallStatus, pageOverall, type MonitorStatus } from "@/lib/state";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface MonitorGroup {
   name: string | null;
@@ -84,6 +87,8 @@ export function SitePage({
   range,
   now,
   intervalSeconds,
+  budget = null,
+  retentionDays = 90,
 }: {
   name: string;
   monitors: MonitorView[];
@@ -91,6 +96,10 @@ export function SitePage({
   range: RangeKey;
   now: number;
   intervalSeconds: number;
+  /** The month's error budget, when the site has an uptime target. */
+  budget?: ErrorBudget | null;
+  /** Days single checks are kept, which is how far back failed runs go. */
+  retentionDays?: number;
 }) {
   const groups = groupMonitors(monitors);
   const grouped = groups.some((g) => g.name !== null);
@@ -172,6 +181,16 @@ export function SitePage({
       />
 
       <footer className="border-t border-rule pt-6 text-[13px] leading-relaxed text-muted">
+        {budget !== null && (
+          <p className="mb-2">{describeBudget(budget, now)}</p>
+        )}
+        {RANGES[range].buckets * RANGES[range].bucketMs >
+          retentionDays * DAY_MS && (
+          <p className="mb-2">
+            Failed checks are listed for the last {retentionDays} days. The bars
+            and the figures cover {RANGES[range].phrase}.
+          </p>
+        )}
         <p>
           Checks run {formatInterval(intervalSeconds)}. Times are UTC. Updated{" "}
           {formatUtcClock(now)}, and this page refreshes on its own.

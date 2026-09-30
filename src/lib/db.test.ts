@@ -69,8 +69,13 @@ describe("checks", () => {
         error: null,
       });
     }
-    const deleted = pruneOldChecks(db, 250);
+    const deleted = pruneOldChecks(db, 250, 0);
     expect(deleted).toBe(2);
+    // The hour's totals outlive the rows they were counted from.
+    expect(
+      db.prepare("SELECT total, up, latency_sum AS sum FROM check_hour").all(),
+    ).toEqual([{ total: 3, up: 3, sum: 3 }]);
+    expect(pruneOldChecks(db, 250, 1)).toBe(1);
     const remaining = db.prepare("SELECT ts FROM checks").all() as Array<{
       ts: number;
     }>;
@@ -208,12 +213,118 @@ describe("auto incidents", () => {
     ]);
   });
 
-  it("prunes resolved outages with the checks", () => {
+  it("prunes resolved outages with the history", () => {
     const db = memDb();
     openAutoIncident(db, "s", "c", 100, null);
     resolveAutoIncident(db, "s", "c", 200);
     openAutoIncident(db, "s", "d", 100, null);
-    expect(pruneOldChecks(db, 500)).toBe(1);
+    expect(pruneOldChecks(db, 0, 500)).toBe(1);
     expect(autoIncidents(db, "s", 0).map((r) => r.monitor)).toEqual(["d"]);
+  });
+});
+
+describe("hourly totals", () => {
+  const HOUR = 60 * 60 * 1000;
+  const base = { site: "s", monitor: "c", statusCode: null } as const;
+
+  it("counts each check into its hour as it is stored", () => {
+    const db = memDb();
+    insertCheck(db, {
+      ...base,
+      ts: HOUR + 1,
+      ok: 1,
+      latencyMs: 100,
+      error: null,
+    });
+    insertCheck(db, {
+      ...base,
+      ts: HOUR + 2,
+      ok: 1,
+      latencyMs: 900,
+      error: null,
+      slow: true,
+    });
+    insertCheck(db, {
+      ...base,
+      ts: HOUR + 3,
+      ok: 0,
+      latencyMs: 5,
+      error: "timeout",
+    });
+    insertCheck(db, {
+      ...base,
+      ts: HOUR + 4,
+      ok: 0,
+      latencyMs: 5,
+      error: "timeout",
+      maintenance: 1,
+    });
+    insertCheck(db, {
+      ...base,
+      ts: 2 * HOUR,
+      ok: 1,
+      latencyMs: null,
+      error: null,
+    });
+    expect(db.prepare("SELECT * FROM check_hour ORDER BY ts").all()).toEqual([
+      {
+        site: "s",
+        monitor: "c",
+        ts: HOUR,
+        total: 3,
+        up: 2,
+        timeouts: 1,
+        slow: 1,
+        maintenance: 1,
+        latency_sum: 1000,
+        latency_n: 2,
+      },
+      {
+        site: "s",
+        monitor: "c",
+        ts: 2 * HOUR,
+        total: 1,
+        up: 1,
+        timeouts: 0,
+        slow: 0,
+        maintenance: 0,
+        latency_sum: 0,
+        latency_n: 0,
+      },
+    ]);
+  });
+
+  it("fills them in once for a database that has checks and no totals", () => {
+    const dir = mkdtempSync(join(tmpdir(), "status-hours-"));
+    const path = join(dir, "status.db");
+    const first = openDb(path);
+    insertCheck(first, {
+      ...base,
+      ts: HOUR + 1,
+      ok: 1,
+      latencyMs: 40,
+      error: null,
+    });
+    insertCheck(first, {
+      ...base,
+      ts: HOUR + 2,
+      ok: 0,
+      latencyMs: 9,
+      error: "timeout",
+    });
+    first.exec("DELETE FROM check_hour");
+    first.close();
+    const second = openDb(path);
+    expect(
+      second
+        .prepare(
+          "SELECT ts, total, up, timeouts, latency_sum, latency_n FROM check_hour",
+        )
+        .all(),
+    ).toEqual([
+      { ts: HOUR, total: 2, up: 1, timeouts: 1, latency_sum: 40, latency_n: 1 },
+    ]);
+    second.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 });

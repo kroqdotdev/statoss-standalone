@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { ErrorBudget } from "./budget";
 import { siteUrl, type SiteConfig } from "./config";
 import { getState } from "./db";
 import { formatUtcStamp } from "./format";
@@ -26,6 +27,14 @@ export const BADGE: Record<
 
 export interface StatusJson {
   site: { name: string; url: string; status: Overall; updatedAt: string };
+  /** The month's error budget, when the site has an uptime target. */
+  budget?: {
+    target: number;
+    uptime: number | null;
+    budgetMinutes: number;
+    downMinutes: number;
+    remainingMinutes: number;
+  };
   monitors: Array<{
     name: string;
     type: string;
@@ -49,6 +58,7 @@ export function statusJson(
   site: SiteConfig,
   incidents: SiteIncidents,
   now: number,
+  budget: ErrorBudget | null = null,
 ): StatusJson {
   const monitors = site.monitors.map((cp) => {
     const state = getState(db, site.name, cp.name);
@@ -84,6 +94,20 @@ export function statusJson(
       ),
       updatedAt: new Date(now).toISOString(),
     },
+    ...(budget
+      ? {
+          budget: {
+            target: budget.target,
+            uptime:
+              budget.uptime === null
+                ? null
+                : Math.floor(budget.uptime * 100) / 100,
+            budgetMinutes: budget.budgetMinutes,
+            downMinutes: budget.downMinutes,
+            remainingMinutes: budget.remainingMinutes,
+          },
+        }
+      : {}),
     monitors,
     checkpoints: monitors,
     incidents: incidents.current.filter((i) => i.kind === "incident"),

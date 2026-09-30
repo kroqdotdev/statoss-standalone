@@ -95,6 +95,80 @@ export interface WindowSummary {
   slow: number;
   maintenance: number;
   latencyMs: number | null;
+  /** How many readings the mean is over, when the totals came from hours. */
+  latencyN?: number;
+  /** How many hours had a check, when the totals came from hours. */
+  hours?: number;
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * The same series from the hourly totals, for ranges whose buckets are an
+ * hour or longer. It reads a few thousand rows for a year where the raw
+ * table would read half a million, and reaches back past the raw rows.
+ */
+export function rollupSeries(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+  spec: RangeSpec,
+  now = Date.now(),
+): Bucket[] {
+  const { start, end } = rangeWindow(spec, now);
+  const { bucketMs } = spec;
+  const rows = db
+    .prepare(
+      `SELECT (ts / ${bucketMs}) * ${bucketMs} AS ts,
+              SUM(total) AS total,
+              SUM(up) AS up,
+              SUM(timeouts) AS timeouts,
+              SUM(slow) AS slow,
+              SUM(maintenance) AS maintenance,
+              CASE WHEN SUM(latency_n) > 0
+                   THEN ROUND(SUM(latency_sum) * 1.0 / SUM(latency_n)) END AS latencyMs
+       FROM check_hour
+       WHERE site = ? AND monitor = ? AND ts >= ? AND ts < ?
+       GROUP BY (ts / ${bucketMs}) * ${bucketMs}`,
+    )
+    .all(site, monitor, start, end) as Bucket[];
+  const byTs = new Map(rows.map((row) => [row.ts, row]));
+  const result: Bucket[] = [];
+  for (let i = 0; i < spec.buckets; i++) {
+    const ts = start + i * bucketMs;
+    result.push(byTs.get(ts) ?? { ts, ...EMPTY_BUCKET });
+  }
+  return result;
+}
+
+/** Totals over the whole hours in [sinceMs, untilMs), from the hourly totals. */
+export function rollupSummary(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+  sinceMs: number,
+  untilMs: number,
+): WindowSummary {
+  return db
+    .prepare(
+      `SELECT COALESCE(SUM(total), 0) AS total,
+              COALESCE(SUM(up), 0) AS up,
+              COALESCE(SUM(timeouts), 0) AS timeouts,
+              COALESCE(SUM(slow), 0) AS slow,
+              COALESCE(SUM(maintenance), 0) AS maintenance,
+              CASE WHEN SUM(latency_n) > 0
+                   THEN ROUND(SUM(latency_sum) * 1.0 / SUM(latency_n)) END AS latencyMs,
+              COALESCE(SUM(latency_n), 0) AS latencyN,
+              COUNT(*) AS hours
+       FROM check_hour
+       WHERE site = ? AND monitor = ? AND ts >= ? AND ts < ?`,
+    )
+    .get(
+      site,
+      monitor,
+      Math.floor(sinceMs / HOUR_MS) * HOUR_MS,
+      untilMs,
+    ) as WindowSummary;
 }
 
 /** Totals over [sinceMs, untilMs). Maintenance checks are counted apart. */

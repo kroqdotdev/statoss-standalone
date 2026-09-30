@@ -12,6 +12,7 @@ import { monitorSpec, runCheck } from "./checker";
 import type { CheckOutcome, CheckSpec } from "./checker";
 import {
   getConfig,
+  HISTORY_DAYS,
   LATENCY_TYPES,
   monitorIntervalSeconds,
   monitorTarget,
@@ -42,7 +43,7 @@ import { inMaintenance, maintenanceView } from "./incidents";
 import { dueNotices } from "./notices";
 import { applyResult, type CheckVerdict } from "./state";
 
-const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const MINUTE_MS = 60_000;
 
 /** Everything one tick needs to know about a monitor. */
@@ -159,9 +160,10 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
     touchChecked(db, job.site, job.monitor, ts);
     return;
   }
-  insertCheck(db, row);
+  const slow = isSlow(job, outcome);
+  insertCheck(db, { ...row, slow });
 
-  const verdict: CheckVerdict = { ok: outcome.ok, slow: isSlow(job, outcome) };
+  const verdict: CheckVerdict = { ok: outcome.ok, slow };
   const prev = getState(db, job.site, job.monitor);
   const { next, transition } = applyResult(prev, verdict, ts);
   let lastAlertAt = prev?.lastAlertAt ?? null;
@@ -392,7 +394,11 @@ export function startScheduler(): void {
       const day = new Date().toISOString().slice(0, 10);
       if (day !== lastPruneDay) {
         lastPruneDay = day;
-        const deleted = pruneOldChecks(db, Date.now() - RETENTION_MS);
+        const deleted = pruneOldChecks(
+          db,
+          Date.now() - config.retentionDays * DAY_MS,
+          Date.now() - HISTORY_DAYS * DAY_MS,
+        );
         if (deleted > 0) console.log(`[scheduler] pruned ${deleted} old rows`);
       }
     } catch (err) {
