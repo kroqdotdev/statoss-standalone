@@ -2,38 +2,56 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.3.0 - 2026-09-30
 
 ### Added
 
-- Six more kinds of monitor, chosen with `type`: `tcp`, `dns`, `ping`, `certificate`, `domain` and `heartbeat`. Certificate and domain monitors fail inside a warning window before expiry and show the date on the page and in `status.json`; a heartbeat gives a scheduled job a URL to ping at `/heartbeat/<token>` and goes down after two intervals without one.
+Monitors:
+
+- Six more kinds of monitor, chosen with `type`: `tcp`, `dns`, `ping`, `certificate`, `domain` and `heartbeat`. Certificate and domain monitors fail inside a warning window before expiry and show the date on the page and in `status.json`. A heartbeat gives a scheduled job a URL to ping at `/heartbeat/<token>`, is judged every round, and goes down a round after a ping is overdue (its interval plus a tenth of it as grace); a ping to a monitor that is down is judged at once.
 - `intervalSeconds` on a monitor, for one that should be checked less often than the rest.
-- The image carries `ping`.
-- The image no longer carries npm, corepack and yarn, which come with the Node image, never run in it, and brought known vulnerabilities in their own dependencies.
+- Components: parts of the product with no check, listed under `components` with a state set in the configuration or by an open incident that names them, and a strip of the states they were in.
 - Vendor components: a component with `vendor` follows a Statuspage, incident.io or StatOSS status page, or one `part` of it, and is shown under Third-party services with the vendor's open incidents. A vendor's trouble does not move the headline, the badge or `status.json`'s site status.
-- Deploy markers: with `DEPLOY_TOKEN` set, `POST /deploys` from CI draws a dashed line with the version on every strip of the site. `GET /deploys` lists them and `status.json` carries the last five.
-- A read-only MCP endpoint at `/mcp` with `get_status`, `list_incidents` and `get_error_budget`, and `/llms.txt`, next to every page.
+- Stale is not up: a monitor whose checks have stopped arriving says when it was last checked, in grey, and counts as unknown in the headline, the badge and `status.json` (`stale`, `lastCheckedAt`).
+
+History:
+
+- A 1-year view, and hourly totals behind it: every check is added to its hour's totals, which are kept for 400 days. A 0.2 database gets them filled in from its checks on the first start.
+- `retentionDays`, for how long single checks are kept. The default stays 90.
+- An error budget: `uptimeTarget` on a site puts the month's uptime against the target, and the downtime allowance spent, at the foot of the page and in `status.json`.
 - Every bar on a strip opens a list of the checks behind it: when each ran, what it found and its response time. A bar older than the checks that are kept shows its hours' totals.
 - Pointing at a bar names the incidents and maintenance windows that touched it.
-- Components draw a strip of the states they were in.
+- Deploy markers: with `DEPLOY_TOKEN` set, `POST /deploys` from CI draws a dashed line with the version on every strip of the site. `GET /deploys` lists them and `status.json` carries the last five.
+
+Incidents:
+
+- A page for every incident and maintenance window at `/incidents/<id>`, and `/history`, which lists them by month.
+- An incident gives each monitor or component it names a state while it is open (`state: degraded`, `partial`, `major` or `none`), shown on the row when it is worse than the checks. Rows under a maintenance window in progress say "Under maintenance".
+- Headings in a post-mortem: a line that starts with `#`.
+- Three incident templates in `incidents.example/templates/`.
+
+Alerts:
+
+- PagerDuty, Opsgenie and ntfy as alert destinations. A monitor going down opens an alert on PagerDuty or Opsgenie and its recovery closes it; slowness is a second, lower alert.
+- Incident updates and maintenance windows (planned, started, over) go to the alert destinations, once each. `updates: false` turns that off.
+- A send that fails is tried again after one, five and fifteen minutes, unless the monitor has changed state since. Every send, failure and retry is logged.
+- A down alert says when the first failed check was (`failingSince` in the webhook body).
+
+The page:
+
 - The look of a page, per site: `logo`, `favicon`, `accent`, `theme` (light, dark or the visitor's system), `description` and `supportUrl`. Under the headline the page says when it was updated and offers Get updates and Contact support.
 - Times follow the visitor: every time on the page is written in the browser's own time zone, and the foot of the page names it. `timezone` is the zone used until the browser has loaded.
 - Password pages: `password` on a site locks the page, its incident pages, the history and every endpoint. `embedKey` lets a badge, `status.json`, a feed or the widget in with `?key=`.
 - `defaultRange` opens the page on 7 days, 90 days or a year, `foldGroups` folds the groups in which everything is up, and `noindex` keeps a page out of search engines.
-- Components: parts of the product with no check, listed under `components` with a state set in the configuration or by an open incident that names them.
-- A page for every incident and maintenance window at `/incidents/<id>`, and `/history`, which lists them by month.
-- An incident gives each monitor or component it names a state while it is open (`state: degraded`, `partial`, `major` or `none`), shown on the row when it is worse than the checks. Rows under a maintenance window in progress say "Under maintenance".
+
+For programs:
+
 - An Atom feed at `/feed.atom`. Both feeds carry a window's times, each update's status word and the post-mortem, and link to the incident's page.
-- Stale is not up: a monitor whose checks have stopped arriving says when it was last checked, in grey, and counts as unknown in the headline, the badge and `status.json` (`stale`, `lastCheckedAt`).
-- Headings in a post-mortem: a line that starts with `#`.
-- Three incident templates in `incidents.example/templates/`.
-- A 1-year view, and hourly totals behind it: every check is added to its hour's totals, which are kept for 400 days. A 0.2 database gets them filled in from its checks on the first start.
-- An error budget: `uptimeTarget` on a site puts the month's uptime against the target, and the downtime allowance spent, at the foot of the page and in `status.json`.
-- `retentionDays`, for how long single checks are kept. The default stays 90.
-- PagerDuty, Opsgenie and ntfy as alert destinations. A monitor going down opens an alert on PagerDuty or Opsgenie and its recovery closes it.
-- Incident updates and maintenance windows (planned, started, over) go to the alert destinations, once each. `updates: false` turns that off.
-- A send that fails is tried again after one, five and fifteen minutes, unless the monitor has changed state since. Every send, failure and retry is logged.
-- A down alert says when the first failed check was (`failingSince` in the webhook body).
+- A read-only MCP endpoint at `/mcp` with `get_status`, `list_incidents` and `get_error_budget`, and `/llms.txt`, next to every page.
+
+The image:
+
+- The image carries `ping`, and no longer carries npm, corepack and yarn, which come with the Node image, never run in it, and brought known vulnerabilities in their own dependencies.
 
 ### Changed
 
