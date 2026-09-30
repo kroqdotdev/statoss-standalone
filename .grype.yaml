@@ -1,0 +1,3 @@
+# Findings the image scan (.github/workflows/scan.yml) leaves out, each with
+# the reason it does not apply. Empty for now.
+ignore: []

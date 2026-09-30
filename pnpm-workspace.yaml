@@ -2,3 +2,8 @@ allowBuilds:
   better-sqlite3: true
   sharp: false
   unrs-resolver: false
+overrides:
+  # GHSA-6j4f-fj2g-mc7p and the later brace-expansion advisories (30 Sep
+  # 2026), reached only through eslint's minimatch.
+  "brace-expansion@<1.1.21": "1.1.21"
+  "brace-expansion@>=4.0.0 <5.0.12": "5.0.12"

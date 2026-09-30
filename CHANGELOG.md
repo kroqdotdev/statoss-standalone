@@ -36,6 +36,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- Moving from a bar to the list of its checks keeps the bar read out, so on a phone the list no longer moves under a finger half way through a tap.
 - A strip is drawn as one SVG path per colour instead of two or three rectangles per bar, about a quarter of the markup.
 - The status page lists the resolved incidents of the last 7 days instead of 30; the rest are under Incident history. Open incidents are ordered: what somebody wrote first, the worst first, then the outages the checker opened, folded into one card when there are several.
 - A site may have no monitors. It says nothing is checked yet, and its state is unknown instead of up.
@@ -46,6 +47,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - The checks of one round are spread over the first three quarters of the interval, 45 seconds at most, instead of all starting at once, which made each response time count the others' handshakes.
 - `slowThresholdMs` is at most 9999, under the 10-second timeout. A higher value is now an error.
 - The webhook body's `url` is what the monitor points at: the URL, `host:port`, or the host.
+
+### Development
+
+- Browser journeys (`pnpm e2e`) run the built server against a seeded database at desktop and phone width, and fail on anything that runs off the side of a screen. CI runs them on every pull request.
+- CI runs `pnpm audit` and a type check; a weekly workflow scans the image for known vulnerabilities.
+- brace-expansion 1.1.21 and 5.0.12 through overrides, for the advisories reached through ESLint.
 
 ## 0.2.0 - 2026-09-29
 

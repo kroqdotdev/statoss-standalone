@@ -483,7 +483,21 @@ Useful commands:
 | `pnpm lint`         | Runs ESLint.                        |
 | `pnpm format`       | Formats all files with Prettier.    |
 | `pnpm format:check` | Fails if any file is not formatted. |
+| `pnpm typecheck`    | Checks the types.                   |
 | `pnpm build`        | Builds the production server.       |
+| `pnpm e2e`          | Runs the browser journeys.          |
+
+The browser journeys in `e2e/` run the built server against a seeded database, at desktop and phone width, and fail when anything on a screen runs off its right edge. Build first, install a browser once, then run them:
+
+```sh
+pnpm build
+pnpm exec playwright install chromium
+pnpm e2e
+```
+
+`e2e/seed.mts` writes the configuration, the incidents and the database into `.e2e/`, and `e2e/target.mjs` is what the monitors check. The seed imports the app's TypeScript directly, which needs Node 22.18 or newer.
+
+CI runs the checks above, `pnpm audit`, and the journeys on every pull request. The Image scan workflow builds the image and scans it for known vulnerabilities each week.
 
 [docs/architecture.md](docs/architecture.md) describes how the pieces fit together.
 

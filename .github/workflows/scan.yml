@@ -1,0 +1,50 @@
+name: Image scan
+
+# The published image, built from this commit and scanned for known
+# vulnerabilities that have a fix. Grype reads the Debian packages and the
+# node modules inside it. It is pinned by version and checksum. A finding
+# that does not apply goes in .grype.yaml with the reason. Weekly, by hand,
+# and when the image's recipe changes.
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - package.json
+      - pnpm-lock.yaml
+      - .grype.yaml
+      - .github/workflows/scan.yml
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GRYPE_VERSION: 0.119.0
+      GRYPE_SHA256: 3fa2dc4b924621ab65404cf08d0b8438d896d80ab949c9d5a4ca283c36004c9b
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Grype
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/grype.tar.gz" \
+            "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "${GRYPE_SHA256}  $RUNNER_TEMP/grype.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
+
+      - name: Build the image
+        run: docker build --pull -t statoss-standalone:scan .
+
+      - name: Scan
+        run: |
+          "$RUNNER_TEMP/grype" docker:statoss-standalone:scan \
+            --config .grype.yaml --only-fixed --fail-on high
