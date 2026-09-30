@@ -194,9 +194,9 @@ describe("maintenance", () => {
   });
 
   it("makes a view with the notes as its one update", () => {
-    const view = maintenanceView(window, 0);
+    const view = maintenanceView(window);
     expect(view).toMatchObject({
-      id: "maintenance-0",
+      id: "maintenance-2026-09-12-1405-database-upgrade",
       kind: "maintenance",
       startedAt: T,
       endsAt: T + 2 * HOUR,

@@ -9,9 +9,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Six more kinds of monitor, chosen with `type`: `tcp`, `dns`, `ping`, `certificate`, `domain` and `heartbeat`. Certificate and domain monitors fail inside a warning window before expiry and show the date on the page and in `status.json`; a heartbeat gives a scheduled job a URL to ping at `/heartbeat/<token>` and goes down after two intervals without one.
 - `intervalSeconds` on a monitor, for one that should be checked less often than the rest.
 - The image carries `ping`.
+- PagerDuty, Opsgenie and ntfy as alert destinations. A monitor going down opens an alert on PagerDuty or Opsgenie and its recovery closes it.
+- Incident updates and maintenance windows (planned, started, over) go to the alert destinations, once each. `updates: false` turns that off.
+- A send that fails is tried again after one, five and fifteen minutes, unless the monitor has changed state since. Every send, failure and retry is logged.
+- A down alert says when the first failed check was (`failingSince` in the webhook body).
 
 ### Changed
 
+- A maintenance window's id is made from its start and title (`maintenance-2026-09-20-0100-database-upgrade`) instead of its place in the list. It appears in `status.json` and as the feed's guid, so a feed reader may show current windows once more.
 - The checks of one round are spread over the first three quarters of the interval, 45 seconds at most, instead of all starting at once, which made each response time count the others' handshakes.
 - `slowThresholdMs` is at most 9999, under the 10-second timeout. A higher value is now an error.
 - The webhook body's `url` is what the monitor points at: the URL, `host:port`, or the host.

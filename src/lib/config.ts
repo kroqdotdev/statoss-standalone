@@ -231,14 +231,17 @@ export type Destination =
   | { email: string }
   | { slack: string }
   | { discord: string }
-  | { webhook: string; secret: string };
+  | { webhook: string; secret: string }
+  | { pagerduty: string }
+  | { opsgenie: string; region?: "us" | "eu" }
+  | { ntfy: string; token?: string };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const DESTINATION_HELP =
-  "A destination is one of: email: <address>, slack: <webhook url>, discord: <webhook url>, or webhook: <url> with secret: <text>.";
+  "A destination is one of: email: <address>, slack: <webhook url>, discord: <webhook url>, webhook: <url> with secret: <text>, pagerduty: <integration key>, opsgenie: <api key>, or ntfy: <topic url>.";
 
 function isHttpUrl(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -288,6 +291,43 @@ const destinationSchema = z.unknown().transform((value, ctx): Destination => {
     if (keys.length !== 2) return fail(DESTINATION_HELP);
     return { webhook: value.webhook, secret: value.secret };
   }
+  if ("pagerduty" in value) {
+    if (
+      keys.length !== 1 ||
+      typeof value.pagerduty !== "string" ||
+      value.pagerduty.trim() === ""
+    )
+      return fail(
+        "pagerduty must be an Events API v2 integration key and nothing else.",
+      );
+    return { pagerduty: value.pagerduty.trim() };
+  }
+  if ("opsgenie" in value) {
+    if (typeof value.opsgenie !== "string" || value.opsgenie.trim() === "")
+      return fail("opsgenie must be an API key.");
+    const region = value.region ?? "us";
+    if (
+      (region !== "us" && region !== "eu") ||
+      keys.some((k) => k !== "opsgenie" && k !== "region")
+    )
+      return fail("opsgenie takes an API key and, optionally, region: eu.");
+    return { opsgenie: value.opsgenie.trim(), region };
+  }
+  if ("ntfy" in value) {
+    if (!isHttpUrl(value.ntfy))
+      return fail(
+        "ntfy must be the topic's URL, like https://ntfy.sh/mytopic.",
+      );
+    const token = value.token;
+    if (
+      (token !== undefined && (typeof token !== "string" || token === "")) ||
+      keys.some((k) => k !== "ntfy" && k !== "token")
+    )
+      return fail("ntfy takes a topic URL and, optionally, token: <text>.");
+    return token === undefined
+      ? { ntfy: value.ntfy }
+      : { ntfy: value.ntfy, token };
+  }
   return fail(DESTINATION_HELP);
 });
 
@@ -297,11 +337,14 @@ const alertsSchema = z.object({
   to: z.array(destinationSchema).default([]),
   /** Minutes between repeat notices while a monitor stays down. 0 is off. */
   repeatMinutes: z.number().int().min(0).default(0),
+  /** false keeps incident updates and maintenance notices to the page. */
+  updates: z.boolean().default(true),
 });
 
 const siteAlertsSchema = z.object({
   to: z.array(destinationSchema).optional(),
   repeatMinutes: z.number().int().min(0).optional(),
+  updates: z.boolean().optional(),
 });
 
 /**
@@ -452,6 +495,15 @@ export function siteRepeatMinutes(
 ): number {
   if (site.alerts === false || !config.alerts) return 0;
   return site.alerts?.repeatMinutes ?? config.alerts.repeatMinutes;
+}
+
+/** Whether a site's destinations also get incident updates and maintenance. */
+export function siteSendsUpdates(
+  config: Pick<AppConfig, "alerts">,
+  site: Pick<SiteConfig, "alerts">,
+): boolean {
+  if (site.alerts === false || !config.alerts) return false;
+  return site.alerts?.updates ?? config.alerts.updates;
 }
 
 /** The public address of a site's page, for links in alerts and feeds. */

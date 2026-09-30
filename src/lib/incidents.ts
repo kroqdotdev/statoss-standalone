@@ -187,13 +187,27 @@ export function parseIncidentFile(
 // ---------------------------------------------------------------------------
 // Maintenance windows, from the configuration.
 
-export function maintenanceView(
-  window: MaintenanceConfig,
-  index: number,
-): IncidentView {
+/**
+ * A window's id, from when it starts and what it is called, so it stays the
+ * same when the list around it changes: "maintenance-2026-09-20-0100-database-upgrade".
+ */
+export function maintenanceId(window: MaintenanceConfig): string {
+  const stamp = new Date(window.start)
+    .toISOString()
+    .slice(0, 16)
+    .replace("T", "-")
+    .replace(":", "");
+  const slug = window.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `maintenance-${stamp}${slug ? `-${slug}` : ""}`;
+}
+
+export function maintenanceView(window: MaintenanceConfig): IncidentView {
   const notes = window.notes?.trim();
   return {
-    id: `maintenance-${index}`,
+    id: maintenanceId(window),
     kind: "maintenance",
     title: window.title,
     status: "monitoring",
