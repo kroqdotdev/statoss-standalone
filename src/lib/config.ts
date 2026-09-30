@@ -47,21 +47,175 @@ export const timestampSchema = z.unknown().transform((value, ctx) => {
   return ms;
 });
 
-const monitorSchema = z.object({
-  name: z.string().min(1),
-  url: z.url(),
-  /** Monitors with the same group are shown together on the page. */
-  group: z.string().min(1).optional(),
-  method: z.enum(METHODS).default("GET"),
-  headers: z.record(z.string().min(1), z.string()).optional(),
-  body: z.string().optional(),
-  expectStatus: z.number().int().min(100).max(599).optional(),
-  /** Text the response body must contain, or must not (keywordMode). */
-  keyword: z.string().min(1).optional(),
-  keywordMode: z.enum(["present", "absent"]).default("present"),
-  /** A successful check slower than this counts as slow. */
-  slowThresholdMs: z.number().int().min(1).optional(),
-});
+/** The kinds of monitor. http is the default. */
+export const MONITOR_TYPES = [
+  "http",
+  "tcp",
+  "dns",
+  "ping",
+  "certificate",
+  "domain",
+  "heartbeat",
+] as const;
+export type MonitorType = (typeof MONITOR_TYPES)[number];
+
+export const DNS_TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "NS"] as const;
+
+/** Types whose response time means something and can be slow. */
+export const LATENCY_TYPES: ReadonlySet<MonitorType> = new Set([
+  "http",
+  "tcp",
+  "dns",
+  "ping",
+]);
+
+/**
+ * How often a type runs at most, whatever checkIntervalSeconds says. A
+ * registry or a certificate does not change by the minute, and RDAP servers
+ * rate limit callers who ask as if it did.
+ */
+export const TYPE_MIN_INTERVAL_SECONDS: Partial<Record<MonitorType, number>> = {
+  certificate: 60 * 60,
+  domain: 6 * 60 * 60,
+};
+
+export const DEFAULT_TIMEOUT_MS = 10_000;
+export const DEFAULT_CERTIFICATE_WARN_DAYS = 14;
+export const DEFAULT_DOMAIN_WARN_DAYS = 30;
+/**
+ * The highest slow threshold a monitor can have. A check that takes longer
+ * than the timeout is a failure, not a slow success.
+ */
+export const MAX_SLOW_THRESHOLD_MS = DEFAULT_TIMEOUT_MS - 1;
+
+const HOSTNAME = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$|^[0-9A-Fa-f:]+$/;
+
+/** Which fields each type reads, besides name, type, group and intervalSeconds. */
+const TYPE_FIELDS: Record<MonitorType, string[]> = {
+  http: [
+    "url",
+    "method",
+    "headers",
+    "body",
+    "expectStatus",
+    "keyword",
+    "keywordMode",
+    "slowThresholdMs",
+  ],
+  tcp: ["host", "port", "slowThresholdMs"],
+  dns: ["host", "record", "expect", "slowThresholdMs"],
+  ping: ["host", "slowThresholdMs"],
+  certificate: ["host", "port", "warnDays"],
+  domain: ["host", "warnDays"],
+  heartbeat: ["token"],
+};
+
+const monitorSchema = z
+  .object({
+    name: z.string().min(1),
+    type: z.enum(MONITOR_TYPES).default("http"),
+    /** http: the URL to request. */
+    url: z.url().optional(),
+    /** Every other type but heartbeat: the hostname, or the domain. */
+    host: z.string().regex(HOSTNAME, "must be a hostname").optional(),
+    /** tcp, and certificate (default 443). */
+    port: z.number().int().min(1).max(65535).optional(),
+    /** dns: the record type to ask for. */
+    record: z.enum(DNS_TYPES).optional(),
+    /** dns: text one of the answers must contain. */
+    expect: z.string().min(1).optional(),
+    /** certificate and domain: fail this many days before expiry. */
+    warnDays: z.number().int().min(0).max(365).optional(),
+    /** heartbeat: the secret in the URL the job pings. */
+    token: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{8,}$/, {
+        message: "must be at least 8 letters, digits, dashes or underscores",
+      })
+      .optional(),
+    /** Seconds between this monitor's checks, when longer than the default. */
+    intervalSeconds: z.number().int().min(10).optional(),
+    /** Monitors with the same group are shown together on the page. */
+    group: z.string().min(1).optional(),
+    method: z.enum(METHODS).optional(),
+    headers: z.record(z.string().min(1), z.string()).optional(),
+    body: z.string().optional(),
+    expectStatus: z.number().int().min(100).max(599).optional(),
+    /** Text the response body must contain, or must not (keywordMode). */
+    keyword: z.string().min(1).optional(),
+    keywordMode: z.enum(["present", "absent"]).optional(),
+    /** A successful check slower than this counts as slow. */
+    slowThresholdMs: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_SLOW_THRESHOLD_MS)
+      .optional(),
+  })
+  .superRefine((m, ctx) => {
+    const fail = (path: string, message: string) =>
+      ctx.addIssue({ code: "custom", path: [path], message });
+    const allowed = TYPE_FIELDS[m.type];
+    for (const field of new Set(Object.values(TYPE_FIELDS).flat())) {
+      if (
+        !allowed.includes(field) &&
+        (m as Record<string, unknown>)[field] !== undefined
+      )
+        fail(field, `a ${m.type} monitor takes no ${field}`);
+    }
+    if (m.type === "http" && m.url === undefined)
+      fail("url", "an http monitor needs a url");
+    if (allowed.includes("host") && m.host === undefined)
+      fail("host", `a ${m.type} monitor needs a host`);
+    if (m.type === "tcp" && m.port === undefined)
+      fail("port", "a tcp monitor needs a port");
+    if (m.type === "heartbeat" && m.token === undefined)
+      fail("token", "a heartbeat monitor needs a token");
+  })
+  .transform((m) => ({
+    ...m,
+    method: m.method ?? "GET",
+    keywordMode: m.keywordMode ?? "present",
+  }));
+
+/** What a monitor points at, in words: the URL, "host:port", "A example.com". */
+export function monitorTarget(m: {
+  type: MonitorType;
+  url?: string;
+  host?: string;
+  port?: number;
+  record?: string;
+}): string {
+  switch (m.type) {
+    case "http":
+      return m.url ?? "";
+    case "tcp":
+      return `${m.host}:${m.port}`;
+    case "dns":
+      return `${m.record ?? "A"} ${m.host}`;
+    case "certificate":
+      return m.port && m.port !== 443 ? `${m.host}:${m.port}` : (m.host ?? "");
+    case "heartbeat":
+      return "expects a ping";
+    default:
+      return m.host ?? "";
+  }
+}
+
+/**
+ * Seconds between a monitor's checks: the default, the type's floor, or the
+ * monitor's own when that is longer.
+ */
+export function monitorIntervalSeconds(
+  m: { type: MonitorType; intervalSeconds?: number },
+  defaultSeconds: number,
+): number {
+  return Math.max(
+    defaultSeconds,
+    TYPE_MIN_INTERVAL_SECONDS[m.type] ?? 0,
+    m.intervalSeconds ?? 0,
+  );
+}
 
 const smtpSchema = z.object({
   host: z.string().min(1),
@@ -244,6 +398,16 @@ const configSchema = z
         code: "custom",
         path: ["sites"],
         message: `host "${host}" is used by more than one site`,
+      });
+    }
+    const tokens = config.sites.flatMap((site) =>
+      site.monitors.flatMap((m) => (m.token ? [m.token] : [])),
+    );
+    if (duplicates(tokens).length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sites"],
+        message: "a heartbeat token is used by more than one monitor",
       });
     }
     const wantsEmail = config.sites.some((site) =>

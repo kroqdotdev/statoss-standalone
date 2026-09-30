@@ -3,7 +3,7 @@
 [![CI](https://github.com/kroqdotdev/statoss-standalone/actions/workflows/ci.yml/badge.svg)](https://github.com/kroqdotdev/statoss-standalone/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A self-hosted status page in one container. It checks your URLs every minute, stores every result in SQLite, and serves a public page for each site on its own hostname, with incidents, maintenance windows, alerts to email, Slack, Discord and webhooks, and a JSON, badge, RSS and widget endpoint next to every page.
+A self-hosted status page in one container. It checks your URLs, ports, DNS records, certificates, domains and scheduled jobs every minute, stores every result in SQLite, and serves a public page for each site on its own hostname, with incidents, maintenance windows, alerts to email, Slack, Discord and webhooks, and a JSON, badge, RSS and widget endpoint next to every page.
 
 ![The status page for one site with two monitors](docs/screenshot.png)
 
@@ -12,7 +12,8 @@ A self-hosted status page in one container. It checks your URLs every minute, st
 - **Every failed check is visible.** Each monitor has a strip of bars. Bar height is response time. A mark at the top of a bar shows the failed checks in that time slot: amber for a timeout, red for any other failure. One failed check out of 1,440 in a day still gets a visible mark.
 - **Three views.** The last 24 hours in 5-minute slots, 7 days in 1-hour slots, or 90 days in 1-day slots. Point at a bar, or use the arrow keys, to read the numbers for one slot.
 - **Failed checks are listed.** Consecutive failures are grouped into runs. Each run shows the reason (timeout, HTTP status, keyword, or connection error), when it started, and how long the monitor did not respond.
-- **Any request.** A monitor can use any method, send headers and a body, expect an exact status, and require a keyword in the response, or require its absence.
+- **Seven kinds of monitor.** HTTP, TCP port, DNS, ping, certificate expiry, domain expiry, and a heartbeat that a scheduled job pings.
+- **Any request.** An HTTP monitor can use any method, send headers and a body, expect an exact status, and require a keyword in the response, or require its absence.
 - **Slow is a state.** Give a monitor a threshold and it turns slow after two slow responses and back after one fast one. Slow buckets are drawn in indigo under a dashed line at the threshold.
 - **Groups.** Monitors with the same group name are shown together under one heading with a one-line summary.
 - **Incidents and maintenance.** Write incidents as Markdown or YAML files in a folder; the page picks them up without a restart. Plan maintenance windows in the configuration: checks during a window are shown but not counted, and no alert goes out. A monitor that goes down opens an incident by itself and resolves it on recovery.
@@ -23,12 +24,12 @@ A self-hosted status page in one container. It checks your URLs every minute, st
 
 ## How it works
 
-You list sites in `config.yaml`. Each site has a hostname and one or more monitors. A monitor is a URL and, optionally, the method, headers and body to send, the HTTP status you expect, a keyword the response must contain, a slow threshold, and a group.
+You list sites in `config.yaml`. Each site has a hostname and one or more monitors. A monitor has a type, `http` unless you say otherwise. An HTTP monitor is a URL and, optionally, the method, headers and body to send, the HTTP status you expect, a keyword the response must contain, a slow threshold, and a group. The other types are described under [Monitor types](#monitor-types).
 
 The checker runs inside the server process:
 
-1. Every `checkIntervalSeconds`, it requests every monitor URL with a 10-second timeout.
-2. A check passes on a 2xx response, or on the exact `expectStatus` if you set one, and, with a `keyword`, only when the body contains it (or does not, with `keywordMode: absent`). Bodies are read up to 1 MB.
+1. Every `checkIntervalSeconds`, it runs every monitor that is due, with a 10-second timeout. A monitor with `intervalSeconds` runs less often. The checks of one round are spread over the first three quarters of the interval (45 seconds at most) so that they do not slow each other down.
+2. An HTTP check passes on a 2xx response, or on the exact `expectStatus` if you set one, and, with a `keyword`, only when the body contains it (or does not, with `keywordMode: absent`). Bodies are read up to 1 MB.
 3. A monitor becomes **down** after 2 failed checks in a row and **up** again after 1 successful check. With a `slowThresholdMs`, it becomes **slow** after 2 successful checks over the threshold and back to normal after 1 under it. Each change of state sends one alert to every destination of the site. With `repeatMinutes`, a monitor that stays down sends a "still down" notice at that interval.
 4. A monitor going down opens an incident on the page; the first success after it resolves the incident.
 5. Checks made inside a maintenance window are stored with a flag. The page shows them in grey and leaves them out of every total, and they change no state and send no alert.
@@ -163,7 +164,9 @@ Open `https://status.example.com` to see the page.
 | `sites[].url`                        | no       | `https://<host>` | Where alerts and feeds link to.                                                                   |
 | `sites[].alerts`                     | no       |                  | `false` to send no alerts for this site, or an object with `to` and `repeatMinutes` for it alone. |
 | `sites[].monitors[].name`            | yes      |                  | Shown above the strip. Must be unique within the site.                                            |
-| `sites[].monitors[].url`             | yes      |                  | The URL to request.                                                                               |
+| `sites[].monitors[].type`            | no       | `http`           | `http`, `tcp`, `dns`, `ping`, `certificate`, `domain` or `heartbeat`. See Monitor types.          |
+| `sites[].monitors[].url`             | for http |                  | The URL to request.                                                                               |
+| `sites[].monitors[].intervalSeconds` | no       |                  | Seconds between this monitor's checks, when longer than `checkIntervalSeconds`.                   |
 | `sites[].monitors[].group`           | no       |                  | Monitors with the same group are shown together.                                                  |
 | `sites[].monitors[].method`          | no       | `GET`            | `GET`, `HEAD`, `POST`, `PUT`, `PATCH` or `DELETE`.                                                |
 | `sites[].monitors[].headers`         | no       |                  | Request headers, as a map.                                                                        |
@@ -171,13 +174,52 @@ Open `https://status.example.com` to see the page.
 | `sites[].monitors[].expectStatus`    | no       | any 2xx          | The check passes only on this exact status. 3xx is not followed.                                  |
 | `sites[].monitors[].keyword`         | no       |                  | Text the response body must contain.                                                              |
 | `sites[].monitors[].keywordMode`     | no       | `present`        | `absent` fails the check when the keyword is found.                                               |
-| `sites[].monitors[].slowThresholdMs` | no       |                  | A successful response slower than this counts as slow.                                            |
+| `sites[].monitors[].slowThresholdMs` | no       |                  | A successful response slower than this counts as slow. At most 9999. For http, tcp, dns and ping. |
 | `sites[].maintenance[].title`        | yes      |                  | Shown on the page while the window is planned, running, or in the last 30 days.                   |
 | `sites[].maintenance[].start`, `end` | yes      |                  | ISO 8601. A date and time without a zone is read as UTC.                                          |
 | `sites[].maintenance[].monitors`     | no       | all              | Names of the monitors the window covers.                                                          |
 | `sites[].maintenance[].notes`        | no       |                  | A sentence or two, shown under the title.                                                         |
 
 A configuration written for 0.1 that says `checkpoints` where this one says `monitors` still works.
+
+### Monitor types
+
+Every type but `http` takes a `host` instead of a `url`. A field that does not belong to a monitor's type is an error.
+
+| Type          | Fields                                   | Passes when                                                                                                                       |
+| ------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `http`        | `url` and the request options above      | The response has a 2xx status, or the one you expect, and the keyword matches.                                                    |
+| `tcp`         | `host`, `port`                           | The port accepts a connection.                                                                                                    |
+| `dns`         | `host`, `record` (default `A`), `expect` | The name has a record of that type (`A`, `AAAA`, `CNAME`, `MX`, `TXT` or `NS`) and, with `expect`, one answer contains that text. |
+| `ping`        | `host`                                   | One ICMP echo is answered. The image carries `ping`; elsewhere a missing `ping` command is reported as such.                      |
+| `certificate` | `host`, `port` (default 443), `warnDays` | The TLS certificate is valid for the host and does not expire within `warnDays` (default 14). Checked once an hour at most.       |
+| `domain`      | `host`, `warnDays`                       | The registry (through rdap.org) says the domain does not expire within `warnDays` (default 30). Checked every six hours at most.  |
+| `heartbeat`   | `token`, `intervalSeconds`               | Your job requested `/heartbeat/<token>` within the last `intervalSeconds`. Nothing is recorded before the first ping.             |
+
+```yaml
+monitors:
+  - name: Database
+    type: tcp
+    host: db.example.com
+    port: 5432
+  - name: Mail records
+    type: dns
+    host: example.com
+    record: MX
+    expect: mail.example.com
+  - name: Certificate
+    type: certificate
+    host: example.com
+    warnDays: 21
+  - name: Nightly backup
+    type: heartbeat
+    token: ${BACKUP_HEARTBEAT}
+    intervalSeconds: 86400
+```
+
+A heartbeat is for a job that runs on a schedule. End the job with a request to `https://status.example.com/heartbeat/<token>`, with any method, for example `curl -fsS https://status.example.com/heartbeat/$BACKUP_HEARTBEAT`. The token is at least 8 letters, digits, dashes or underscores, and no two monitors may share one. Set `intervalSeconds` to how often the job runs: the monitor goes down after two intervals in a row without a ping.
+
+Certificate and domain monitors show the date they expire on the page and in `status.json`. They, and heartbeats, have no response time, so their strips are drawn at one height.
 
 A destination is one entry in a `to` list, of one of these shapes:
 
@@ -189,7 +231,7 @@ A destination is one entry in a `to` list, of one of these shapes:
   secret: ${WEBHOOK_SECRET}
 ```
 
-The webhook receives a JSON body with `event` (`went-down`, `recovered`, `went-slow`, `back-to-normal` or `still-down`), `site`, `monitor` (also sent as `checkpoint`, its name in 0.1), `url`, `pageUrl`, `error`, `downSince`, `latencyMs`, `thresholdMs` and `at`, an `X-StatOSS-Event` header, and an `X-StatOSS-Signature` header holding `sha256=` and the hex HMAC-SHA256 of the raw body under the secret.
+The webhook receives a JSON body with `event` (`went-down`, `recovered`, `went-slow`, `back-to-normal` or `still-down`), `site`, `monitor` (also sent as `checkpoint`, its name in 0.1), `url` (what the monitor points at: the URL, `host:port`, or the host), `pageUrl`, `error`, `downSince`, `latencyMs`, `thresholdMs` and `at`, an `X-StatOSS-Event` header, and an `X-StatOSS-Signature` header holding `sha256=` and the hex HMAC-SHA256 of the raw body under the secret.
 
 Environment variables:
 

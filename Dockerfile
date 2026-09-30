@@ -47,6 +47,11 @@ COPY --from=build --chown=node:node /app/public ./public
 # /data belongs to the node user (uid 1000), so a new named volume starts
 # out writable. A bind-mounted directory must be writable by uid 1000 too.
 RUN mkdir /data && chown node:node /data
+# For ping monitors. Setuid, so the node user can send an echo on hosts
+# that do not open ICMP sockets to every group.
+RUN apt-get update && apt-get install -y --no-install-recommends iputils-ping \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod u+s "$(command -v ping)"
 VOLUME ["/data"]
 USER node
 EXPOSE 3000

@@ -1,6 +1,8 @@
+import { timingSafeEqual } from "node:crypto";
 import { headers } from "next/headers";
 import { findSiteByHost, getConfig } from "./config";
-import { getDb } from "./db";
+import { bumpDataVersion } from "./data-version";
+import { getDb, recordHeartbeat } from "./db";
 import { openImpacts } from "./incidents";
 import {
   badgeJson,
@@ -95,4 +97,29 @@ export async function widgetResponse(): Promise<Response> {
       "cache-control": "public, max-age=3600",
     },
   });
+}
+
+function sameToken(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/**
+ * A job's ping for a heartbeat monitor. The token names the monitor, on
+ * whichever hostname the request came in, so a job needs no Host header.
+ */
+export async function heartbeatResponse(token: string): Promise<Response> {
+  for (const site of getConfig().sites) {
+    for (const monitor of site.monitors) {
+      if (monitor.type !== "heartbeat" || !monitor.token) continue;
+      if (!sameToken(monitor.token, token)) continue;
+      recordHeartbeat(getDb(), site.name, monitor.name, Date.now());
+      bumpDataVersion();
+      return new Response("ok\n", {
+        headers: { "cache-control": "no-store" },
+      });
+    }
+  }
+  return notFound();
 }

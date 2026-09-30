@@ -1,7 +1,12 @@
 import type Database from "better-sqlite3";
 import type { MonitorView } from "@/components/MonitorSection";
 import { cached } from "./cache";
-import { getConfig, type AppConfig, type SiteConfig } from "./config";
+import {
+  getConfig,
+  LATENCY_TYPES,
+  type AppConfig,
+  type SiteConfig,
+} from "./config";
 import { autoIncidents, getDb, getState } from "./db";
 import { readIncidentFiles } from "./incident-files";
 import {
@@ -53,6 +58,9 @@ export function monitorView(
   }));
   return {
     name: cp.name,
+    type: cp.type,
+    timed: LATENCY_TYPES.has(cp.type),
+    expiresAt: state?.expiresAt ?? null,
     group: cp.group ?? null,
     slowThresholdMs: threshold,
     status: state?.status ?? "unknown",

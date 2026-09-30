@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   expandEnv,
+  monitorIntervalSeconds,
+  monitorTarget,
   findSiteByHost,
   parseConfig,
   parseTimestamp,
@@ -308,5 +310,90 @@ describe("findSiteByHost", () => {
   it("returns undefined for unknown or missing host", () => {
     expect(findSiteByHost(config, "other.example.com")).toBeUndefined();
     expect(findSiteByHost(config, null)).toBeUndefined();
+  });
+});
+
+describe("monitor types", () => {
+  const site = (monitor: string) => `
+sites:
+  - name: s
+    host: h
+    monitors:
+${monitor}
+`;
+
+  it("reads every type with its own fields", () => {
+    const config = parseConfig(
+      site(`      - name: Web
+        url: https://example.com
+      - name: DB
+        type: tcp
+        host: db.example.com
+        port: 5432
+      - name: Records
+        type: dns
+        host: example.com
+        record: MX
+        expect: mail.example.com
+      - name: Router
+        type: ping
+        host: 192.0.2.1
+      - name: Cert
+        type: certificate
+        host: example.com
+        warnDays: 21
+      - name: Domain
+        type: domain
+        host: example.com
+      - name: Backup
+        type: heartbeat
+        token: abcdefgh1234
+        intervalSeconds: 86400`),
+    );
+    const monitors = config.sites[0].monitors;
+    expect(monitors.map((m) => m.type)).toEqual([
+      "http",
+      "tcp",
+      "dns",
+      "ping",
+      "certificate",
+      "domain",
+      "heartbeat",
+    ]);
+    expect(monitors.map(monitorTarget)).toEqual([
+      "https://example.com",
+      "db.example.com:5432",
+      "MX example.com",
+      "192.0.2.1",
+      "example.com",
+      "example.com",
+      "expects a ping",
+    ]);
+    expect(monitorIntervalSeconds(monitors[6], 60)).toBe(86_400);
+  });
+
+  it.each([
+    ["      - name: a\n        type: tcp\n        host: x.example", "port"],
+    ["      - name: a\n        type: ping", "host"],
+    ["      - name: a\n        type: http", "url"],
+    ["      - name: a\n        type: heartbeat", "token"],
+    [
+      "      - name: a\n        type: ping\n        host: x.example\n        keyword: ok",
+      "takes no keyword",
+    ],
+    [
+      "      - name: a\n        type: certificate\n        host: x.example\n        slowThresholdMs: 500",
+      "takes no slowThresholdMs",
+    ],
+    [
+      "      - name: a\n        url: https://example.com\n        slowThresholdMs: 10000",
+      "slowThresholdMs",
+    ],
+    [
+      "      - name: a\n        type: heartbeat\n        token: abcdefgh\n      - name: b\n        type: heartbeat\n        token: abcdefgh",
+      "token is used by more than one",
+    ],
+  ])("rejects %s", (monitor, message) => {
+    expect(() => parseConfig(site(monitor))).toThrow(message);
   });
 });

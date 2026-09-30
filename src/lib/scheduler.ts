@@ -9,21 +9,27 @@ import { monitorSpec, runCheck } from "./checker";
 import type { CheckOutcome, CheckSpec } from "./checker";
 import {
   getConfig,
+  LATENCY_TYPES,
+  monitorIntervalSeconds,
+  monitorTarget,
   siteDestinations,
   siteRepeatMinutes,
   siteUrl,
   type AppConfig,
   type Destination,
   type MaintenanceConfig,
+  type MonitorType,
 } from "./config";
 import {
   getDb,
   getState,
   insertCheck,
+  lastHeartbeat,
   openAutoIncident,
   pruneOldChecks,
   resolveAutoIncident,
   setState,
+  touchChecked,
 } from "./db";
 import { bumpDataVersion } from "./data-version";
 import { inMaintenance } from "./incidents";
@@ -36,9 +42,13 @@ const MINUTE_MS = 60_000;
 export interface Job {
   site: string;
   monitor: string;
+  type: MonitorType;
+  /** What the check points at, in words, for alerts. */
   url: string;
   pageUrl: string;
   spec: CheckSpec;
+  /** Seconds between this monitor's checks. */
+  intervalSeconds: number;
   /** A successful check slower than this is slow. Null turns it off. */
   slowThresholdMs: number | null;
   destinations: Destination[];
@@ -56,9 +66,11 @@ export function loadJobs(config: AppConfig): Job[] {
     return site.monitors.map((cp) => ({
       site: site.name,
       monitor: cp.name,
-      url: cp.url,
+      type: cp.type,
+      url: monitorTarget(cp),
       pageUrl,
       spec: monitorSpec(cp),
+      intervalSeconds: monitorIntervalSeconds(cp, config.checkIntervalSeconds),
       slowThresholdMs: cp.slowThresholdMs ?? null,
       destinations,
       repeatMinutes,
@@ -73,6 +85,12 @@ export interface SchedulerDeps {
   check: (spec: CheckSpec) => Promise<CheckOutcome>;
   alert: (destinations: Destination[], event: AlertEvent) => Promise<unknown>;
   now: () => number;
+  /** Waits between the checks of one tick. Tests leave it out. */
+  sleep?: (ms: number) => Promise<void>;
+  /** The longest a tick spreads its checks over, in ms. */
+  spreadMs?: number;
+  /** When each job last ran, kept between ticks. */
+  lastRun?: Map<string, number>;
 }
 
 function isSlow(job: Job, outcome: CheckOutcome): boolean {
@@ -91,10 +109,32 @@ function fire(deps: SchedulerDeps, job: Job, event: AlertEvent): void {
   });
 }
 
+/**
+ * A heartbeat's check: whether its job pinged within the monitor's
+ * interval. Null before the first ping ever, when there is nothing to judge.
+ */
+export function heartbeatOutcome(
+  lastPingAt: number | null,
+  intervalSeconds: number,
+  now: number,
+): CheckOutcome | null {
+  if (lastPingAt === null) return null;
+  const ok = now - lastPingAt <= intervalSeconds * 1000;
+  return { ok, statusCode: null, latencyMs: 0, error: ok ? null : "no ping" };
+}
+
 /** Runs one job end to end: check, record, update state, alert, incidents. */
 export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
   const { db } = deps;
-  const outcome = await deps.check(job.spec);
+  const outcome =
+    job.type === "heartbeat"
+      ? heartbeatOutcome(
+          lastHeartbeat(db, job.site, job.monitor),
+          job.intervalSeconds,
+          deps.now(),
+        )
+      : await deps.check(job.spec);
+  if (outcome === null) return;
   const ts = deps.now();
   const row = {
     site: job.site,
@@ -102,11 +142,14 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
     ts,
     ok: outcome.ok ? 1 : 0,
     statusCode: outcome.statusCode,
-    latencyMs: outcome.latencyMs,
+    // A handshake with a certificate or a registry's answer is not the
+    // monitored thing's response time, and a heartbeat has none.
+    latencyMs: LATENCY_TYPES.has(job.type) ? outcome.latencyMs : null,
     error: outcome.error,
   } as const;
   if (inMaintenance(job.maintenance, job.monitor, ts)) {
     insertCheck(db, { ...row, maintenance: 1 });
+    touchChecked(db, job.site, job.monitor, ts);
     return;
   }
   insertCheck(db, row);
@@ -150,6 +193,8 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
     monitor: job.monitor,
     ...next,
     lastAlertAt,
+    checkedAt: ts,
+    expiresAt: outcome.expiresAt ?? prev?.expiresAt ?? null,
   });
 
   if (transition === "went-down") {
@@ -159,11 +204,38 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
   }
 }
 
+/** The jobs whose interval has passed since they last ran. */
+export function dueJobs(deps: SchedulerDeps, now: number): Job[] {
+  const lastRun = (deps.lastRun ??= new Map());
+  return deps.jobs.filter((job) => {
+    const last = lastRun.get(`${job.site}\0${job.monitor}`);
+    // A second of slack, so a timer that fires a moment early still counts.
+    return (
+      last === undefined || now - last >= job.intervalSeconds * 1000 - 1000
+    );
+  });
+}
+
+/**
+ * One tick: every job that is due, spread over the first part of the
+ * interval. Fired together, each check's clock would count the others'
+ * TLS handshakes, and response times would read higher than they are.
+ */
 export async function tick(deps: SchedulerDeps): Promise<void> {
+  const started = deps.now();
+  const jobs = dueJobs(deps, started);
+  const gap =
+    deps.sleep && jobs.length > 1 ? (deps.spreadMs ?? 0) / jobs.length : 0;
   // allSettled, not all: one monitor failing to record its result must not
   // abandon the others mid-flight or release the overlap guard early.
   const results = await Promise.allSettled(
-    deps.jobs.map((job) => runJob(deps, job)),
+    jobs.map(async (job, i) => {
+      deps.lastRun?.set(`${job.site}\0${job.monitor}`, started);
+      if (gap > 0 && i > 0) await deps.sleep?.(Math.round(i * gap));
+      await runJob(deps, job);
+      // Per job, not per tick: the page should not wait out the spread.
+      bumpDataVersion();
+    }),
   );
   for (const result of results) {
     if (result.status === "rejected") {
@@ -209,6 +281,15 @@ export function liveAlertDeps(config: AppConfig): AlertDeps {
   };
 }
 
+/**
+ * How long a tick spreads its checks over: three quarters of the interval,
+ * 45 seconds at most, so the last check and its timeout end before the next
+ * tick at the default of a minute.
+ */
+export function spreadMs(checkIntervalSeconds: number): number {
+  return Math.min(45_000, checkIntervalSeconds * 750);
+}
+
 const globals = globalThis as { __statusSchedulerStarted?: boolean };
 
 export function startScheduler(): void {
@@ -231,6 +312,8 @@ export function startScheduler(): void {
     check: runCheck,
     alert: (destinations, event) => sendAlerts(destinations, event, alertDeps),
     now: Date.now,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    spreadMs: spreadMs(config.checkIntervalSeconds),
   };
 
   let lastPruneDay = "";

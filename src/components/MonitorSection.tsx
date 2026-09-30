@@ -1,12 +1,23 @@
 import { CheckStrip } from "./CheckStrip";
 import { FailureList } from "./FailureList";
-import { formatDuration, formatPercent, formatUtcDateTime } from "@/lib/format";
+import type { MonitorType } from "@/lib/config";
+import {
+  formatDuration,
+  formatPercent,
+  formatUtcDate,
+  formatUtcDateTime,
+} from "@/lib/format";
 import type { Bucket, FailureRun, WindowSummary } from "@/lib/queries";
 import type { RangeKey } from "@/lib/ranges";
 import type { MonitorStatus } from "@/lib/state";
 
 export interface MonitorView {
   name: string;
+  type: MonitorType;
+  /** Whether its checks have a response time to draw. */
+  timed: boolean;
+  /** Certificate and domain monitors: the expiry date last read. */
+  expiresAt: number | null;
   /** Monitors with the same group are shown together. */
   group: string | null;
   slowThresholdMs: number | null;
@@ -22,7 +33,9 @@ export interface MonitorView {
 
 function statusLine(cp: MonitorView, now: number): string {
   if (cp.status === "unknown" || cp.since === null)
-    return "Waiting for the first check";
+    return cp.type === "heartbeat"
+      ? "Waiting for the first ping"
+      : "Waiting for the first check";
   const duration = formatDuration(now - cp.since);
   if (cp.status === "up") return `Up for ${duration}`;
   if (cp.status === "slow") return `Slow for ${duration}`;
@@ -64,6 +77,11 @@ export function MonitorSection({
             </span>
           )}
           <span className={tone}>{statusLine(monitor, now)}</span>
+          {monitor.expiresAt !== null && (
+            <span className="text-muted">
+              Expires {formatUtcDate(monitor.expiresAt)}
+            </span>
+          )}
           {pct !== "" && (
             <span className="text-ink" title="Checks passed in this window">
               {pct}
@@ -77,6 +95,7 @@ export function MonitorSection({
         summary={monitor.summary}
         name={monitor.name}
         slowThresholdMs={monitor.slowThresholdMs}
+        timed={monitor.timed}
       />
       <FailureList runs={monitor.runs} now={now} />
     </section>

@@ -107,6 +107,8 @@ describe("migration", () => {
       consecutiveSlow: 0,
       since: 1,
       lastAlertAt: null,
+      checkedAt: null,
+      expiresAt: null,
     });
     const row = migrated.prepare("SELECT maintenance FROM checks").get() as {
       maintenance: number;
@@ -153,6 +155,8 @@ describe("monitor_state", () => {
     consecutiveSlow: 0,
     since: 500,
     lastAlertAt: null,
+    checkedAt: null,
+    expiresAt: null,
   };
 
   it("returns undefined for unknown monitors", () => {

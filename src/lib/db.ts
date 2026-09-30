@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS monitor_state (
   consecutive_slow INTEGER NOT NULL DEFAULT 0,
   since INTEGER NOT NULL,
   last_alert_at INTEGER,
+  checked_at INTEGER,
+  expires_at INTEGER,
+  PRIMARY KEY (site, monitor)
+);
+CREATE TABLE IF NOT EXISTS heartbeat (
+  site TEXT NOT NULL,
+  monitor TEXT NOT NULL,
+  last_ping_at INTEGER NOT NULL,
   PRIMARY KEY (site, monitor)
 );
 CREATE TABLE IF NOT EXISTS auto_incident (
@@ -45,6 +53,8 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ["checks", "maintenance", "INTEGER NOT NULL DEFAULT 0"],
   ["monitor_state", "consecutive_slow", "INTEGER NOT NULL DEFAULT 0"],
   ["monitor_state", "last_alert_at", "INTEGER"],
+  ["monitor_state", "checked_at", "INTEGER"],
+  ["monitor_state", "expires_at", "INTEGER"],
 ];
 
 /**
@@ -105,6 +115,10 @@ export interface StateRow {
   since: number;
   /** When the last alert for the current status went out, for repeats. */
   lastAlertAt: number | null;
+  /** When the last check ran, whatever it found. */
+  checkedAt?: number | null;
+  /** Certificate and domain monitors: the expiry date last read. */
+  expiresAt?: number | null;
 }
 
 export function openDb(
@@ -155,7 +169,9 @@ export function getState(
               consecutive_fails AS consecutiveFails,
               consecutive_slow AS consecutiveSlow,
               since,
-              last_alert_at AS lastAlertAt
+              last_alert_at AS lastAlertAt,
+              checked_at AS checkedAt,
+              expires_at AS expiresAt
        FROM monitor_state WHERE site = ? AND monitor = ?`,
     )
     .get(site, monitor) as StateRow | undefined;
@@ -164,14 +180,16 @@ export function getState(
 export function setState(db: Database.Database, state: StateRow): void {
   db.prepare(
     `INSERT INTO monitor_state
-       (site, monitor, status, consecutive_fails, consecutive_slow, since, last_alert_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+       (site, monitor, status, consecutive_fails, consecutive_slow, since, last_alert_at, checked_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(site, monitor) DO UPDATE SET
        status = excluded.status,
        consecutive_fails = excluded.consecutive_fails,
        consecutive_slow = excluded.consecutive_slow,
        since = excluded.since,
-       last_alert_at = excluded.last_alert_at`,
+       last_alert_at = excluded.last_alert_at,
+       checked_at = excluded.checked_at,
+       expires_at = excluded.expires_at`,
   ).run(
     state.site,
     state.monitor,
@@ -180,7 +198,52 @@ export function setState(db: Database.Database, state: StateRow): void {
     state.consecutiveSlow,
     state.since,
     state.lastAlertAt,
+    state.checkedAt ?? null,
+    state.expiresAt ?? null,
   );
+}
+
+/**
+ * Notes that a check ran without touching the state, for checks made
+ * inside a maintenance window. Does nothing before the first counted check.
+ */
+export function touchChecked(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+  now: number,
+): void {
+  db.prepare(
+    "UPDATE monitor_state SET checked_at = ? WHERE site = ? AND monitor = ?",
+  ).run(now, site, monitor);
+}
+
+// ---------------------------------------------------------------------------
+// Heartbeats: when each heartbeat monitor was last pinged.
+
+export function recordHeartbeat(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+  now: number,
+): void {
+  db.prepare(
+    `INSERT INTO heartbeat (site, monitor, last_ping_at) VALUES (?, ?, ?)
+     ON CONFLICT(site, monitor) DO UPDATE SET last_ping_at = excluded.last_ping_at`,
+  ).run(site, monitor, now);
+}
+
+export function lastHeartbeat(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+): number | null {
+  const row = db
+    .prepare(
+      "SELECT last_ping_at AS at FROM heartbeat WHERE site = ? AND monitor = ?",
+    )
+    .get(site, monitor) as { at: number } | undefined;
+  return row?.at ?? null;
 }
 
 export function pruneOldChecks(db: Database.Database, before: number): number {

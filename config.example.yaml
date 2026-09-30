@@ -45,6 +45,9 @@ sites:
         group: Web
         # Optional. A successful response slower than this counts as slow.
         slowThresholdMs: 1500
+        # Optional. Seconds between this monitor's checks, when longer than
+        # checkIntervalSeconds.
+        # intervalSeconds: 300
       - name: API health
         url: https://api.example.com/health
         group: API
@@ -63,6 +66,33 @@ sites:
         # keywordMode: absent, the check fails when the text is found.
         keyword: '"status":"ok"'
         # keywordMode: present
+      # Other kinds of monitor. Each takes a host instead of a url.
+      # - name: Database
+      #   type: tcp
+      #   host: db.example.com
+      #   port: 5432
+      # - name: Mail records
+      #   type: dns
+      #   host: example.com
+      #   record: MX # A, AAAA, CNAME, MX, TXT or NS. Default: A.
+      #   expect: mail.example.com # Optional. Text an answer must contain.
+      # - name: Router
+      #   type: ping
+      #   host: 192.0.2.1
+      # - name: Certificate
+      #   type: certificate
+      #   host: example.com
+      #   warnDays: 14 # Fails this many days before expiry. Default: 14.
+      # - name: Domain
+      #   type: domain
+      #   host: example.com
+      #   warnDays: 30 # Default: 30.
+      # A heartbeat is pinged by your own job at /heartbeat/<token> and goes
+      # down after two intervals in a row without a ping.
+      # - name: Nightly backup
+      #   type: heartbeat
+      #   token: ${BACKUP_HEARTBEAT}
+      #   intervalSeconds: 86400
     # Optional. Planned work. Checks during a window are shown but not
     # counted, and no alert goes out. Times are UTC unless a zone is given.
     # maintenance:
