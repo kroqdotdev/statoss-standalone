@@ -52,6 +52,11 @@ RUN mkdir /data && chown node:node /data
 RUN apt-get update && apt-get install -y --no-install-recommends iputils-ping \
     && rm -rf /var/lib/apt/lists/* \
     && chmod u+s "$(command -v ping)"
+# npm, corepack and yarn come with the Node image and never run here; they
+# go, with the vulnerabilities in their own dependencies.
+RUN rm -rf /usr/local/lib/node_modules /opt/yarn-* \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg
 VOLUME ["/data"]
 USER node
 EXPOSE 3000
