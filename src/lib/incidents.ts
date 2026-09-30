@@ -56,8 +56,13 @@ export interface IncidentView {
   /** Opened by the checker rather than written by hand. */
   auto: boolean;
   postmortem: string | null;
-  /** Names of the monitors it covers. Empty means the whole site. */
+  /** Names of the monitors and components it covers. Empty means the whole site. */
   monitors: string[];
+  /**
+   * The state an incident gives a row it names while it is open, by name.
+   * A name without one only carries the "Incident open" mark.
+   */
+  states: Record<string, IncidentImpact>;
   /** Newest first. */
   updates: IncidentUpdate[];
 }
@@ -80,7 +85,15 @@ const fileSchema = z.preprocess(
     started: timestampSchema,
     resolved: timestampSchema.optional(),
     impact: z.enum(IMPACTS).default("none"),
-    monitors: z.array(z.string().min(1)).default([]),
+    /** A name, or a name with the state the incident puts it in. */
+    monitors: z
+      .array(
+        z.union([
+          z.string().min(1),
+          z.object({ name: z.string().min(1), state: z.enum(IMPACTS) }),
+        ]),
+      )
+      .default([]),
     updates: z.array(updateSchema).default([]),
     postmortem: z.string().optional(),
   }),
@@ -89,14 +102,19 @@ const fileSchema = z.preprocess(
 /**
  * Post-mortems are plain text: blank lines separate paragraphs, and a line
  * break inside a paragraph is only the file's wrapping, so it becomes a space.
+ * A line that starts with # is a heading.
  */
 export function joinLines(text: string): string {
-  return text
-    .trim()
-    .split(/\n[ \t]*\n/)
-    .map((paragraph) => paragraph.replace(/\s*\n\s*/g, " ").trim())
-    .filter((paragraph) => paragraph !== "")
-    .join("\n\n");
+  return (
+    text
+      .trim()
+      // A heading is a paragraph of its own, blank line after it or not.
+      .replace(/^(#{1,6}[ \t].*)$/gm, "\n$1\n")
+      .split(/\n[ \t]*\n/)
+      .map((paragraph) => paragraph.replace(/\s*\n\s*/g, " ").trim())
+      .filter((paragraph) => paragraph !== "")
+      .join("\n\n")
+  );
 }
 
 /** Splits a Markdown file into its YAML front matter and the text below. */
@@ -151,11 +169,19 @@ export function parseIncidentFile(
         ? `Invalid incident file ${id}: no site named "${data.site}"`
         : `Invalid incident file ${id}: name the site, since there is more than one`,
     );
-  for (const name of data.monitors) {
-    if (!site.monitors.some((cp) => cp.name === name))
+  const names: string[] = [];
+  const states: Record<string, IncidentImpact> = {};
+  for (const entry of data.monitors) {
+    const name = typeof entry === "string" ? entry : entry.name;
+    if (
+      !site.monitors.some((cp) => cp.name === name) &&
+      !site.components.some((c) => c.name === name)
+    )
       throw new Error(
-        `Invalid incident file ${id}: "${name}" is not a monitor of ${site.name}`,
+        `Invalid incident file ${id}: "${name}" is not a monitor or component of ${site.name}`,
       );
+    names.push(name);
+    if (typeof entry !== "string") states[name] = entry.state;
   }
   const updates = data.updates
     .map((u) => ({ status: u.status, body: u.body.trim(), createdAt: u.at }))
@@ -178,7 +204,8 @@ export function parseIncidentFile(
       resolvedAt,
       auto: false,
       postmortem: postmortem === "" ? null : postmortem,
-      monitors: data.monitors,
+      monitors: names,
+      states,
       updates,
     },
   };
@@ -218,6 +245,7 @@ export function maintenanceView(window: MaintenanceConfig): IncidentView {
     auto: false,
     postmortem: null,
     monitors: window.monitors ?? [],
+    states: {},
     updates: notes
       ? [{ status: "monitoring", body: notes, createdAt: window.start }]
       : [],
@@ -284,6 +312,7 @@ export function autoIncidentView(row: AutoIncidentRow): IncidentView {
     auto: true,
     postmortem: null,
     monitors: [row.monitor],
+    states: {},
     updates,
   };
 }
@@ -299,28 +328,48 @@ export interface SiteIncidents {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** How far back the page lists past incidents. */
-export const INCIDENT_HISTORY_DAYS = 30;
+/** How far back the status page itself lists past incidents. */
+export const PAGE_INCIDENT_DAYS = 7;
+/** How far back the feeds go. */
+export const FEED_DAYS = 30;
 /** How far ahead planned maintenance is announced. */
 const LOOKAHEAD_MS = 7 * DAY_MS;
 
-/** Sorts every incident and window of a site into current and past. */
+const IMPACT_RANK: Record<IncidentImpact, number> = {
+  none: 0,
+  degraded: 1,
+  partial: 2,
+  major: 3,
+};
+
+/**
+ * Sorts every incident and window of a site into current and past. Current:
+ * what somebody wrote before what a check opened, the worst first, then
+ * maintenance in progress, then what is planned. Past: the last `days`.
+ */
 export function splitIncidents(
   views: IncidentView[],
   now: number,
-  limit = 30,
+  days = PAGE_INCIDENT_DAYS,
+  limit = 100,
 ): SiteIncidents {
-  const since = now - INCIDENT_HISTORY_DAYS * DAY_MS;
+  const since = now - days * DAY_MS;
   const rank = (v: IncidentView) =>
-    v.kind === "incident" ? 0 : v.startedAt <= now ? 1 : 2;
+    v.kind === "incident" ? (v.auto ? 1 : 0) : v.startedAt <= now ? 2 : 3;
   const current = views
     .filter((v) =>
       v.kind === "incident"
-        ? v.resolvedAt === null
+        ? v.resolvedAt === null && v.startedAt <= now
         : !maintenanceOver(v, now) && v.startedAt <= now + LOOKAHEAD_MS,
     )
-    // Open incidents first, then maintenance in progress, then what is planned.
-    .sort((a, b) => rank(a) - rank(b) || b.startedAt - a.startedAt);
+    .sort(
+      (a, b) =>
+        rank(a) - rank(b) ||
+        IMPACT_RANK[b.impact] - IMPACT_RANK[a.impact] ||
+        (a.kind === "maintenance"
+          ? a.startedAt - b.startedAt
+          : b.startedAt - a.startedAt),
+    );
   const past = views
     .filter(
       (v) =>
@@ -332,6 +381,51 @@ export function splitIncidents(
     .sort((a, b) => b.startedAt - a.startedAt)
     .slice(0, limit);
   return { current, past };
+}
+
+/**
+ * The open outages the checker opened, as one view when there are several:
+ * a wide outage is one event on the page, not a card per monitor.
+ */
+export function foldAutomatic(current: IncidentView[]): IncidentView[] {
+  const auto = current.filter((v) => v.auto);
+  if (auto.length < 2) return current;
+  const oldest = auto.reduce((a, b) => (a.startedAt <= b.startedAt ? a : b));
+  const folded: IncidentView = {
+    ...oldest,
+    id: oldest.id,
+    title: `${auto.length} monitors are down`,
+    monitors: auto.flatMap((v) => v.monitors),
+    updates: auto
+      .flatMap((v) => v.updates)
+      .sort((a, b) => b.createdAt - a.createdAt),
+  };
+  const out: IncidentView[] = [];
+  let placed = false;
+  for (const view of current) {
+    if (!view.auto) out.push(view);
+    else if (!placed) {
+      out.push(folded);
+      placed = true;
+    }
+  }
+  return out;
+}
+
+/** A post-mortem as headings and paragraphs, from its text. */
+export function postmortemBlocks(
+  text: string,
+): Array<{ heading: boolean; text: string }> {
+  return text
+    .split(/\n\n/)
+    .map((block) => block.trim())
+    .filter((block) => block !== "")
+    .map((block) => {
+      const heading = /^#{1,6}[ \t]+(.*)$/.exec(block);
+      return heading
+        ? { heading: true, text: heading[1].trim() }
+        : { heading: false, text: block };
+    });
 }
 
 /** Impacts of the incidents that are open right now, for the headline. */

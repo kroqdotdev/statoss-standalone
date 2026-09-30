@@ -3,10 +3,11 @@ import { headers } from "next/headers";
 import { findSiteByHost, getConfig } from "./config";
 import { bumpDataVersion } from "./data-version";
 import { getDb, recordHeartbeat } from "./db";
-import { openImpacts } from "./incidents";
+import { FEED_DAYS, openImpacts } from "./incidents";
 import {
   badgeJson,
   badgeSvg,
+  feedAtom,
   feedXml,
   statusJson,
   widgetJs,
@@ -43,7 +44,10 @@ export async function statusJsonResponse(): Promise<Response> {
   const now = Date.now();
   const { incidents } = liveSite(site, now);
   return Response.json(
-    statusJson(getDb(), site, incidents, now, siteBudget(getDb(), site, now)),
+    statusJson(getDb(), site, incidents, now, {
+      budget: siteBudget(getDb(), site, now),
+      checkIntervalSeconds: getConfig().checkIntervalSeconds,
+    }),
     {
       headers: { ...CORS, "cache-control": "public, max-age=30" },
     },
@@ -77,18 +81,24 @@ export async function badgeJsonResponse(request: Request): Promise<Response> {
   });
 }
 
-export async function feedResponse(): Promise<Response> {
+async function feed(
+  build: typeof feedXml,
+  contentType: string,
+): Promise<Response> {
   const site = await currentSite();
   if (!site) return notFound();
   const now = Date.now();
-  const { incidents } = liveSite(site, now);
-  return new Response(feedXml(site, incidents, now), {
+  const { incidents } = liveSite(site, now, FEED_DAYS);
+  return new Response(build(site, incidents, now), {
     headers: {
-      "content-type": "application/rss+xml; charset=utf-8",
+      "content-type": `${contentType}; charset=utf-8`,
       "cache-control": "public, max-age=300",
     },
   });
 }
+
+export const feedResponse = () => feed(feedXml, "application/rss+xml");
+export const feedAtomResponse = () => feed(feedAtom, "application/atom+xml");
 
 export async function widgetResponse(): Promise<Response> {
   const site = await currentSite();

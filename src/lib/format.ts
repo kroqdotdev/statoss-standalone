@@ -157,3 +157,12 @@ export function failureSummary(
   const base = pluralize(failed, "failed check");
   return timeouts === 0 ? base : `${base}, ${pluralize(timeouts, "timeout")}`;
 }
+
+/** The id of a row on the page, so an incident can link to the monitor it names. */
+export function rowId(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `row-${slug || "unnamed"}`;
+}

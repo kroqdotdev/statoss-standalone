@@ -9,6 +9,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Six more kinds of monitor, chosen with `type`: `tcp`, `dns`, `ping`, `certificate`, `domain` and `heartbeat`. Certificate and domain monitors fail inside a warning window before expiry and show the date on the page and in `status.json`; a heartbeat gives a scheduled job a URL to ping at `/heartbeat/<token>` and goes down after two intervals without one.
 - `intervalSeconds` on a monitor, for one that should be checked less often than the rest.
 - The image carries `ping`.
+- Components: parts of the product with no check, listed under `components` with a state set in the configuration or by an open incident that names them.
+- A page for every incident and maintenance window at `/incidents/<id>`, and `/history`, which lists them by month.
+- An incident gives each monitor or component it names a state while it is open (`state: degraded`, `partial`, `major` or `none`), shown on the row when it is worse than the checks. Rows under a maintenance window in progress say "Under maintenance".
+- An Atom feed at `/feed.atom`. Both feeds carry a window's times, each update's status word and the post-mortem, and link to the incident's page.
+- Stale is not up: a monitor whose checks have stopped arriving says when it was last checked, in grey, and counts as unknown in the headline, the badge and `status.json` (`stale`, `lastCheckedAt`).
+- Headings in a post-mortem: a line that starts with `#`.
+- Three incident templates in `incidents.example/templates/`.
 - A 1-year view, and hourly totals behind it: every check is added to its hour's totals, which are kept for 400 days. A 0.2 database gets them filled in from its checks on the first start.
 - An error budget: `uptimeTarget` on a site puts the month's uptime against the target, and the downtime allowance spent, at the foot of the page and in `status.json`.
 - `retentionDays`, for how long single checks are kept. The default stays 90.
@@ -19,6 +26,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- The status page lists the resolved incidents of the last 7 days instead of 30; the rest are under Incident history. Open incidents are ordered: what somebody wrote first, the worst first, then the outages the checker opened, folded into one card when there are several.
+- A site may have no monitors. It says nothing is checked yet, and its state is unknown instead of up.
+- A feed entry's guid is `urn:statoss:incident:<id>` and no longer changes with each update, so feed readers will show current entries once more.
+- An incident with a start in the future is not shown until then.
 - The 7-day and 90-day views are read from the hourly totals and kept for 5 and 15 minutes, or until a monitor changes state, instead of being added up from every check after every round.
 - A maintenance window's id is made from its start and title (`maintenance-2026-09-20-0100-database-upgrade`) instead of its place in the list. It appears in `status.json` and as the feed's guid, so a feed reader may show current windows once more.
 - The checks of one round are spread over the first three quarters of the interval, 45 seconds at most, instead of all starting at once, which made each response time count the others' handshakes.

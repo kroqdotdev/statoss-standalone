@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyResult,
+  checkLate,
   overallStatus,
   pageOverall,
   type MonitorState,
@@ -110,9 +111,9 @@ describe("applyResult", () => {
 });
 
 describe("overallStatus", () => {
-  it("is operational when every monitor is up (or there are none)", () => {
+  it("is operational when every monitor is up, and unknown when there are none", () => {
     expect(overallStatus(["up", "up"])).toBe("operational");
-    expect(overallStatus([])).toBe("operational");
+    expect(overallStatus([])).toBe("unknown");
   });
 
   it("is partial when some are down", () => {
@@ -148,5 +149,19 @@ describe("pageOverall", () => {
   it("never lowers what the checks say", () => {
     expect(pageOverall(["down", "down"], ["degraded"])).toBe("major");
     expect(pageOverall(["up"], ["none"])).toBe("operational");
+  });
+});
+
+describe("checkLate", () => {
+  const MIN = 60_000;
+  it("is late after three intervals, and never inside five minutes", () => {
+    expect(checkLate(0, 60, 5 * MIN)).toBe(false);
+    expect(checkLate(0, 60, 5 * MIN + 1)).toBe(true);
+    expect(checkLate(0, 3600, 180 * MIN)).toBe(false);
+    expect(checkLate(0, 3600, 180 * MIN + 1)).toBe(true);
+  });
+  it("does not call a state late when the time of its check was never kept", () => {
+    expect(checkLate(null, 60, 10 ** 12)).toBe(false);
+    expect(checkLate(undefined, 60, 10 ** 12)).toBe(false);
   });
 });

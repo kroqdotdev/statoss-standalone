@@ -109,6 +109,14 @@ sites:
       #   type: heartbeat
       #   token: ${BACKUP_HEARTBEAT}
       #   intervalSeconds: 86400
+    # Optional. Parts of the product with no check. Each has a row with a
+    # state and no strip. An open incident that names one sets its state.
+    # components:
+    #   - name: Mobile app
+    #     group: Apps
+    #     description: iOS and Android
+    #   - name: Card payments
+    #     state: operational # operational, degraded, partial or major
     # Optional. Planned work. Checks during a window are shown but not
     # counted, and no alert goes out. Times are UTC unless a zone is given.
     # maintenance:

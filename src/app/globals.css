@@ -75,6 +75,17 @@ body {
   border-radius: 2px;
 }
 
+/* A link in running text or beside a heading. */
+.page-link {
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.page-link:hover {
+  text-decoration-color: currentColor;
+}
+
 /*
   Headings in Barlow Condensed, set through the same hook classes as the
   hosted pages. These rules sit outside Tailwind's layers, so they win over

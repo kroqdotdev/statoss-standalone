@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "./config";
 import { insertCheck, openDb, setState } from "./db";
-import type { SiteIncidents } from "./incidents";
+import type { IncidentView, SiteIncidents } from "./incidents";
 import {
   badgeJson,
   badgeSvg,
+  feedAtom,
+  feedEntry,
   feedXml,
   statusJson,
   widgetJs,
@@ -68,6 +70,8 @@ describe("statusJson", () => {
         group: "Web",
         status: "up",
         since: new Date(NOW - 60_000).toISOString(),
+        lastCheckedAt: null,
+        stale: false,
         expiresAt: null,
         uptime24h: 66.67,
         latencyMs24h: 200,
@@ -78,6 +82,8 @@ describe("statusJson", () => {
         group: null,
         status: "unknown",
         since: null,
+        lastCheckedAt: null,
+        stale: false,
         expiresAt: null,
         uptime24h: null,
         latencyMs24h: null,
@@ -101,6 +107,7 @@ describe("statusJson", () => {
           endsAt: null,
           resolvedAt: null,
           auto: false,
+          states: {},
           postmortem: null,
           monitors: [],
           updates: [],
@@ -149,6 +156,7 @@ describe("feedXml", () => {
           endsAt: null,
           resolvedAt: NOW - 2 * 60 * 60_000,
           auto: false,
+          states: {},
           postmortem: null,
           monitors: [],
           updates: [
@@ -174,6 +182,7 @@ describe("feedXml", () => {
           endsAt: NOW - 30 * 60_000,
           resolvedAt: null,
           auto: false,
+          states: {},
           postmortem: null,
           monitors: [],
           updates: [],
@@ -186,9 +195,127 @@ describe("feedXml", () => {
       xml.indexOf("Old &amp; resolved"),
     );
     expect(xml).toContain(
-      "2026-09-12 12:00 UTC: Looking.\n\n2026-09-12 13:00 UTC: Fixed.",
+      "2026-09-12 12:00 UTC, Investigating: Looking.\n\n2026-09-12 13:00 UTC, Resolved: Fixed.",
     );
-    expect(xml).toContain('<guid isPermaLink="false">old:');
+    expect(xml).toContain(
+      "Was planned 2026-09-12 14:00 UTC to 2026-09-12 14:30 UTC.",
+    );
+    expect(xml).toContain(
+      '<guid isPermaLink="false">urn:statoss:incident:old</guid>',
+    );
+    expect(xml).toContain(
+      "<link>https://status.webhooks.cc/incidents/old</link>",
+    );
+
+    const atom = feedAtom(SITE, incidents, NOW);
+    expect(atom).toContain('<feed xmlns="http://www.w3.org/2005/Atom">');
+    expect(atom).toContain(
+      '<link rel="self" href="https://status.webhooks.cc/feed.atom"/>',
+    );
+    expect(atom).toContain("<id>urn:statoss:incident:old</id>");
+    expect(atom).toContain(
+      `<updated>${new Date(NOW - 2 * 60 * 60_000).toISOString()}</updated>`,
+    );
+  });
+
+  it("dates a window still ahead by now, and carries the post-mortem", () => {
+    const ahead: IncidentView = {
+      id: "m",
+      kind: "maintenance",
+      title: "Upgrade",
+      status: "monitoring",
+      impact: "none",
+      startedAt: NOW + 60 * 60_000,
+      endsAt: NOW + 2 * 60 * 60_000,
+      resolvedAt: null,
+      auto: false,
+      states: {},
+      postmortem: null,
+      monitors: ["API"],
+      updates: [{ status: "monitoring", body: "Short pause.", createdAt: NOW }],
+    };
+    expect(feedEntry(ahead, NOW)).toEqual({
+      title: "Maintenance: Upgrade",
+      stamp: NOW,
+      published: NOW,
+      body: "Planned 2026-09-12 16:00 UTC to 2026-09-12 17:00 UTC.\n\nAffects API.\n\nShort pause.",
+    });
+    expect(
+      feedEntry(
+        {
+          ...ahead,
+          kind: "incident",
+          startedAt: NOW,
+          postmortem: "A disk filled.",
+        },
+        NOW,
+      ).body,
+    ).toContain("Post-mortem: A disk filled.");
+  });
+});
+
+describe("statusJson with components, stated rows and stale checks", () => {
+  const config = parseConfig(`
+sites:
+  - name: shop
+    host: status.shop.example
+    monitors:
+      - name: Web
+        url: https://shop.example
+      - name: API
+        url: https://api.shop.example
+    components:
+      - name: Mobile app
+      - name: Payments
+        state: degraded
+`);
+  const site = config.sites[0];
+  const open: IncidentView = {
+    id: "2026-09-12-api",
+    kind: "incident",
+    title: "API errors",
+    status: "identified",
+    impact: "none",
+    startedAt: NOW - 60_000,
+    endsAt: null,
+    resolvedAt: null,
+    auto: false,
+    states: { API: "major", "Mobile app": "partial" },
+    postmortem: null,
+    monitors: ["API", "Mobile app"],
+    updates: [],
+  };
+
+  it("gives a row the worse of its checks and what the incident says", () => {
+    const db = openDb(":memory:");
+    for (const monitor of ["Web", "API"])
+      setState(db, {
+        site: "shop",
+        monitor,
+        status: "up",
+        consecutiveFails: 0,
+        consecutiveSlow: 0,
+        since: NOW - 60_000,
+        lastAlertAt: null,
+        checkedAt: monitor === "Web" ? NOW - 30 * 60_000 : NOW - 1000,
+      });
+    const json = statusJson(db, site, { current: [open], past: [] }, NOW);
+    expect(json.monitors.map((m) => [m.name, m.status, m.stale])).toEqual([
+      ["Web", "unknown", true],
+      ["API", "down", false],
+    ]);
+    expect(json.components).toEqual([
+      { name: "Mobile app", group: null, status: "partial" },
+      { name: "Payments", group: null, status: "degraded" },
+    ]);
+    // Web unknown, API up by its checks, one component down, one slow.
+    expect(json.site.status).toBe("partial");
+  });
+
+  it("counts a component's own state toward the site's", () => {
+    const db = openDb(":memory:");
+    const json = statusJson(db, site, NONE, NOW);
+    expect(json.site.status).toBe("degraded");
   });
 });
 

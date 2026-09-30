@@ -394,6 +394,26 @@ function duplicates(values: string[]): string[] {
   return [...dupes];
 }
 
+export const COMPONENT_STATES = [
+  "operational",
+  "degraded",
+  "partial",
+  "major",
+] as const;
+export type ComponentState = (typeof COMPONENT_STATES)[number];
+
+/**
+ * A part of the product with no check, such as a mobile app. Its state is
+ * what the file says, or what an open incident that names it says.
+ */
+const componentSchema = z.object({
+  name: z.string().min(1),
+  group: z.string().min(1).optional(),
+  /** A line under the name. */
+  description: z.string().min(1).optional(),
+  state: z.enum(COMPONENT_STATES).default("operational"),
+});
+
 /** Days the hourly totals, resolved outages and sent notices are kept. */
 export const HISTORY_DAYS = 400;
 
@@ -405,13 +425,17 @@ const siteObjectSchema = z
     url: z.url().optional(),
     /** Uptime to hold each month, in percent. Shows the error budget. */
     uptimeTarget: z.number().min(50).lt(100).optional(),
-    monitors: z.array(monitorSchema).min(1),
+    monitors: z.array(monitorSchema).default([]),
+    components: z.array(componentSchema).default([]),
     /** false turns alerts off for this site. */
     alerts: z.union([z.literal(false), siteAlertsSchema]).optional(),
     maintenance: z.array(maintenanceSchema).default([]),
   })
   .superRefine((site, ctx) => {
-    const names = site.monitors.map((cp) => cp.name);
+    const names = [
+      ...site.monitors.map((cp) => cp.name),
+      ...site.components.map((c) => c.name),
+    ];
     for (const name of duplicates(names)) {
       ctx.addIssue({
         code: "custom",
@@ -425,7 +449,7 @@ const siteObjectSchema = z
           ctx.addIssue({
             code: "custom",
             path: ["maintenance", i, "monitors"],
-            message: `"${name}" is not a monitor of this site`,
+            message: `"${name}" is not a monitor or component of this site`,
           });
       }
     });
@@ -479,6 +503,7 @@ export type AppConfig = z.infer<typeof configSchema>;
 export type SiteConfig = AppConfig["sites"][number];
 export type MonitorConfig = SiteConfig["monitors"][number];
 export type MaintenanceConfig = SiteConfig["maintenance"][number];
+export type ComponentConfig = SiteConfig["components"][number];
 export type AlertsConfig = NonNullable<AppConfig["alerts"]>;
 export type SmtpConfig = NonNullable<AlertsConfig["smtp"]>;
 

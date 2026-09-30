@@ -3,7 +3,7 @@
 [![CI](https://github.com/kroqdotdev/statoss-standalone/actions/workflows/ci.yml/badge.svg)](https://github.com/kroqdotdev/statoss-standalone/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A self-hosted status page in one container. It checks your URLs, ports, DNS records, certificates, domains and scheduled jobs every minute, stores every result in SQLite, and serves a public page for each site on its own hostname, with incidents, maintenance windows, alerts to email, Slack, Discord, PagerDuty, Opsgenie, ntfy and webhooks, and a JSON, badge, RSS and widget endpoint next to every page.
+A self-hosted status page in one container. It checks your URLs, ports, DNS records, certificates, domains and scheduled jobs every minute, stores every result in SQLite, and serves a public page for each site on its own hostname, with incidents, maintenance windows, components, alerts to email, Slack, Discord, PagerDuty, Opsgenie, ntfy and webhooks, and a JSON, badge, RSS, Atom and widget endpoint next to every page.
 
 ![The status page for one site with two monitors](docs/screenshot.png)
 
@@ -17,9 +17,10 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 - **Any request.** An HTTP monitor can use any method, send headers and a body, expect an exact status, and require a keyword in the response, or require its absence.
 - **Slow is a state.** Give a monitor a threshold and it turns slow after two slow responses and back after one fast one. Slow buckets are drawn in indigo under a dashed line at the threshold.
 - **Groups.** Monitors with the same group name are shown together under one heading with a one-line summary.
-- **Incidents and maintenance.** Write incidents as Markdown or YAML files in a folder; the page picks them up without a restart. Plan maintenance windows in the configuration: checks during a window are shown but not counted, and no alert goes out. A monitor that goes down opens an incident by itself and resolves it on recovery.
+- **Components.** A part of the product with no check, such as a mobile app, shown with a state you set or an incident sets.
+- **Incidents and maintenance.** Write incidents as Markdown or YAML files in a folder; the page picks them up without a restart. Every incident and window has a page of its own, and older ones are listed by month under Incident history. Plan maintenance windows in the configuration: checks during a window are shown but not counted, and no alert goes out. A monitor that goes down opens an incident by itself and resolves it on recovery.
 - **Alerts where you are.** Email, Slack, Discord, PagerDuty, Opsgenie, ntfy and a signed webhook, per site or for all of them, with an optional repeat while a monitor stays down. Incident updates and maintenance notices go the same way.
-- **Endpoints for machines.** `status.json`, `badge.svg` and `badge.json` for shields.io, `feed.xml`, and `widget.js` to embed a live status dot anywhere.
+- **Endpoints for machines.** `status.json`, `badge.svg` and `badge.json` for shields.io, `feed.xml` and `feed.atom`, and `widget.js` to embed a live status dot anywhere.
 - **One YAML file.** No admin interface, no accounts, no external services.
 - **One process.** A Next.js server with an embedded checker and a SQLite file. Deploy it with Docker Compose behind any reverse proxy.
 
@@ -303,7 +304,43 @@ updates:
 The post-mortem, as plain text. Paragraphs are separated by blank lines.
 ```
 
-Or a `.yaml` file with the same fields and an optional `postmortem` key. An incident is open until an update has the status `resolved` or the file has a `resolved` time. While it is open, its `impact` sets the headline: `partial` says part of the site is down even when every check passes. Open incidents and planned or running maintenance are shown at the top of the page; resolved ones stay in the list at the bottom for 30 days. `incidents.example/` holds the two examples above.
+Or a `.yaml` file with the same fields and an optional `postmortem` key. An incident is open until an update has the status `resolved` or the file has a `resolved` time. While it is open, its `impact` sets the headline: `partial` says part of the site is down even when every check passes. `incidents.example/` holds the two examples above.
+
+A name under `monitors` is a monitor or a component of the site. Written with a state, the row shows that state while the incident is open, whenever it is worse than what the checks say, and links to the incident:
+
+```yaml
+monitors:
+  - API health # named, and marked "Incident open"
+  - name: Uploads
+    state: degraded # degraded, partial, major, or none for no change
+```
+
+A row under a maintenance window in progress says "Under maintenance".
+
+In a post-mortem, a line that starts with `#` is a heading; blank lines separate paragraphs.
+
+**Where incidents show.** Open incidents and planned or running maintenance are cards under the headline: what you wrote first, the worst impact first, then the outages the checker opened, which share one card when there are several, then maintenance. The status page lists the resolved ones of the last 7 days. Every incident and window has a page of its own at `/incidents/<id>`, where the id is the file's name without its ending, and `/history` lists them all by month, three months a page, back to the oldest. An incident with a start in the future is not shown until then.
+
+**Templates.** `incidents.example/templates/` holds three files to start from: an outage, a degradation, and a write-up after the fact with a post-mortem. Copy one into the incidents folder and fill it in. A folder inside the incidents folder is not read, so your own templates can live in `incidents/templates/`.
+
+### Components
+
+A component is a part of the product that nothing checks: a mobile app, a payment provider, a support line. It has a row on the page with a state and no strip.
+
+```yaml
+components:
+  - name: Mobile app
+    group: Apps
+    description: iOS and Android
+  - name: Card payments
+    state: degraded
+```
+
+Its state is the one in the configuration (`operational` unless you say otherwise), or the one an open incident gives it when that is worse. A component that is not operational counts toward the headline, the badge and `status.json` the way a monitor does: `degraded` like slow, `partial` and `major` like down.
+
+### When checks stop
+
+A state is only as good as the last check behind it. If a monitor has had no check for three of its intervals, and five minutes at the least, the page says "Last checked 12 min ago" in grey instead of "Up", the monitor counts as unknown in the headline and the badge, and `status.json` marks it `stale`. This is what you see for a moment after the server has been off for a while.
 
 ### Endpoints
 
@@ -311,10 +348,11 @@ Next to every page, on the same hostname:
 
 | Path           | What it is                                                                                                                                                                                                                                               |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/status.json` | The site's state, every monitor with its status, uptime and mean response time over the last day (also listed as `checkpoints`, their name in 0.1), and current incidents.                                                                               |
+| `/status.json` | The site's state, every monitor with its status, when it was last checked, uptime and mean response time over the last day (also listed as `checkpoints`, their name in 0.1), the components, the error budget, and current incidents.                   |
 | `/badge.svg`   | A badge in the shields.io style. Add `?label=api` to change the left half.                                                                                                                                                                               |
 | `/badge.json`  | The same in the [shields.io endpoint format](https://shields.io/badges/endpoint-badge), for a badge shields.io draws.                                                                                                                                    |
-| `/feed.xml`    | An RSS feed of incidents and maintenance.                                                                                                                                                                                                                |
+| `/feed.xml`    | An RSS feed of the incidents and maintenance of the last 30 days. Each entry links to the incident's page and carries the window's times, every update with its status word, and the post-mortem.                                                        |
+| `/feed.atom`   | The same as an Atom feed.                                                                                                                                                                                                                                |
 | `/widget.js`   | A script that draws a status dot and a link where it is placed: `<script src="https://status.example.com/widget.js"></script>`. Override the words with `data-operational`, `data-degraded`, `data-partial`, `data-major` and `data-unknown` attributes. |
 
 The JSON and badge endpoints allow cross-origin requests.

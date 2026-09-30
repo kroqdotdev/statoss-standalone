@@ -5,7 +5,14 @@ import { SitePage } from "@/components/SitePage";
 import { findSiteByHost, getConfig } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { RANGES, parseRange } from "@/lib/ranges";
-import { monitorView, siteBudget, siteIncidents } from "@/lib/status-data";
+import { statedByName } from "@/lib/stated";
+import {
+  componentViews,
+  monitorView,
+  rowNames,
+  siteBudget,
+  siteIncidents,
+} from "@/lib/status-data";
 
 export const dynamic = "force-dynamic";
 
@@ -30,16 +37,28 @@ export default async function StatusPage(props: PageProps<"/">) {
   // lifetime of this render.
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
+  const incidents = siteIncidents(db, config, site, now);
+  const stated = statedByName(incidents.current, rowNames(site), now);
 
   return (
     <SitePage
       name={site.name}
       monitors={site.monitors.map((cp) =>
-        monitorView(db, site, cp, range, now, config.retentionDays),
+        monitorView(
+          db,
+          site,
+          cp,
+          range,
+          now,
+          config.retentionDays,
+          config.checkIntervalSeconds,
+        ),
       )}
+      components={componentViews(site, stated)}
+      stated={stated}
+      incidents={incidents}
       budget={siteBudget(db, site, now)}
       retentionDays={config.retentionDays}
-      incidents={siteIncidents(db, config, site, now)}
       range={RANGES[range].key}
       now={now}
       intervalSeconds={config.checkIntervalSeconds}

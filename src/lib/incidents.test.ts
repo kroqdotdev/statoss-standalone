@@ -1,7 +1,12 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "./config";
 import {
   autoIncidentView,
+  foldAutomatic,
+  joinLines,
+  postmortemBlocks,
   inMaintenance,
   maintenancePhase,
   maintenanceView,
@@ -96,6 +101,7 @@ describe("parseIncidentFile", () => {
       startedAt: T,
       resolvedAt: Date.UTC(2026, 8, 12, 15, 10),
       auto: false,
+      states: {},
       monitors: ["API"],
     });
     expect(view.updates.map((u) => u.status)).toEqual([
@@ -253,6 +259,7 @@ describe("splitIncidents", () => {
     endsAt: null,
     resolvedAt: null,
     auto: false,
+    states: {},
     postmortem: null,
     monitors: [],
     updates: [],
@@ -308,5 +315,179 @@ describe("splitIncidents", () => {
     ]);
     expect(past.map((v) => v.id)).toEqual(["done", "finished"]);
     expect(openImpacts(current)).toEqual(["none", "none"]);
+  });
+});
+
+describe("states for the rows an incident names", () => {
+  const config = parseConfig(`
+sites:
+  - name: shop
+    host: status.shop.example
+    monitors:
+      - name: API
+        url: https://api.shop.example
+    components:
+      - name: Mobile app
+`);
+
+  it("reads a name alone, or a name with a state, for monitors and components", () => {
+    const { view } = parseIncidentFile(
+      "x.yaml",
+      `title: x
+started: 2026-09-12T14:05:00Z
+monitors:
+  - API
+  - name: Mobile app
+    state: degraded
+`,
+      config,
+    );
+    expect(view.monitors).toEqual(["API", "Mobile app"]);
+    expect(view.states).toEqual({ "Mobile app": "degraded" });
+  });
+
+  it("rejects a name that is neither", () => {
+    expect(() =>
+      parseIncidentFile(
+        "x.yaml",
+        "title: x\nstarted: 2026-09-12\nmonitors: [{name: Nope, state: major}]\n",
+        config,
+      ),
+    ).toThrow('"Nope" is not a monitor or component of shop');
+  });
+});
+
+describe("post-mortems", () => {
+  it("keeps a heading as a block of its own", () => {
+    const text = joinLines(
+      "## What happened\nThe pool ran\nout.\n\n## What we changed\n\nA limit.",
+    );
+    expect(postmortemBlocks(text)).toEqual([
+      { heading: true, text: "What happened" },
+      { heading: false, text: "The pool ran out." },
+      { heading: true, text: "What we changed" },
+      { heading: false, text: "A limit." },
+    ]);
+  });
+});
+
+describe("the order of what is current", () => {
+  const base = {
+    kind: "incident" as const,
+    status: "investigating" as const,
+    endsAt: null,
+    resolvedAt: null,
+    postmortem: null,
+    states: {},
+    monitors: [] as string[],
+    updates: [] as IncidentView["updates"],
+  } satisfies Partial<IncidentView>;
+  const views: IncidentView[] = [
+    {
+      ...base,
+      id: "auto-1",
+      title: "A is down",
+      impact: "none",
+      auto: true,
+      startedAt: T,
+      monitors: ["A"],
+    },
+    {
+      ...base,
+      id: "minor",
+      title: "Minor",
+      impact: "degraded",
+      auto: false,
+      startedAt: T + 5,
+    },
+    {
+      ...base,
+      id: "auto-2",
+      title: "B is down",
+      impact: "none",
+      auto: true,
+      startedAt: T + 1,
+      monitors: ["B"],
+    },
+    {
+      ...base,
+      id: "major",
+      title: "Major",
+      impact: "major",
+      auto: false,
+      startedAt: T,
+    },
+    {
+      ...base,
+      id: "later",
+      title: "Later",
+      impact: "major",
+      auto: false,
+      startedAt: T + 10 * HOUR,
+    },
+  ];
+
+  it("puts what somebody wrote first, the worst first, and leaves out what has not started", () => {
+    const { current } = splitIncidents(views, T + HOUR);
+    expect(current.map((v) => v.id)).toEqual([
+      "major",
+      "minor",
+      "auto-2",
+      "auto-1",
+    ]);
+  });
+
+  it("folds several automatic outages into one card", () => {
+    const { current } = splitIncidents(views, T + HOUR);
+    const folded = foldAutomatic(current);
+    expect(folded.map((v) => v.title)).toEqual([
+      "Major",
+      "Minor",
+      "2 monitors are down",
+    ]);
+    expect(folded[2].monitors).toEqual(["B", "A"]);
+    expect(folded[2].startedAt).toBe(T);
+    expect(foldAutomatic(current.slice(0, 3))).toEqual(current.slice(0, 3));
+  });
+
+  it("lists the last seven days as past on the page", () => {
+    const old: IncidentView = {
+      ...base,
+      id: "old",
+      title: "Old",
+      impact: "none",
+      auto: false,
+      startedAt: T - 8 * 24 * HOUR,
+      resolvedAt: T - 8 * 24 * HOUR + 1,
+    };
+    const recent = { ...old, id: "recent", startedAt: T - 2 * 24 * HOUR };
+    expect(splitIncidents([old, recent], T).past.map((v) => v.id)).toEqual([
+      "recent",
+    ]);
+    expect(splitIncidents([old, recent], T, 30).past).toHaveLength(2);
+  });
+});
+
+describe("the example files", () => {
+  it("all parse against the example configuration, templates included", () => {
+    // The example names variables in its comments; any value will do.
+    const env = new Proxy({}, { get: () => "x" });
+    const config = parseConfig(
+      readFileSync("config.example.yaml", "utf8"),
+      env,
+    );
+    const files = [
+      ...readdirSync("incidents.example")
+        .filter((f) => /\.(md|ya?ml)$/.test(f))
+        .map((f) => join("incidents.example", f)),
+      ...readdirSync("incidents.example/templates").map((f) =>
+        join("incidents.example/templates", f),
+      ),
+    ];
+    expect(files.length).toBeGreaterThanOrEqual(5);
+    for (const file of files)
+      expect(() =>
+        parseIncidentFile(file, readFileSync(file, "utf8"), config),
+      ).not.toThrow();
   });
 });
