@@ -4,7 +4,8 @@ import { MonitorSection, type MonitorView } from "./MonitorSection";
 import { CurrentIncidents, PastIncidents } from "./IncidentList";
 import { RangeSwitch } from "./RangeSwitch";
 import { StatusHeadline } from "./StatusHeadline";
-import { formatInterval, formatUtcClock } from "@/lib/format";
+import { LocalTime, ZoneName } from "./LocalTime";
+import { formatInterval } from "@/lib/format";
 import {
   openImpacts,
   PAGE_INCIDENT_DAYS,
@@ -92,8 +93,6 @@ function Legend({ slow }: { slow: boolean }) {
 const FEEDS: Array<[string, string]> = [
   ["status.json", "/status.json"],
   ["badge.svg", "/badge.svg"],
-  ["feed.xml", "/feed.xml"],
-  ["feed.atom", "/feed.atom"],
   ["widget.js", "/widget.js"],
 ];
 
@@ -108,8 +107,23 @@ export function SitePage({
   intervalSeconds,
   budget = null,
   retentionDays = 90,
+  logo = null,
+  description = null,
+  supportUrl = null,
+  foldGroups = false,
+  defaultRange,
 }: {
   name: string;
+  /** Where the logo is, or null for none. */
+  logo?: string | null;
+  /** A sentence or two under the headline. */
+  description?: string | null;
+  /** Where "Contact support" goes. */
+  supportUrl?: string | null;
+  /** Folds away the groups in which everything is up. */
+  foldGroups?: boolean;
+  /** The range the page opens on. */
+  defaultRange?: RangeKey;
   monitors: MonitorView[];
   components?: ComponentView[];
   /** What open incidents and maintenance say about each row, by name. */
@@ -150,6 +164,14 @@ export function SitePage({
   return (
     <main className="mx-auto w-full max-w-[46rem] px-5 py-12 sm:py-20">
       <AutoRefresh intervalMs={Math.min(intervalSeconds, 60) * 1000} />
+      {logo !== null && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={logo}
+          alt={`${name} logo`}
+          className="mb-8 max-h-10 w-auto max-w-[14rem]"
+        />
+      )}
       <StatusHeadline
         site={name}
         overall={pageOverall(
@@ -163,11 +185,29 @@ export function SitePage({
           (i) => i.kind === "incident" && i.impact !== "none",
         )}
       />
+      {description !== null && (
+        <p className="mt-4 max-w-[36rem] text-[15px] leading-relaxed">
+          {description}
+        </p>
+      )}
+      <p className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-[14px] text-muted">
+        <span>
+          Updated <LocalTime ts={now} style="clock" />
+        </span>
+        <a href="#updates" className="page-link">
+          Get updates
+        </a>
+        {supportUrl !== null && (
+          <a href={supportUrl} className="page-link">
+            Contact support
+          </a>
+        )}
+      </p>
       <CurrentIncidents incidents={incidents.current} now={now} />
 
       {monitors.length > 0 && (
         <div className="mt-12 flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3 pb-5 sm:mt-16">
-          <RangeSwitch current={range} />
+          <RangeSwitch current={range} fallback={defaultRange} />
           <Legend slow={monitors.some((cp) => cp.slowThresholdMs !== null)} />
         </div>
       )}
@@ -176,21 +216,42 @@ export function SitePage({
         {grouped
           ? groups.map((group) => {
               const statuses = group.rows.map(rowStatus);
-              return (
+              const heading = (
+                <>
+                  <h2 className="page-group text-[15px] font-medium uppercase tracking-wide">
+                    {group.name ?? "Other"}
+                  </h2>
+                  <span
+                    className={`text-[14px] ${GROUP_TONE[overallStatus(statuses)]}`}
+                  >
+                    {groupLine(statuses)}
+                  </span>
+                </>
+              );
+              // A group with nothing to look at folds away, when asked to.
+              // A row an incident or a window says something about stays open.
+              const quiet =
+                foldGroups &&
+                statuses.every((s) => s === "up") &&
+                group.rows.every((r) => !stated.has(r.view.name));
+              return quiet ? (
+                <details
+                  key={group.name ?? "\0"}
+                  className="group/fold border-t border-rule-strong pt-6"
+                >
+                  <summary className="flex cursor-pointer list-none flex-wrap items-baseline justify-between gap-x-6 gap-y-1 pb-6 [&::-webkit-details-marker]:hidden">
+                    {heading}
+                  </summary>
+                  {group.rows.map((r) => row(r, "h3"))}
+                </details>
+              ) : (
                 <section
                   key={group.name ?? "\0"}
                   aria-label={group.name ?? "Other monitors"}
                   className="border-t border-rule-strong pt-6"
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 pb-2">
-                    <h2 className="page-group text-[15px] font-medium uppercase tracking-wide">
-                      {group.name ?? "Other"}
-                    </h2>
-                    <span
-                      className={`text-[14px] ${GROUP_TONE[overallStatus(statuses)]}`}
-                    >
-                      {groupLine(statuses)}
-                    </span>
+                    {heading}
                   </div>
                   {group.rows.map((r) => row(r, "h3"))}
                 </section>
@@ -221,8 +282,23 @@ export function SitePage({
           {monitors.length > 0
             ? `Checks run ${formatInterval(intervalSeconds)}. `
             : ""}
-          Times are UTC. Updated {formatUtcClock(now)}, and this page refreshes
-          on its own.
+          Times are in your time zone, <ZoneName />
+          {monitors.length > 0
+            ? "; a day on the longer views is a UTC day"
+            : ""}
+          . This page refreshes on its own.
+        </p>
+        <p
+          id="updates"
+          className="mt-2 flex scroll-mt-6 flex-wrap gap-x-4 gap-y-1"
+        >
+          <span>Get updates:</span>
+          <a href="/feed.xml" className="page-link">
+            RSS
+          </a>
+          <a href="/feed.atom" className="page-link">
+            Atom
+          </a>
         </p>
         <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
           {FEEDS.map(([label, href]) => (

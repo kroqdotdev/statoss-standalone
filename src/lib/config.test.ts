@@ -466,3 +466,72 @@ sites:
     ]);
   });
 });
+
+describe("page settings", () => {
+  const site = (extra: string) => `
+sites:
+  - name: s
+    host: h
+${extra}
+    monitors:
+      - name: m
+        url: https://example.com
+`;
+
+  it("has defaults that change nothing", () => {
+    expect(parseConfig(site("")).sites[0]).toMatchObject({
+      theme: "auto",
+      timezone: "UTC",
+      noindex: false,
+      defaultRange: "24h",
+      foldGroups: false,
+    });
+  });
+
+  it("reads the look, the zone, the range and the password", () => {
+    const s = parseConfig(
+      site(`    description: What we run.
+    logo: logo.svg
+    favicon: https://example.com/favicon.png
+    accent: "#6D2A7A"
+    theme: dark
+    supportUrl: mailto:help@example.com
+    timezone: Europe/Copenhagen
+    noindex: true
+    defaultRange: 90d
+    foldGroups: true
+    password: hunter22
+    embedKey: embed-key-1`),
+    ).sites[0];
+    expect(s).toMatchObject({
+      accent: "#6D2A7A",
+      theme: "dark",
+      supportUrl: "mailto:help@example.com",
+      timezone: "Europe/Copenhagen",
+      defaultRange: "90d",
+      password: "hunter22",
+    });
+  });
+
+  it.each([
+    ["    accent: plum", "colour like"],
+    ["    timezone: Europe/Copenhagn", "is not a time zone"],
+    ["    supportUrl: javascript:alert(1)", "http(s) or mailto"],
+    ["    defaultRange: 30d", "defaultRange"],
+    ["    embedKey: short", "embedKey"],
+  ])("rejects %s", (extra, message) => {
+    expect(() => parseConfig(site(extra))).toThrow(message);
+  });
+
+  it("takes a site with components and no monitors", () => {
+    const config = parseConfig(`
+sites:
+  - name: s
+    host: h
+    components:
+      - name: Mobile app
+`);
+    expect(config.sites[0].monitors).toEqual([]);
+    expect(config.sites[0].components[0].state).toBe("operational");
+  });
+});

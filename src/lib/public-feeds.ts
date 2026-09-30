@@ -303,12 +303,14 @@ ${entries}
 
 /**
  * A script tag that draws a dot, a few words and a link where it is placed.
- * It reads status.json from the same origin it was loaded from.
+ * It reads status.json from the same origin it was loaded from, passing on
+ * a ?key= from its own address for password pages.
  */
 export function widgetJs(): string {
   return `(function(){
 var s=document.currentScript;if(!s||!s.parentNode)return;
 var src=new URL(s.src);var base=src.origin+src.pathname.replace(/widget\\.js$/,"");
+var key=src.searchParams.get("key");var q=key?"?key="+encodeURIComponent(key):"";
 var el=document.createElement("a");el.href=base;el.target="_blank";el.rel="noopener";
 el.style.cssText="display:inline-flex;align-items:center;gap:.5em;font:14px/1.2 system-ui,sans-serif;color:inherit;text-decoration:none;";
 var dot=document.createElement("span");dot.style.cssText="display:inline-block;width:.6em;height:.6em;border-radius:50%;background:#93a29a;";
@@ -316,7 +318,7 @@ var text=document.createElement("span");text.textContent=s.getAttribute("data-lo
 el.appendChild(dot);el.appendChild(text);s.parentNode.insertBefore(el,s);
 var words={operational:"All systems up",degraded:"Running slowly",partial:"Partly down",major:"Down",unknown:"Status unknown"};
 var colors={operational:"#187a4f",degraded:"#5b5fc7",partial:"#b8740f",major:"#d24a32",unknown:"#93a29a"};
-function load(){fetch(base+"status.json",{cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
+function load(){fetch(base+"status.json"+q,{cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
 var st=d.site.status;dot.style.background=colors[st]||colors.unknown;
 text.textContent=s.getAttribute("data-"+st)||words[st]||words.unknown;}).catch(function(){});}
 load();setInterval(load,60000);

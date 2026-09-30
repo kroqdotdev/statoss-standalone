@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { SitePage } from "@/components/SitePage";
-import { findSiteByHost, getConfig } from "@/lib/config";
+import { Unlock } from "@/components/Unlock";
+import { assetSrc } from "@/lib/assets";
 import { getDb } from "@/lib/db";
+import { pageSite } from "@/lib/page-site";
 import { RANGES, parseRange } from "@/lib/ranges";
 import { statedByName } from "@/lib/stated";
 import {
@@ -16,21 +16,26 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const site = findSiteByHost(getConfig(), (await headers()).get("host"));
-  return site ? { title: `${site.name} status` } : {};
-}
-
 export default async function StatusPage(props: PageProps<"/">) {
-  const [host, searchParams] = await Promise.all([
-    headers().then((h) => h.get("host")),
+  const [{ config, site, locked }, searchParams] = await Promise.all([
+    pageSite(),
     props.searchParams,
   ]);
-  const config = getConfig();
-  const site = findSiteByHost(config, host);
   if (!site) notFound();
+  if (locked)
+    return (
+      <Unlock
+        site={site.name}
+        logo={assetSrc(site.logo, "/logo")}
+        problem={
+          typeof searchParams.unlock === "string"
+            ? searchParams.unlock
+            : undefined
+        }
+      />
+    );
 
-  const range = parseRange(searchParams.range);
+  const range = parseRange(searchParams.range, site.defaultRange);
   const db = getDb();
   // Request-scoped Server Component: `headers()` above is already the
   // per-request suspension point, so this timestamp is stable for the
@@ -43,6 +48,11 @@ export default async function StatusPage(props: PageProps<"/">) {
   return (
     <SitePage
       name={site.name}
+      logo={assetSrc(site.logo, "/logo")}
+      description={site.description ?? null}
+      supportUrl={site.supportUrl ?? null}
+      foldGroups={site.foldGroups}
+      defaultRange={site.defaultRange}
       monitors={site.monitors.map((cp) =>
         monitorView(
           db,

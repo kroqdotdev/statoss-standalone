@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { CheckStrip } from "./CheckStrip";
 import { FailureList } from "./FailureList";
+import { LocalTime } from "./LocalTime";
 import type { MonitorType } from "@/lib/config";
 import {
   formatDuration,
   formatPercent,
   formatUtcDate,
-  formatUtcDateTime,
   rowId,
 } from "@/lib/format";
 import type { Bucket, FailureRun, WindowSummary } from "@/lib/queries";
@@ -48,7 +48,7 @@ function statusLine(cp: MonitorView, now: number): string {
   const duration = formatDuration(now - cp.since);
   if (cp.status === "up") return `Up for ${duration}`;
   if (cp.status === "slow") return `Slow for ${duration}`;
-  return `Down for ${duration}, since ${formatUtcDateTime(cp.since, now)}`;
+  return `Down for ${duration}`;
 }
 
 const STATED_TONE = {
@@ -114,7 +114,15 @@ export function MonitorSection({
                   Incident open
                 </Link>
               )}
-              <span className={tone}>{statusLine(monitor, now)}</span>
+              <span className={tone}>
+                {statusLine(monitor, now)}
+                {monitor.status === "down" && monitor.since !== null && (
+                  <>
+                    , since{" "}
+                    <LocalTime ts={monitor.since} style="dateTime" now={now} />
+                  </>
+                )}
+              </span>
             </>
           )}
           {monitor.expiresAt !== null && (

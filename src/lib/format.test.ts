@@ -4,7 +4,12 @@ import {
   formatDuration,
   formatPercent,
   formatSpan,
+  formatUtcClock,
   formatUtcDateTime,
+  formatUtcDay,
+  formatUtcStamp,
+  formatUtcWeekdayClock,
+  isTimeZone,
   pluralize,
 } from "./format";
 
@@ -37,7 +42,7 @@ describe("formatUtcDateTime", () => {
       "Yesterday 03:10",
     );
     expect(formatUtcDateTime(Date.UTC(2023, 11, 24, 8, 5), NOW)).toBe(
-      "24 Dec 08:05",
+      "24 Dec 2023 08:05",
     );
   });
 });
@@ -86,5 +91,36 @@ describe("describeError for the other check types", () => {
     ["ECONNREFUSED", "Connection refused"],
   ])("%s reads %s", (error, label) => {
     expect(describeError(error)).toBe(label);
+  });
+});
+
+describe("times in a zone", () => {
+  // 30 September 2026, 22:30 UTC: already 1 October in Copenhagen.
+  const ts = Date.UTC(2026, 8, 30, 22, 30);
+
+  it("writes UTC unless a zone is given", () => {
+    expect(formatUtcStamp(ts)).toBe("2026-09-30 22:30 UTC");
+    expect(formatUtcStamp(ts, "Europe/Copenhagen")).toBe(
+      "2026-10-01 00:30 CEST",
+    );
+    expect(formatUtcClock(ts, "Asia/Kolkata")).toBe("04:00");
+    expect(formatUtcDay(ts, "America/Los_Angeles")).toBe("30 Sep");
+    expect(formatUtcWeekdayClock(ts, "Europe/Copenhagen")).toBe("Thu 00:30");
+  });
+
+  it("says today and yesterday by the zone's calendar", () => {
+    const now = Date.UTC(2026, 8, 30, 23, 0);
+    expect(formatUtcDateTime(ts, now)).toBe("Today 22:30");
+    expect(
+      formatUtcDateTime(Date.UTC(2026, 8, 30, 21), now, "Europe/Copenhagen"),
+    ).toBe("Yesterday 23:00");
+    expect(formatUtcDateTime(Date.UTC(2025, 5, 2, 13), now)).toBe(
+      "2 Jun 2025 13:00",
+    );
+  });
+
+  it("knows a time zone from a typo", () => {
+    expect(isTimeZone("Europe/Copenhagen")).toBe(true);
+    expect(isTimeZone("Europe/Copenhagn")).toBe(false);
   });
 });
