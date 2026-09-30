@@ -21,6 +21,9 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 - **Incidents and maintenance.** Write incidents as Markdown or YAML files in a folder; the page picks them up without a restart. Every incident and window has a page of its own, and older ones are listed by month under Incident history. Plan maintenance windows in the configuration: checks during a window are shown but not counted, and no alert goes out. A monitor that goes down opens an incident by itself and resolves it on recovery.
 - **Alerts where you are.** Email, Slack, Discord, PagerDuty, Opsgenie, ntfy and a signed webhook, per site or for all of them, with an optional repeat while a monitor stays down. Incident updates and maintenance notices go the same way.
 - **Endpoints for machines.** `status.json`, `badge.svg` and `badge.json` for shields.io, `feed.xml` and `feed.atom`, and `widget.js` to embed a live status dot anywhere.
+- **Your look.** A logo, a favicon, an accent colour, a fixed light or dark theme, a description and a support link, per site.
+- **Times where the visitor is.** Every time on the page is written in the visitor's own time zone.
+- **Password pages.** A site can ask for a password, which locks its endpoints too, with a key for embeds.
 - **One YAML file.** No admin interface, no accounts, no external services.
 - **One process.** A Next.js server with an embedded checker and a SQLite file. Deploy it with Docker Compose behind any reverse proxy.
 
@@ -37,7 +40,7 @@ The checker runs inside the server process:
 5. Checks made inside a maintenance window are stored with a flag. The page shows them in grey and leaves them out of every total, and they change no state and send no alert.
 6. Every check is kept for `retentionDays` (90 unless you change it). Each check is also added to its hour's totals, which are kept for 400 days and are what the 7-day, 90-day and 1-year views and the error budget read. Older rows are deleted once a day.
 
-The server reads the `Host` header of each request and shows the site with the matching hostname. Any other hostname gets a 404. All times on the page are UTC.
+The server reads the `Host` header of each request and shows the site with the matching hostname. Any other hostname gets a 404.
 
 ## Requirements
 
@@ -165,6 +168,17 @@ Open `https://status.example.com` to see the page.
 | `sites[].name`                       | yes      |                  | Shown in the headline, for example `example.com is up.`                                                      |
 | `sites[].host`                       | yes      |                  | Hostname that serves this site's page. Must be unique.                                                       |
 | `sites[].url`                        | no       | `https://<host>` | Where alerts and feeds link to.                                                                              |
+| `sites[].description`                | no       |                  | A sentence or two under the headline.                                                                        |
+| `sites[].logo`, `favicon`            | no       |                  | An image file next to the configuration, or an http(s) address. See The look of a page.                      |
+| `sites[].accent`                     | no       |                  | The colour of links, focus rings and buttons, as `"#rrggbb"`.                                                |
+| `sites[].theme`                      | no       | `auto`           | `light` or `dark` to fix it; `auto` follows the visitor's system.                                            |
+| `sites[].supportUrl`                 | no       |                  | Where "Contact support" goes: an http(s) or `mailto:` address.                                               |
+| `sites[].timezone`                   | no       | `UTC`            | The zone times are written in until the browser says its own, and the one the history follows.               |
+| `sites[].noindex`                    | no       | `false`          | `true` asks search engines to leave the page out.                                                            |
+| `sites[].defaultRange`               | no       | `24h`            | The view the page opens on: `24h`, `7d`, `90d` or `1y`.                                                      |
+| `sites[].foldGroups`                 | no       | `false`          | `true` folds away the groups in which everything is up.                                                      |
+| `sites[].password`                   | no       |                  | With a password, the page and its endpoints are locked. See Password pages.                                  |
+| `sites[].embedKey`                   | no       |                  | Lets embeds past the password with `?key=`. At least 8 letters, digits, dashes or underscores.               |
 | `sites[].uptimeTarget`               | no       |                  | Percent of checks that should pass each month, for example `99.9`. Shows the error budget.                   |
 | `sites[].alerts`                     | no       |                  | `false` to send no alerts for this site, or an object with `to`, `repeatMinutes` and `updates` for it alone. |
 | `sites[].monitors[].name`            | yes      |                  | Shown above the strip. Must be unique within the site.                                                       |
@@ -341,6 +355,43 @@ Its state is the one in the configuration (`operational` unless you say otherwis
 ### When checks stop
 
 A state is only as good as the last check behind it. If a monitor has had no check for three of its intervals, and five minutes at the least, the page says "Last checked 12 min ago" in grey instead of "Up", the monitor counts as unknown in the headline and the badge, and `status.json` marks it `stale`. This is what you see for a moment after the server has been off for a while.
+
+### The look of a page
+
+```yaml
+sites:
+  - name: Northwind
+    host: status.northwind.example
+    description: Everything Northwind runs for its customers.
+    logo: logo.svg
+    favicon: favicon.png
+    accent: "#6d2a7a"
+    theme: auto
+    supportUrl: mailto:help@northwind.example
+    timezone: Europe/Copenhagen
+```
+
+`logo` and `favicon` are a file in the folder the configuration is in (`data/` with Docker Compose), as PNG, JPEG, GIF, WebP or SVG up to 1 MB, or an address that starts with `http`. A file is served by the app at `/logo` and `/favicon`. The logo sits above the headline, 40 pixels high.
+
+The accent colours the links, the focus ring, the selection, the line under the current view and the button on the password form. Links take a shade of it that reads on the background in each theme, so a yellow accent is darkened on paper and a navy one lightened on charcoal. The colours of the strips (green, amber, red, indigo) mean check results and do not change.
+
+Under the headline the page says when it was updated and offers Get updates, which leads to the RSS and Atom feeds, and Contact support when there is a `supportUrl`.
+
+**Times.** Every time on the page is written in the visitor's own time zone, and the foot of the page names it. Until the browser has said which zone that is, which is a moment, times are in the site's `timezone`. The bars of the 90-day and 1-year views are UTC days whoever looks at them. Alerts, feeds and `status.json` stay in UTC.
+
+### Password pages
+
+```yaml
+sites:
+  - name: Internal tools
+    host: status.internal.example
+    password: ${STATUS_PASSWORD}
+    embedKey: ${STATUS_EMBED_KEY}
+```
+
+A site with a `password` shows a form instead of the page. The right password opens the page, its incident pages and the history on that browser for 30 days. The cookie does not hold the password, and changing the password locks every browser out again. Ten wrong passwords in a minute pause the form for that site.
+
+`status.json`, the badges, the feeds and the widget are locked too and answer 401. An embed has no cookie, so give it the `embedKey`: `/badge.svg?key=...`, `/status.json?key=...`, `<script src="https://status.internal.example/widget.js?key=..."></script>`. Anyone who can read the page that embeds it can read the key, so it is a lesser secret than the password. A password page is never offered to search engines. Heartbeat pings need no password; their token is the secret.
 
 ### Endpoints
 

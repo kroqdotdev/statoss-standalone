@@ -45,6 +45,26 @@ sites:
     host: status.example.com # the hostname that serves this status page
     # Optional. Where alerts link to. Default: https://<host>
     # url: https://status.example.com
+    # Optional. The look of the page.
+    # description: Everything example.com runs for its customers.
+    # logo: logo.svg # a file next to this one, or an https address
+    # favicon: favicon.png
+    # accent: "#6d2a7a" # links, focus rings and buttons
+    # theme: auto # auto follows the visitor's system; light or dark fixes it
+    # supportUrl: mailto:help@example.com
+    # Optional. Times are in the visitor's own zone; this is the zone used
+    # until the browser has said which that is. Default: UTC.
+    # timezone: Europe/Copenhagen
+    # Optional. true asks search engines to leave the page out.
+    # noindex: false
+    # Optional. The view the page opens on: 24h, 7d, 90d or 1y.
+    # defaultRange: 24h
+    # Optional. true folds away the groups in which everything is up.
+    # foldGroups: false
+    # Optional. With a password the page and its endpoints are locked.
+    # embedKey lets a badge or the widget in with ?key=<embedKey>.
+    # password: ${STATUS_PASSWORD}
+    # embedKey: ${STATUS_EMBED_KEY}
     # Optional. Percent of checks that should pass each month. The page then
     # says how much of the month's downtime budget is spent.
     # uptimeTarget: 99.9

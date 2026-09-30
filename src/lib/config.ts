@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
+import { isTimeZone } from "./format";
 
 /** The request methods a monitor can use. */
 export const METHODS = [
@@ -423,6 +424,55 @@ const siteObjectSchema = z
     host: z.string().min(1),
     /** Where the page lives, for links in alerts. Default: https://<host>. */
     url: z.url().optional(),
+    /** A sentence or two under the headline. */
+    description: z.string().min(1).max(400).optional(),
+    /**
+     * An image above the headline: a file next to the configuration (PNG,
+     * JPEG, GIF, WebP or SVG), or an http(s) address.
+     */
+    logo: z.string().min(1).optional(),
+    /** The browser tab's icon, given the same way. */
+    favicon: z.string().min(1).optional(),
+    /** The colour of links, focus rings and buttons, as #rrggbb. */
+    accent: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/, "must be a colour like #7a3cff")
+      .optional(),
+    /** auto follows the visitor's system. */
+    theme: z.enum(["auto", "light", "dark"]).default("auto"),
+    /** Where "Contact support" goes: an https address or a mailto. */
+    supportUrl: z
+      .string()
+      .regex(
+        /^(https?:\/\/|mailto:)\S+$/,
+        "must be an http(s) or mailto address",
+      )
+      .optional(),
+    /**
+     * The zone times are written in until the visitor's browser says its
+     * own, and the one the history's months follow.
+     */
+    timezone: z
+      .string()
+      .refine(isTimeZone, {
+        message: "is not a time zone, like Europe/Copenhagen",
+      })
+      .default("UTC"),
+    /** true asks search engines to leave the page out. */
+    noindex: z.boolean().default(false),
+    /** The view the page opens on. */
+    defaultRange: z.enum(["24h", "7d", "90d", "1y"]).default("24h"),
+    /** true folds away the groups in which everything is up. */
+    foldGroups: z.boolean().default(false),
+    /** With a password, the page and its endpoints are locked. */
+    password: z.string().min(1).optional(),
+    /** Lets embeds past the password: ?key=<embedKey> on the endpoints. */
+    embedKey: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{8,}$/, {
+        message: "must be at least 8 letters, digits, dashes or underscores",
+      })
+      .optional(),
     /** Uptime to hold each month, in percent. Shows the error budget. */
     uptimeTarget: z.number().min(50).lt(100).optional(),
     monitors: z.array(monitorSchema).default([]),

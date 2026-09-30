@@ -1,10 +1,6 @@
 import Link from "next/link";
-import {
-  formatDuration,
-  formatUtcDateTime,
-  formatUtcStamp,
-  rowId,
-} from "@/lib/format";
+import { LocalTime } from "./LocalTime";
+import { formatDuration, rowId } from "@/lib/format";
 import {
   foldAutomatic,
   maintenancePhase,
@@ -56,20 +52,37 @@ export function Scope({
 }
 
 /** One line about when: started, planned window, or resolved. */
-export function when(view: IncidentView, now: number): string {
+export function When({ view, now }: { view: IncidentView; now: number }) {
+  const at = (ts: number) => <LocalTime ts={ts} style="dateTime" now={now} />;
   if (view.kind === "maintenance" && view.endsAt !== null) {
     const phase = maintenancePhase(view, now);
     if (phase === "scheduled")
-      return `Planned ${formatUtcDateTime(view.startedAt, now)} to ${formatUtcDateTime(view.endsAt, now)} UTC.`;
+      return (
+        <>
+          Planned {at(view.startedAt)} to {at(view.endsAt)}.
+        </>
+      );
     if (phase === "in-progress")
-      return `In progress until ${formatUtcDateTime(view.endsAt, now)} UTC.`;
-    return `${formatUtcDateTime(view.startedAt, now)}, lasted ${formatDuration(
-      (view.resolvedAt ?? view.endsAt) - view.startedAt,
-    )}.`;
+      return <>In progress until {at(view.endsAt)}.</>;
+    return (
+      <>
+        {at(view.startedAt)}, lasted{" "}
+        {formatDuration((view.resolvedAt ?? view.endsAt) - view.startedAt)}.
+      </>
+    );
   }
   if (view.resolvedAt !== null)
-    return `${formatUtcDateTime(view.startedAt, now)}, resolved after ${formatDuration(view.resolvedAt - view.startedAt)}.`;
-  return `Since ${formatUtcDateTime(view.startedAt, now)}, ${formatDuration(now - view.startedAt)} so far.`;
+    return (
+      <>
+        {at(view.startedAt)}, resolved after{" "}
+        {formatDuration(view.resolvedAt - view.startedAt)}.
+      </>
+    );
+  return (
+    <>
+      Since {at(view.startedAt)}, {formatDuration(now - view.startedAt)} so far.
+    </>
+  );
 }
 
 /** The word on the right of a card: a window's stage, or an incident's status. */
@@ -92,11 +105,8 @@ export function Updates({ view, now }: { view: IncidentView; now: number }) {
           key={`${u.createdAt}-${u.status}-${u.body.slice(0, 24)}`}
           className="grid gap-x-3 sm:grid-cols-[7.5rem_1fr]"
         >
-          <span
-            className="text-[13px] text-muted"
-            title={formatUtcStamp(u.createdAt)}
-          >
-            {formatUtcDateTime(u.createdAt, now)}
+          <span className="text-[13px] text-muted">
+            <LocalTime ts={u.createdAt} style="dateTime" now={now} />
           </span>
           <span>
             {view.kind === "incident" && (
@@ -189,7 +199,7 @@ export function CurrentIncidents({
               </span>
             </div>
             <p className="mt-1.5 text-[13.5px] text-muted">
-              {when(view, now)}
+              <When view={view} now={now} />
               <Scope view={view} linked />
             </p>
             <Updates view={view} now={now} />
@@ -218,7 +228,7 @@ export function IncidentRow({
         </Link>
       </h3>
       <p className="mt-1 text-[13.5px] text-muted">
-        {when(view, now)}
+        <When view={view} now={now} />
         <Scope view={view} />
         {view.postmortem ? " Post-mortem inside." : ""}
       </p>

@@ -1,9 +1,5 @@
-import {
-  describeError,
-  formatSpan,
-  formatUtcDateTime,
-  pluralize,
-} from "@/lib/format";
+import { LocalTime } from "./LocalTime";
+import { describeError, formatSpan, pluralize } from "@/lib/format";
 import type { FailureRun } from "@/lib/queries";
 
 const SHOW = 6;
@@ -48,7 +44,7 @@ export function FailureList({
             />
             <span className="text-ink">{runLabel(run)}</span>
             <span className="col-start-2 text-muted sm:col-start-auto">
-              {formatUtcDateTime(run.startTs, now)}
+              <LocalTime ts={run.startTs} style="dateTime" now={now} />
             </span>
             <span className="col-start-3 row-start-auto text-right text-muted sm:col-start-auto">
               {runExtent(run, now)}

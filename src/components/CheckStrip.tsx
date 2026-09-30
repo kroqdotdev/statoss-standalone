@@ -11,6 +11,7 @@ import {
 } from "@/lib/format";
 import type { Bucket, WindowSummary } from "@/lib/queries";
 import { RANGES, type RangeKey } from "@/lib/ranges";
+import { useViewerZone } from "@/lib/viewer-zone";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -35,13 +36,17 @@ interface Props {
   timed?: boolean;
 }
 
-function bucketLabel(ts: number, range: RangeKey): string {
+/**
+ * When a bucket is, in the visitor's zone. A day's bucket is a UTC day
+ * whoever looks at it, so it is named by its UTC date.
+ */
+function bucketLabel(ts: number, range: RangeKey, zone: string): string {
   const { bucketMs } = RANGES[range];
   if (bucketMs === DAY_MS) return formatUtcDay(ts);
-  const end = formatUtcClock(ts + bucketMs);
+  const end = formatUtcClock(ts + bucketMs, zone);
   return range === "7d"
-    ? `${formatUtcWeekdayClock(ts)} to ${end}`
-    : `${formatUtcClock(ts)} to ${end}`;
+    ? `${formatUtcWeekdayClock(ts, zone)} to ${end}`
+    : `${formatUtcClock(ts, zone)} to ${end}`;
 }
 
 function describeCounts(s: {
@@ -63,8 +68,8 @@ function describeCounts(s: {
   return parts.join(", ");
 }
 
-function describeBucket(b: Bucket, range: RangeKey): string {
-  const when = bucketLabel(b.ts, range);
+function describeBucket(b: Bucket, range: RangeKey, zone: string): string {
+  const when = bucketLabel(b.ts, range, zone);
   if (b.total === 0 && b.maintenance === 0) return `${when}: no checks`;
   if (b.total === 0)
     return `${when}: ${pluralize(b.maintenance, "check")} during maintenance, not counted`;
@@ -79,19 +84,29 @@ function describeWindow(s: WindowSummary): string {
   return describeCounts(s);
 }
 
-/** Which buckets get an axis label, and what it says. */
+/**
+ * Which buckets get an axis label, and what it says: every six hours on
+ * the clock and every midnight, as the visitor's zone has them, and the
+ * first of each UTC month on the day views.
+ */
 function axisTicks(
   buckets: Bucket[],
   range: RangeKey,
+  zone: string,
 ): Array<{ index: number; label: string }> {
   const ticks: Array<{ index: number; label: string }> = [];
   buckets.forEach((b, index) => {
-    const d = new Date(b.ts);
-    if (range === "24h" && b.ts % (6 * HOUR_MS) === 0) {
-      ticks.push({ index, label: formatUtcClock(b.ts) });
-    } else if (range === "7d" && b.ts % DAY_MS === 0) {
-      ticks.push({ index, label: formatUtcWeekdayClock(b.ts).slice(0, 3) });
-    } else if ((range === "90d" || range === "1y") && d.getUTCDate() === 1) {
+    if (range === "24h") {
+      const clock = formatUtcClock(b.ts, zone);
+      if (/^(00|06|12|18):00$/.test(clock)) ticks.push({ index, label: clock });
+    } else if (range === "7d") {
+      const day = formatUtcWeekdayClock(b.ts, zone).slice(0, 3);
+      if (
+        index > 0 &&
+        day !== formatUtcWeekdayClock(buckets[index - 1].ts, zone).slice(0, 3)
+      )
+        ticks.push({ index, label: day });
+    } else if (new Date(b.ts).getUTCDate() === 1) {
       ticks.push({ index, label: formatUtcDay(b.ts).slice(2) });
     }
   });
@@ -109,9 +124,10 @@ export function CheckStrip({
 }: Props) {
   const [active, setActive] = useState<number | null>(null);
   const readoutId = useId();
+  const zone = useViewerZone();
   const n = buckets.length;
   const scaleMax = Math.max(...buckets.map((b) => b.latencyMs ?? 0), 1);
-  const ticks = axisTicks(buckets, range);
+  const ticks = axisTicks(buckets, range, zone);
   // The slow line, as a share of the strip's height from the top.
   const thresholdTop =
     slowThresholdMs !== null && slowThresholdMs < scaleMax
@@ -141,7 +157,7 @@ export function CheckStrip({
   const readout =
     activeBucket === null
       ? describeWindow(summary)
-      : describeBucket(activeBucket, range);
+      : describeBucket(activeBucket, range, zone);
 
   return (
     <div>
@@ -149,6 +165,7 @@ export function CheckStrip({
         <p
           id={readoutId}
           aria-live="polite"
+          suppressHydrationWarning
           className={activeBucket === null ? "text-muted" : "text-ink"}
         >
           {readout}
@@ -262,6 +279,7 @@ export function CheckStrip({
           {ticks.map((t) => (
             <span
               key={t.index}
+              suppressHydrationWarning
               className="absolute top-0 border-l border-rule-strong pt-1.5 pl-1"
               style={{ left: `${(t.index / n) * 100}%` }}
             >

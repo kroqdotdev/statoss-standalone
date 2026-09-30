@@ -22,44 +22,131 @@ function pad(n: number): string {
   return n.toString().padStart(2, "0");
 }
 
-/** "14:32" in UTC. */
-export function formatUtcClock(ts: number): string {
-  const d = new Date(ts);
-  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+interface Parts {
+  year: number;
+  month: number;
+  day: number;
+  weekday: number;
+  hour: number;
+  minute: number;
+}
+
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+/** The calendar fields of a moment in a time zone. UTC needs no lookup. */
+function parts(ts: number, zone: string): Parts {
+  if (zone === "UTC") {
+    const d = new Date(ts);
+    return {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth(),
+      day: d.getUTCDate(),
+      weekday: d.getUTCDay(),
+      hour: d.getUTCHours(),
+      minute: d.getUTCMinutes(),
+    };
+  }
+  let formatter = formatters.get(zone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      weekday: "short",
+      hour: "numeric",
+      minute: "numeric",
+    });
+    formatters.set(zone, formatter);
+  }
+  const get: Record<string, string> = {};
+  for (const part of formatter.formatToParts(new Date(ts)))
+    get[part.type] = part.value;
+  return {
+    year: Number(get.year),
+    month: Number(get.month) - 1,
+    day: Number(get.day),
+    weekday: WEEKDAYS.indexOf(get.weekday),
+    hour: Number(get.hour),
+    minute: Number(get.minute),
+  };
+}
+
+/** Whether a name is a time zone this runtime knows. */
+export function isTimeZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The short name of a zone at a moment: "UTC", "CEST", "GMT+2". */
+export function zoneAbbreviation(ts: number, zone: string): string {
+  if (zone === "UTC") return "UTC";
+  const part = new Intl.DateTimeFormat("en-GB", {
+    timeZone: zone,
+    timeZoneName: "short",
+  })
+    .formatToParts(new Date(ts))
+    .find((p) => p.type === "timeZoneName");
+  return part?.value ?? zone;
+}
+
+/*
+  The formatters below are named for UTC, which is what they write unless
+  a zone is given. On the page the zone is the visitor's own.
+*/
+
+/** "14:32". */
+export function formatUtcClock(ts: number, zone = "UTC"): string {
+  const p = parts(ts, zone);
+  return `${pad(p.hour)}:${pad(p.minute)}`;
 }
 
 /** "2023-11-14 22:13 UTC". */
-export function formatUtcStamp(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${formatUtcClock(ts)} UTC`;
+export function formatUtcStamp(ts: number, zone = "UTC"): string {
+  const p = parts(ts, zone);
+  return `${p.year}-${pad(p.month + 1)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)} ${zoneAbbreviation(ts, zone)}`;
 }
 
-/** "12 Aug 2026" in UTC. */
-export function formatUtcDate(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+/** "12 Aug 2026". */
+export function formatUtcDate(ts: number, zone = "UTC"): string {
+  const p = parts(ts, zone);
+  return `${p.day} ${MONTHS[p.month]} ${p.year}`;
 }
 
-/** "12 Aug" in UTC. */
-export function formatUtcDay(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+/** "12 Aug". */
+export function formatUtcDay(ts: number, zone = "UTC"): string {
+  const p = parts(ts, zone);
+  return `${p.day} ${MONTHS[p.month]}`;
 }
 
-/** "Tue 14:00" in UTC. */
-export function formatUtcWeekdayClock(ts: number): string {
-  const d = new Date(ts);
-  return `${WEEKDAYS[d.getUTCDay()]} ${formatUtcClock(ts)}`;
+/** "Tue 14:00". */
+export function formatUtcWeekdayClock(ts: number, zone = "UTC"): string {
+  const p = parts(ts, zone);
+  return `${WEEKDAYS[p.weekday]} ${pad(p.hour)}:${pad(p.minute)}`;
 }
 
-/** "Today 14:32", "Yesterday 03:10" or "12 Aug 14:32", relative to `now`, in UTC. */
-export function formatUtcDateTime(ts: number, now: number): string {
-  const day = Math.floor(ts / DAY_MS);
-  const today = Math.floor(now / DAY_MS);
-  const clock = formatUtcClock(ts);
-  if (day === today) return `Today ${clock}`;
-  if (day === today - 1) return `Yesterday ${clock}`;
-  return `${formatUtcDay(ts)} ${clock}`;
+/** "Today 14:32", "Yesterday 03:10" or "12 Aug 14:32", relative to `now`. */
+export function formatUtcDateTime(
+  ts: number,
+  now: number,
+  zone = "UTC",
+): string {
+  const p = parts(ts, zone);
+  const n = parts(now, zone);
+  const clock = `${pad(p.hour)}:${pad(p.minute)}`;
+  // Days apart on the calendar, whatever the hours in each.
+  const daysApart = Math.round(
+    (Date.UTC(n.year, n.month, n.day) - Date.UTC(p.year, p.month, p.day)) /
+      DAY_MS,
+  );
+  if (daysApart === 0) return `Today ${clock}`;
+  if (daysApart === 1) return `Yesterday ${clock}`;
+  return `${p.day} ${MONTHS[p.month]}${p.year === n.year ? "" : ` ${p.year}`} ${clock}`;
 }
 
 /** "1 min", "2 h 10 min", "3 d 4 h". Under a minute rounds up to "1 min". */

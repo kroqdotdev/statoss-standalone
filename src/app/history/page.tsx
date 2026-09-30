@@ -1,30 +1,26 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { IncidentRow } from "@/components/IncidentList";
 import { SubPage } from "@/components/SubPage";
-import { findSiteByHost, getConfig } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { historyMonths, historyPage } from "@/lib/incident-history";
 import { maintenanceOver } from "@/lib/incidents";
+import { pageSite } from "@/lib/page-site";
 import { siteIncidentViews } from "@/lib/status-data";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const site = findSiteByHost(getConfig(), (await headers()).get("host"));
-  return site ? { title: `Incident history - ${site.name} status` } : {};
-}
+export const metadata: Metadata = { title: "Incident history" };
 
 export default async function HistoryPage(props: PageProps<"/history">) {
-  const [host, searchParams] = await Promise.all([
-    headers().then((h) => h.get("host")),
+  const [{ config, site, locked }, searchParams] = await Promise.all([
+    pageSite(),
     props.searchParams,
   ]);
-  const config = getConfig();
-  const site = findSiteByHost(config, host);
   if (!site) notFound();
+  // A locked page's history is locked with it; the form is on the page.
+  if (locked) redirect("/");
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
   // What is over: resolved incidents and finished windows. What is open
@@ -33,7 +29,7 @@ export default async function HistoryPage(props: PageProps<"/history">) {
     v.kind === "incident" ? v.resolvedAt !== null : maintenanceOver(v, now),
   );
   const { months, page, later, earlier } = historyPage(
-    historyMonths(views, now, "UTC"),
+    historyMonths(views, now, site.timezone),
     Number(searchParams.page),
   );
   return (

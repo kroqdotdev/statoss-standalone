@@ -9,6 +9,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Six more kinds of monitor, chosen with `type`: `tcp`, `dns`, `ping`, `certificate`, `domain` and `heartbeat`. Certificate and domain monitors fail inside a warning window before expiry and show the date on the page and in `status.json`; a heartbeat gives a scheduled job a URL to ping at `/heartbeat/<token>` and goes down after two intervals without one.
 - `intervalSeconds` on a monitor, for one that should be checked less often than the rest.
 - The image carries `ping`.
+- The look of a page, per site: `logo`, `favicon`, `accent`, `theme` (light, dark or the visitor's system), `description` and `supportUrl`. Under the headline the page says when it was updated and offers Get updates and Contact support.
+- Times follow the visitor: every time on the page is written in the browser's own time zone, and the foot of the page names it. `timezone` is the zone used until the browser has loaded.
+- Password pages: `password` on a site locks the page, its incident pages, the history and every endpoint. `embedKey` lets a badge, `status.json`, a feed or the widget in with `?key=`.
+- `defaultRange` opens the page on 7 days, 90 days or a year, `foldGroups` folds the groups in which everything is up, and `noindex` keeps a page out of search engines.
 - Components: parts of the product with no check, listed under `components` with a state set in the configuration or by an open incident that names them.
 - A page for every incident and maintenance window at `/incidents/<id>`, and `/history`, which lists them by month.
 - An incident gives each monitor or component it names a state while it is open (`state: degraded`, `partial`, `major` or `none`), shown on the row when it is worse than the checks. Rows under a maintenance window in progress say "Under maintenance".
