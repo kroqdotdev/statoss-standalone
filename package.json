@@ -1,6 +1,6 @@
 {
   "name": "statoss-standalone",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Self-hosted status page in one container: uptime checks, SQLite storage, a public page for each site, and email alerts.",
   "license": "MIT",
   "private": true,
