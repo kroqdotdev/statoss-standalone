@@ -34,8 +34,9 @@ test.describe("the status page", () => {
       "Partial outage",
     );
     await expect(page.locator("#row-card-payments")).toContainText("Degraded");
+    // Waiting, unless the desktop run's journey below has pinged it.
     await expect(page.locator("#row-nightly-backup")).toContainText(
-      "Waiting for the first ping",
+      /Waiting for the first ping|Up for/,
     );
     // The check that answers 503 goes down after two rounds.
     await expect(page.locator("#row-exports")).toContainText("Down for", {
@@ -239,6 +240,12 @@ test.describe("for programs", () => {
     expect((await request.get("/heartbeat/journey-heartbeat")).status()).toBe(
       200,
     );
+    // A ping is judged at once: the monitor is up without waiting its turn.
+    const status = await (await request.get("/status.json")).json();
+    expect(
+      status.monitors.find((m: { name: string }) => m.name === "Nightly backup")
+        .status,
+    ).toBe("up");
     expect((await request.get("/heartbeat/some-other-token")).status()).toBe(
       404,
     );
