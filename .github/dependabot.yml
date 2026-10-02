@@ -7,6 +7,20 @@ updates:
     groups:
       all:
         patterns: ["*"]
+    ignore:
+      # typescript-eslint (through eslint-config-next) supports TypeScript
+      # below 6.1 only. Lift this once it supports 7.
+      - dependency-name: "typescript"
+        versions: [">=7"]
+      # eslint-plugin-react, eslint-plugin-import and eslint-plugin-jsx-a11y
+      # (through eslint-config-next) support ESLint 9 at most, and
+      # eslint-plugin-react crashes on 10. Lift this once they support 10.
+      - dependency-name: "eslint"
+        versions: [">=10"]
+      # The types follow the Node major the app runs on: 22, in CI and in the
+      # Dockerfile. Move this with the runtime.
+      - dependency-name: "@types/node"
+        versions: [">=23"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
