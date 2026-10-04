@@ -1,4 +1,4 @@
-import { expect, LOCKED, test } from "./journeys";
+import { expect, LOCKED, test, walkBack } from "./journeys";
 
 test.describe("the status page", () => {
   test("says what is wrong, in order, and shows every row", async ({
@@ -60,14 +60,8 @@ test.describe("the status page", () => {
     const strip = page.locator("#row-website").getByRole("img");
     await strip.focus();
     // The newest bar, then back to the outage five hours ago.
-    await page.keyboard.press("End");
     const bar = page.locator("#row-website").locator("p[aria-live]");
-    let outage = false;
-    for (let i = 0; i < 75 && !outage; i++) {
-      outage = (await bar.textContent())?.includes("failed check") ?? false;
-      if (!outage) await page.keyboard.press("ArrowLeft");
-    }
-    expect(outage).toBe(true);
+    expect(await walkBack(page, bar, "failed check", 75)).toBe(true);
     await page.keyboard.press("Enter");
     const panel = page.getByRole("region", { name: /^Checks for Website/ });
     await expect(panel).toContainText("HTTP 503");
@@ -79,15 +73,8 @@ test.describe("the status page", () => {
     // Three hours back, where the release went out.
     // Where the bar under it falls depends on the minute, so walk back to it.
     await strip.focus();
-    await page.keyboard.press("End");
     const readout = page.locator("#row-website").locator("p[aria-live]");
-    let deploy = false;
-    for (let i = 0; i < 45 && !deploy; i++) {
-      deploy =
-        (await readout.textContent())?.includes("Deploy: v1.4.0.") ?? false;
-      if (!deploy) await page.keyboard.press("ArrowLeft");
-    }
-    expect(deploy).toBe(true);
+    expect(await walkBack(page, readout, "Deploy: v1.4.0.", 45)).toBe(true);
   });
 
   test("has a year of history on the longer views", async ({ page, fits }) => {

@@ -15,6 +15,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Dates from another year say which year: the bars of the 90-day and 1-year views, and the checks behind one of them.
 - An outage is dated from its first failed check, not the second that confirmed it: the monitor's "Down for" and "since", the headline, `status.json`, the incident it opens and where that shows on the strips and in the history, and `downSince` in alerts and the webhook body. It is never dated from before a gap in the checks of more than three intervals (five minutes at least), such as while the server was off.
 - Instatus pages, which answer `/api/v2/summary.json` in their own shape, could not be read.
+- The image installs Debian's security updates when it is built, so a fix such as the October 2026 openssl and pcre2 updates does not wait for a new Node base image.
 
 ### Development
 

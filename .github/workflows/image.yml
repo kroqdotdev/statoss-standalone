@@ -96,3 +96,8 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # A new value every run, so the image's apt upgrade is never
+          # taken from the cache and each published build gets Debian's
+          # latest fixes.
+          build-args: |
+            PACKAGES_CHECKED=${{ github.run_id }}-${{ github.run_attempt }}

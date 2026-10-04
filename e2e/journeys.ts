@@ -1,4 +1,9 @@
-import { expect, test as base, type Page } from "@playwright/test";
+import {
+  expect,
+  test as base,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 
 /**
  * What every journey gets: a way to say "this is a screen", which measures
@@ -48,6 +53,30 @@ export async function overflow(page: Page): Promise<string[]> {
     }
     return out.slice(0, 12);
   });
+}
+
+/**
+ * From the newest bar of a focused strip, steps back one bar at a time
+ * until the readout contains `text`, at most `steps` times. Each step waits
+ * for the readout to change: read too soon after a key, it can still show
+ * the bar before, and a slow runner would skip one-bar marks such as a
+ * deploy.
+ */
+export async function walkBack(
+  page: Page,
+  readout: Locator,
+  text: string,
+  steps: number,
+): Promise<boolean> {
+  let shown = (await readout.textContent()) ?? "";
+  await page.keyboard.press("End");
+  for (let i = 0; i <= steps; i++) {
+    await expect(readout).not.toHaveText(shown);
+    shown = (await readout.textContent()) ?? "";
+    if (shown.includes(text)) return true;
+    if (i < steps) await page.keyboard.press("ArrowLeft");
+  }
+  return false;
 }
 
 export const test = base.extend<{

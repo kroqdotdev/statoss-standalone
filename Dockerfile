@@ -47,9 +47,14 @@ COPY --from=build --chown=node:node /app/public ./public
 # /data belongs to the node user (uid 1000), so a new named volume starts
 # out writable. A bind-mounted directory must be writable by uid 1000 too.
 RUN mkdir /data && chown node:node /data
-# For ping monitors. Setuid, so the node user can send an echo on hosts
-# that do not open ICMP sockets to every group.
-RUN apt-get update && apt-get install -y --no-install-recommends iputils-ping \
+# Debian's security fixes reach the Node image only when it is rebuilt, so
+# they are installed here. Then ping, for ping monitors: setuid, so the node
+# user can send an echo on hosts that do not open ICMP sockets to every group.
+# A build cache would keep an old upgrade; the image workflow passes a new
+# PACKAGES_CHECKED on every build, so this step runs each time.
+ARG PACKAGES_CHECKED=never
+RUN echo "packages checked: ${PACKAGES_CHECKED}" && apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends iputils-ping \
     && rm -rf /var/lib/apt/lists/* \
     && chmod u+s "$(command -v ping)"
 # npm, corepack and yarn come with the Node image and never run here; they
