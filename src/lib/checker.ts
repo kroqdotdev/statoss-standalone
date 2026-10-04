@@ -10,6 +10,7 @@ import {
 } from "./config";
 import {
   lookupAll,
+  lookupMs,
   raceConnect,
   racingConnector,
   since,
@@ -53,13 +54,15 @@ export interface CheckSpec {
 }
 
 /**
- * Where a check's time went, in ms. Each part is null where the check has
- * no such step (no lookup for an IP address, no TLS over plain HTTP) or
- * did not get that far. A check across redirects to other hosts adds up
- * the lookups and connections it made.
+ * Where a check's time went, in ms. A step is null where the check has no
+ * such step (no TLS over plain HTTP) or did not finish it. A check across
+ * redirects to other hosts adds up the lookups and connections it made.
  */
 export interface CheckTiming {
-  /** Looking the host up. */
+  /**
+   * Looking the host up, however it ended: 0 for an IP address, and the
+   * time it took when the name did not resolve or the check gave up on it.
+   */
   dnsMs: number | null;
   /** Opening the TCP connection, the race between addresses included. */
   connectMs: number | null;
@@ -207,22 +210,33 @@ async function httpCheck(spec: CheckSpec): Promise<CheckOutcome> {
   // Connections of its own, timed step by step and closed after. Shared
   // with other checks, a connection would carry one check's lookup and
   // handshake into another's reading, or leave a reading with none.
-  const phases: ConnectTiming = { dnsMs: null, connectMs: null, tlsMs: null };
+  const phases: ConnectTiming = {
+    dnsMs: null,
+    connectMs: null,
+    tlsMs: null,
+    lookingUp: null,
+  };
   const agent = undiciAgent({ connect: racingConnector(phases, timeoutMs) });
   const start = performance.now();
+  /** When the response headers came, in ms from the start. */
+  let headersMs: number | null = null;
   /**
    * The outcome with where its time went: the wait for the headers is
    * whatever the lookups, connections and handshakes did not take.
    */
-  const timed = (outcome: CheckOutcome, answered: boolean): CheckOutcome => {
+  const timed = (outcome: CheckOutcome): CheckOutcome => {
     if (agent === null) return outcome;
-    const before =
-      (phases.dnsMs ?? 0) + (phases.connectMs ?? 0) + (phases.tlsMs ?? 0);
+    const dnsMs = lookupMs(phases);
+    const { connectMs, tlsMs } = phases;
+    const before = (dnsMs ?? 0) + (connectMs ?? 0) + (tlsMs ?? 0);
     return {
       ...outcome,
       timing: {
-        ...phases,
-        firstByteMs: answered ? Math.max(0, outcome.latencyMs - before) : null,
+        dnsMs,
+        connectMs,
+        tlsMs,
+        firstByteMs:
+          headersMs === null ? null : Math.max(0, headersMs - before),
       },
     };
   };
@@ -240,28 +254,28 @@ async function httpCheck(spec: CheckSpec): Promise<CheckOutcome> {
       ...(agent ? { dispatcher: agent } : {}),
     } as RequestInit);
     const latencyMs = since(start);
+    headersMs = latencyMs;
     const statusOk =
       expectStatus !== undefined
         ? res.status === expectStatus
         : res.status >= 200 && res.status < 300;
     if (!statusOk) {
       void res.body?.cancel().catch(() => {});
-      return timed(
-        {
-          ok: false,
-          statusCode: res.status,
-          latencyMs,
-          error: `unexpected status ${res.status}`,
-        },
-        true,
-      );
+      return timed({
+        ok: false,
+        statusCode: res.status,
+        latencyMs,
+        error: `unexpected status ${res.status}`,
+      });
     }
     if (keyword === null) {
       void res.body?.cancel().catch(() => {});
-      return timed(
-        { ok: true, statusCode: res.status, latencyMs, error: null },
-        true,
-      );
+      return timed({
+        ok: true,
+        statusCode: res.status,
+        latencyMs,
+        error: null,
+      });
     }
     const found = (await readBody(res)).includes(keyword);
     const wantFound = (spec.keywordMode ?? "present") === "present";
@@ -274,7 +288,6 @@ async function httpCheck(spec: CheckSpec): Promise<CheckOutcome> {
             latencyMs,
             error: wantFound ? "keyword missing" : "keyword present",
           },
-      true,
     );
   } catch (err) {
     const latencyMs = since(start);
@@ -284,10 +297,7 @@ async function httpCheck(spec: CheckSpec): Promise<CheckOutcome> {
         err.name === "AbortError" ||
         causeCode(err) === "ETIMEDOUT");
     const message = isTimeout ? "timeout" : describeFailure(err);
-    return timed(
-      { ok: false, statusCode: null, latencyMs, error: message },
-      false,
-    );
+    return timed({ ok: false, statusCode: null, latencyMs, error: message });
   } finally {
     // Closes what the check opened, a connection still racing included.
     void agent?.destroy().catch(() => {});
@@ -325,17 +335,19 @@ async function open(
   timeoutMs: number,
   start: number,
 ): Promise<Opened> {
-  const literal = isIP(host.replace(/^\[|\]$/g, "")) !== 0;
   let addresses: Address[];
   try {
     addresses = await lookupAll(host, timeoutMs);
   } catch (err) {
+    // The lookup counts however it ended, a lookup that ran out of time
+    // included: that is where the check's time went.
     const code = errorCode(err);
-    return code === "ETIMEDOUT"
-      ? { error: "timeout", dnsMs: null }
-      : { error: code, dnsMs: since(start) };
+    return {
+      error: code === "ETIMEDOUT" ? "timeout" : code,
+      dnsMs: since(start),
+    };
   }
-  const dnsMs = literal ? null : since(start);
+  const dnsMs = since(start);
   try {
     const won = await raceConnect(addresses, port, {
       timeoutMs: Math.max(1, timeoutMs - since(start)),

@@ -112,6 +112,12 @@ describe("describeTiming", () => {
     ).toBe("DNS 3 ms, no connection");
     expect(
       describeTiming(
+        { dnsMs: 0, connectMs: null, tlsMs: null, firstByteMs: null },
+        true,
+      ),
+    ).toBe("DNS 0 ms, no connection");
+    expect(
+      describeTiming(
         { dnsMs: 3, connectMs: 12, tlsMs: 24, firstByteMs: null },
         true,
       ),

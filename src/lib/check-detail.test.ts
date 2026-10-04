@@ -80,8 +80,21 @@ describe("checkDetail", () => {
       error: "timeout",
       timing: { dnsMs: 4, connectMs: 20, tlsMs: null, firstByteMs: null },
     });
+    // An IP address that never connected: measured, with nothing finished
+    // but the lookup it did not need.
+    insertCheck(db, {
+      site: "s",
+      monitor: "m",
+      ts: T + 4000,
+      ok: 0,
+      statusCode: null,
+      latencyMs: 10_000,
+      error: "timeout",
+      timing: { dnsMs: 0, connectMs: null, tlsMs: null, firstByteMs: null },
+    });
     const detail = checkDetail(db, "s", "m", null, T, T + HOUR);
     expect(detail.checks.map((c) => c.timing)).toEqual([
+      { dnsMs: 0, connectMs: null, tlsMs: null, firstByteMs: null },
       { dnsMs: 4, connectMs: 20, tlsMs: null, firstByteMs: null },
       { dnsMs: 4, connectMs: 20, tlsMs: 31, firstByteMs: 65 },
       null,

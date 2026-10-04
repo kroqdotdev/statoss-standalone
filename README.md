@@ -499,7 +499,7 @@ Next to every page, on the same hostname:
 | `/llms.txt`        | Where a program should read the site from, and how to read `status.json`.                                                                                                                                                                                |
 | `/widget.js`       | A script that draws a status dot and a link where it is placed: `<script src="https://status.example.com/widget.js"></script>`. Override the words with `data-operational`, `data-degraded`, `data-partial`, `data-major` and `data-unknown` attributes. |
 
-A check in `/checks` has `timing`, where its time went: `dnsMs`, `connectMs`, `tlsMs` and `firstByteMs`, each null for a step the check did not have or did not finish. `timing` is null for DNS, ping, domain and heartbeat checks, and for checks stored before timings were kept.
+A check in `/checks` has `timing`, where its time went: `dnsMs`, `connectMs`, `tlsMs` and `firstByteMs`. `dnsMs` is the time the lookup took however it ended, 0 for an IP address; the others are null for a step the check did not have or did not finish. `timing` is null for DNS, ping, domain and heartbeat checks, and for checks stored before timings were kept.
 
 The JSON and badge endpoints allow cross-origin requests.
 

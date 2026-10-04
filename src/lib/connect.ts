@@ -184,12 +184,24 @@ export function raceConnect(
 /**
  * What one check's connections took, added up over every connection it
  * opened, so a check across redirects to other hosts counts them all.
- * Null until a step has finished once.
+ * The lookup counts however it ended, 0 for an IP address; a connection
+ * or a handshake only once it finished. Null until then.
  */
 export interface ConnectTiming {
   dnsMs: number | null;
   connectMs: number | null;
   tlsMs: number | null;
+  /** When the lookup still under way began, so a check that gives up on it can count its time. */
+  lookingUp: number | null;
+}
+
+const add = (sum: number | null, ms: number) => (sum ?? 0) + ms;
+
+/** The time spent looking up so far, the lookup under way included. */
+export function lookupMs(timing: ConnectTiming): number | null {
+  return timing.lookingUp === null
+    ? timing.dnsMs
+    : add(timing.dnsMs, since(timing.lookingUp));
 }
 
 type ConnectorOptions = {
@@ -199,8 +211,6 @@ type ConnectorOptions = {
   servername?: string | null;
 };
 type ConnectorCallback = (err: Error | null, socket?: Socket) => void;
-
-const add = (sum: number | null, ms: number) => (sum ?? 0) + ms;
 
 /**
  * A connector for an undici Agent: looks the host up, races its addresses
@@ -216,20 +226,13 @@ export function racingConnector(timing: ConnectTiming, timeoutMs: number) {
     const port = Number(opts.port) || (https ? 443 : 80);
     const literal = isIP(hostname) !== 0;
     const lookupStart = performance.now();
+    timing.lookingUp = lookupStart;
     lookupAll(hostname, timeoutMs)
-      .then(
-        (addresses) => {
-          if (!literal) timing.dnsMs = add(timing.dnsMs, since(lookupStart));
-          return raceConnect(addresses, port, { timeoutMs: left() });
-        },
-        (err: unknown) => {
-          // A name the resolver answered for, even with "no such name",
-          // was looked up; one that ran out of time was not.
-          if ((err as { code?: unknown }).code !== "ETIMEDOUT")
-            timing.dnsMs = add(timing.dnsMs, since(lookupStart));
-          throw err;
-        },
-      )
+      .finally(() => {
+        timing.lookingUp = null;
+        timing.dnsMs = add(timing.dnsMs, since(lookupStart));
+      })
+      .then((addresses) => raceConnect(addresses, port, { timeoutMs: left() }))
       .then(({ socket, connectMs }) => {
         timing.connectMs = add(timing.connectMs, connectMs);
         socket.setNoDelay(true);

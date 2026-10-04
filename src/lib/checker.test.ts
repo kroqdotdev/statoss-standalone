@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { promises as dnsPromises } from "node:dns";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -6,7 +7,7 @@ import { createServer as createTcpServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as tls from "node:tls";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   expiryOutcome,
   monitorSpec,
@@ -273,8 +274,8 @@ describe("where a check's time goes", () => {
   it("splits an HTTP reading into the connection and the wait for the headers", async () => {
     const outcome = await runCheck({ url: `${base}/slow` });
     expect(outcome.ok).toBe(true);
-    // An IP address is not looked up, and plain HTTP has no handshake.
-    expect(outcome.timing).toMatchObject({ dnsMs: null, tlsMs: null });
+    // An IP address needs no lookup, and plain HTTP has no handshake.
+    expect(outcome.timing).toMatchObject({ dnsMs: 0, tlsMs: null });
     expect(outcome.timing?.connectMs).toBeGreaterThanOrEqual(0);
     expect(outcome.timing?.firstByteMs).toBeGreaterThanOrEqual(490);
     expect(stepsSum(outcome)).toBe(outcome.latencyMs);
@@ -344,6 +345,57 @@ describe("where a check's time goes", () => {
     });
     expect(refused.error).toBe("fetch failed (ECONNREFUSED)");
     expect(refused.timing?.connectMs).toBeNull();
+  });
+
+  it("keeps the first byte when the body stalls after the headers", async () => {
+    const stalling = createServer((_req, res) => {
+      res.writeHead(200);
+      res.write("partial");
+    });
+    const port = await listen(stalling);
+    try {
+      const outcome = await runCheck({
+        url: `http://127.0.0.1:${port}/`,
+        keyword: "never sent",
+        timeoutMs: 300,
+      });
+      expect(outcome.error).toBe("timeout");
+      expect(outcome.timing?.connectMs).toBeGreaterThanOrEqual(0);
+      expect(outcome.timing?.firstByteMs).toBeGreaterThanOrEqual(0);
+      expect(outcome.timing?.firstByteMs).toBeLessThan(250);
+    } finally {
+      stalling.closeAllConnections();
+      stalling.close();
+    }
+  });
+
+  it("counts a lookup that never answers as where the time went", async () => {
+    const lookup = vi
+      .spyOn(dnsPromises, "lookup")
+      .mockImplementation(() => new Promise(() => {}));
+    try {
+      const http = await runCheck({
+        url: "http://hangs.example/",
+        timeoutMs: 300,
+      });
+      expect(http.error).toBe("timeout");
+      expect(http.timing?.dnsMs).toBeGreaterThanOrEqual(250);
+      expect(http.timing).toMatchObject({
+        connectMs: null,
+        firstByteMs: null,
+      });
+      const tcp = await runCheck({
+        type: "tcp",
+        url: "hangs.example",
+        port: 80,
+        timeoutMs: 300,
+      });
+      expect(tcp.error).toBe("timeout");
+      expect(tcp.timing?.dnsMs).toBeGreaterThanOrEqual(250);
+      expect(tcp.timing?.connectMs).toBeNull();
+    } finally {
+      lookup.mockRestore();
+    }
   });
 
   it("times a TCP connection, and a lookup that finds nothing", async () => {
@@ -443,7 +495,7 @@ describe("timing over TLS", () => {
       // Self-signed, so not trusted; the handshake still happened.
       expect(outcome.ok).toBe(false);
       expect(outcome.error).toMatch(/certificate invalid/);
-      expect(outcome.timing).toMatchObject({ dnsMs: null, firstByteMs: null });
+      expect(outcome.timing).toMatchObject({ dnsMs: 0, firstByteMs: null });
       expect(outcome.timing?.connectMs).toBeGreaterThanOrEqual(0);
       expect(outcome.timing?.tlsMs).toBeGreaterThanOrEqual(0);
     } finally {

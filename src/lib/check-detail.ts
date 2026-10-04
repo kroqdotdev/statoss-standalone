@@ -30,8 +30,9 @@ export interface DetailCheck {
   problem: string | null;
   /**
    * Where its time went: the lookup, the connection, the TLS handshake and
-   * the wait for the first byte. A step the check does not have, or did
-   * not finish, is null. Null as a whole for the kinds of check that do
+   * the wait for the first byte. The lookup counts however it ended (0 for
+   * an IP address); another step is null where the check does not have it
+   * or did not finish it. Null as a whole for the kinds of check that do
    * not measure it, and for checks stored before they were measured.
    */
   timing: CheckTiming | null;
