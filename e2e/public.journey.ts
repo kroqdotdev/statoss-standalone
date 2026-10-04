@@ -49,6 +49,9 @@ test.describe("the status page", () => {
     await expect(page.locator("footer")).toContainText(
       "Times are in your time zone",
     );
+    await expect(
+      page.locator("footer").getByRole("link", { name: "Calendar" }),
+    ).toHaveAttribute("href", /^webcal:.*\/maintenance\.ics$/);
     await fits("the status page");
   });
 
@@ -145,6 +148,7 @@ test.describe("a password page", () => {
   }) => {
     expect((await request.get(`${LOCKED}/status.json`)).status()).toBe(401);
     expect((await request.get(`${LOCKED}/feed.xml`)).status()).toBe(401);
+    expect((await request.get(`${LOCKED}/maintenance.ics`)).status()).toBe(401);
     expect(
       (
         await request.get(`${LOCKED}/status.json?key=journey-embed-key`)
@@ -198,6 +202,14 @@ test.describe("for programs", () => {
     expect(rss).toContain("/incidents/slow-search</link>");
     const atom = await (await request.get("/feed.atom")).text();
     expect(atom).toContain('<feed xmlns="http://www.w3.org/2005/Atom">');
+    const calendar = await request.get("/maintenance.ics");
+    expect(calendar.headers()["content-type"]).toContain("text/calendar");
+    const ics = (await calendar.text()).replaceAll("\r\n ", "");
+    expect(ics).toContain("SUMMARY:Northwind: Database upgrade\r\n");
+    // The monthly window: last time, and the coming months.
+    expect(
+      ics.split("SUMMARY:Northwind: Router swap\r\n").length - 1,
+    ).toBeGreaterThanOrEqual(3);
     expect(
       (await request.get("/badge.svg")).headers()["content-type"],
     ).toContain("image/svg+xml");

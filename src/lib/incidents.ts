@@ -17,7 +17,8 @@ import type { IncidentImpact } from "./state";
  * when a monitor goes down and closes it when the monitor recovers;
  * the operator writes the rest as files in the incidents folder. A
  * maintenance window is a planned start and end in the configuration,
- * during which checks are kept but not counted and no alert goes out.
+ * during which checks are kept but not counted and no alert goes out
+ * (see maintenance.ts for the ones that repeat).
  */
 
 export const INCIDENT_STATUSES = [
@@ -218,7 +219,9 @@ export function parseIncidentFile(
  * A window's id, from when it starts and what it is called, so it stays the
  * same when the list around it changes: "maintenance-2026-09-20-0100-database-upgrade".
  */
-export function maintenanceId(window: MaintenanceConfig): string {
+export function maintenanceId(
+  window: Pick<MaintenanceConfig, "title" | "start">,
+): string {
   const stamp = new Date(window.start)
     .toISOString()
     .slice(0, 16)
@@ -231,7 +234,12 @@ export function maintenanceId(window: MaintenanceConfig): string {
   return `maintenance-${stamp}${slug ? `-${slug}` : ""}`;
 }
 
-export function maintenanceView(window: MaintenanceConfig): IncidentView {
+export function maintenanceView(
+  window: Pick<
+    MaintenanceConfig,
+    "title" | "start" | "end" | "monitors" | "notes"
+  >,
+): IncidentView {
   const notes = window.notes?.trim();
   return {
     id: maintenanceId(window),
@@ -250,20 +258,6 @@ export function maintenanceView(window: MaintenanceConfig): IncidentView {
       ? [{ status: "monitoring", body: notes, createdAt: window.start }]
       : [],
   };
-}
-
-/** Whether a monitor is inside one of its site's maintenance windows. */
-export function inMaintenance(
-  windows: MaintenanceConfig[],
-  monitor: string,
-  now: number,
-): boolean {
-  return windows.some(
-    (w) =>
-      w.start <= now &&
-      now < w.end &&
-      (w.monitors === undefined || w.monitors.includes(monitor)),
-  );
 }
 
 /** Whether a maintenance window has ended. */

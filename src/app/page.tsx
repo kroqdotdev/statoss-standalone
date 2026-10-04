@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { SitePage } from "@/components/SitePage";
 import { Unlock } from "@/components/Unlock";
 import { assetSrc } from "@/lib/assets";
+import { siteUrl } from "@/lib/config";
 import { getDb, listDeploys } from "@/lib/db";
 import { pageSite } from "@/lib/page-site";
 import { rangeWindow } from "@/lib/queries";
@@ -46,7 +47,7 @@ export default async function StatusPage(props: PageProps<"/">) {
   const now = Date.now();
   const incidents = siteIncidents(db, config, site, now);
   // Everything ever written, for naming on the bars it touched.
-  const views = siteIncidentViews(db, config, site, 0);
+  const views = siteIncidentViews(db, config, site, 0, now);
   const window = rangeWindow(RANGES[range], now);
   const stated = statedByName(incidents.current, rowNames(site), now);
 
@@ -86,6 +87,15 @@ export default async function StatusPage(props: PageProps<"/">) {
       range={RANGES[range].key}
       now={now}
       intervalSeconds={config.checkIntervalSeconds}
+      calendar={
+        // A calendar app subscribes to a webcal address. It has no cookie,
+        // so a password page offers the file to this browser instead.
+        site.password
+          ? "/maintenance.ics"
+          : `${siteUrl(site)
+              .replace(/\/$/, "")
+              .replace(/^https?:/, "webcal:")}/maintenance.ics`
+      }
     />
   );
 }

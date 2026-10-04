@@ -253,6 +253,81 @@ sites:
     ).toThrow(/"Nope" is not a monitor or component of this site/);
   });
 
+  it("reads a window that repeats, and refuses a bad rule", () => {
+    const window = (lines: string) =>
+      VALID +
+      `    timezone: Europe/Copenhagen
+    maintenance:
+      - title: Backups
+        start: 2026-10-04T02:00:00+02:00
+        end: 2026-10-04T03:00:00+02:00
+${lines}`;
+    const config = parseConfig(
+      window("        repeat: monthly-weekday\n        until: 2027-03-31\n"),
+    );
+    expect(config.sites[0].maintenance[0]).toEqual({
+      title: "Backups",
+      start: Date.UTC(2026, 9, 4),
+      end: Date.UTC(2026, 9, 4, 1),
+      repeat: "monthly-weekday",
+      until: "2027-03-31",
+    });
+    // A day on its own, as the start is in Copenhagen: the 4th there.
+    expect(() =>
+      parseConfig(
+        window("        repeat: weekly\n        until: 2026-10-04\n"),
+      ),
+    ).not.toThrow();
+    expect(() => parseConfig(window("        repeat: daily\n"))).toThrow(
+      /maintenance\.0\.repeat: must be weekly, monthly or monthly-weekday/,
+    );
+    expect(() => parseConfig(window("        until: 2027-03-31\n"))).toThrow(
+      /maintenance\.0\.until: until is for a window that repeats; add repeat/,
+    );
+    expect(() =>
+      parseConfig(
+        window("        repeat: weekly\n        until: 2026-10-03\n"),
+      ),
+    ).toThrow(
+      /maintenance\.0\.until: until is before the first window, which starts on 2026-10-04/,
+    );
+    expect(() =>
+      parseConfig(
+        window("        repeat: weekly\n        until: 2027-03-31\n").replace(
+          "Europe/Copenhagen",
+          "Mars/Olympus",
+        ),
+      ),
+    ).toThrow(/timezone: is not a time zone/);
+    for (const bad of ["31 March", "2027-02-30", "2027-03-31T00:00:00Z"])
+      expect(() =>
+        parseConfig(window(`        repeat: weekly\n        until: ${bad}\n`)),
+      ).toThrow(`"${bad}" is not a date. Write it like 2027-03-31.`);
+  });
+
+  it("refuses a repeating window that would run into the next", () => {
+    const window = (repeat: string, end: string) =>
+      VALID +
+      `    maintenance:
+      - title: Move
+        start: 2026-10-04T00:00:00Z
+        end: ${end}
+        repeat: ${repeat}
+`;
+    expect(() => parseConfig(window("weekly", "2026-10-11T00:00:00Z"))).toThrow(
+      /maintenance\.0\.end: a window that repeats every week has to be shorter than a week/,
+    );
+    expect(() =>
+      parseConfig(window("weekly", "2026-10-10T23:59:00Z")),
+    ).not.toThrow();
+    expect(() =>
+      parseConfig(window("monthly", "2026-11-01T00:00:00Z")),
+    ).toThrow(/has to be shorter than four weeks/);
+    expect(() =>
+      parseConfig(window("monthly-weekday", "2026-10-31T00:00:00Z")),
+    ).not.toThrow();
+  });
+
   it("rejects a config with no sites", () => {
     expect(() => parseConfig("sites: []")).toThrow(/sites/);
   });

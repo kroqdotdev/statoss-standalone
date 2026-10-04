@@ -25,6 +25,7 @@ import {
   badgeSvg,
   feedAtom,
   feedXml,
+  maintenanceIcs,
   statusJson,
   widgetJs,
 } from "./public-feeds";
@@ -142,6 +143,19 @@ export const feedResponse = (request: Request) =>
   feed(request, feedXml, "application/rss+xml");
 export const feedAtomResponse = (request: Request) =>
   feed(request, feedAtom, "application/atom+xml");
+
+/** GET /maintenance.ics: the site's maintenance, for a calendar app. */
+export async function calendarResponse(request: Request): Promise<Response> {
+  const site = await currentSite(request);
+  if (site instanceof Response) return site;
+  return new Response(maintenanceIcs(site, Date.now()), {
+    headers: {
+      "content-type": "text/calendar; charset=utf-8",
+      "content-disposition": 'inline; filename="maintenance.ics"',
+      "cache-control": cache(site, 300),
+    },
+  });
+}
 
 export async function widgetResponse(request: Request): Promise<Response> {
   const site = await currentSite(request);
@@ -426,6 +440,7 @@ The page is password-protected. Every link below answers 401 without \`?key=<key
 }
 - Status as JSON: ${base}/status.json
 - Incidents as RSS: ${base}/feed.xml, as Atom: ${base}/feed.atom
+- Maintenance as iCalendar: ${base}/maintenance.ics
 - MCP endpoint (Streamable HTTP, POST JSON-RPC, tools get_status, list_incidents, get_error_budget): ${base}/mcp
 - Badge: ${base}/badge.svg
 - Deploy markers as JSON: ${base}/deploys

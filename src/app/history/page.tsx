@@ -25,7 +25,7 @@ export default async function HistoryPage(props: PageProps<"/history">) {
   const now = Date.now();
   // What is over: resolved incidents and finished windows. What is open
   // is on the status page itself.
-  const views = siteIncidentViews(getDb(), config, site, 0).filter((v) =>
+  const views = siteIncidentViews(getDb(), config, site, 0, now).filter((v) =>
     v.kind === "incident" ? v.resolvedAt !== null : maintenanceOver(v, now),
   );
   const { months, page, later, earlier } = historyPage(

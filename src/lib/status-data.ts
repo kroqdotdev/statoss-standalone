@@ -17,7 +17,6 @@ import { autoIncidents, getDb, getState, lastCheckOk } from "./db";
 import { readIncidentFiles } from "./incident-files";
 import {
   autoIncidentView,
-  maintenanceView,
   PAGE_INCIDENT_DAYS,
   splitIncidents,
   type IncidentView,
@@ -33,6 +32,7 @@ import {
   windowSummary,
 } from "./queries";
 import { RANGE_TTL_MS, RANGES, type RangeKey } from "./ranges";
+import { siteMaintenanceViews } from "./maintenance";
 import { checkLate, type MonitorStatus } from "./state";
 import {
   componentState,
@@ -278,20 +278,22 @@ export function siteStatuses(
 
 /**
  * Every incident and window of a site, from all three sources: files in
- * the incidents folder, maintenance windows in the configuration, and
- * outages the checker opened (open ones, and those started after `since`).
+ * the incidents folder, maintenance windows in the configuration and the
+ * repeats of them planned by `now`, and outages the checker opened (open
+ * ones, and those started after `since`).
  */
 export function siteIncidentViews(
   db: Database.Database,
   config: AppConfig,
   site: SiteConfig,
   since: number,
+  now: number,
   /** Which window `since` is, for the cache: the page's and the feeds' differ. */
   window = since === 0 ? "all" : String(since),
 ): IncidentView[] {
   return [
     ...(readIncidentFiles(config).get(site.name) ?? []),
-    ...site.maintenance.map((window) => maintenanceView(window)),
+    ...siteMaintenanceViews(site, now, since),
     ...cached(`incidents\0${site.name}\0${window}`, () =>
       autoIncidents(db, site.name, since).map(autoIncidentView),
     ),
@@ -309,7 +311,7 @@ export function siteIncidents(
   // Rounded to the hour, so the cached list is not thrown away each request.
   const since = Math.floor((now - days * DAY_MS) / HOUR_MS) * HOUR_MS;
   return splitIncidents(
-    siteIncidentViews(db, config, site, since, `${days}d`),
+    siteIncidentViews(db, config, site, since, now, `${days}d`),
     now,
     days,
   );
@@ -326,7 +328,7 @@ export function findIncident(
   id: string,
   now: number,
 ): IncidentView | undefined {
-  return siteIncidentViews(db, config, site, 0).find(
+  return siteIncidentViews(db, config, site, 0, now).find(
     (v) => v.id === id && (v.kind === "maintenance" || v.startedAt <= now),
   );
 }

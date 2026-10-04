@@ -7,7 +7,6 @@ import {
   foldAutomatic,
   joinLines,
   postmortemBlocks,
-  inMaintenance,
   maintenancePhase,
   maintenanceView,
   openImpacts,
@@ -188,16 +187,6 @@ describe("maintenance", () => {
     monitors: ["API"],
     notes: "Writes pause for a minute.",
   };
-
-  it("covers named monitors while the window is open", () => {
-    expect(inMaintenance([window], "API", T)).toBe(true);
-    expect(inMaintenance([window], "API", T + 2 * HOUR)).toBe(false);
-    expect(inMaintenance([window], "API", T - 1)).toBe(false);
-    expect(inMaintenance([window], "Main site", T)).toBe(false);
-    expect(
-      inMaintenance([{ ...window, monitors: undefined }], "Main site", T),
-    ).toBe(true);
-  });
 
   it("makes a view with the notes as its one update", () => {
     const view = maintenanceView(window);

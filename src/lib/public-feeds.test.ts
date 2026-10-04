@@ -8,6 +8,7 @@ import {
   feedAtom,
   feedEntry,
   feedXml,
+  maintenanceIcs,
   statusJson,
   widgetJs,
 } from "./public-feeds";
@@ -325,5 +326,91 @@ describe("widgetJs", () => {
     expect(js).toContain('replace(/widget\\.js$/,"")');
     expect(js).toContain('base+"status.json"');
     expect(js).toContain("d.site.status");
+  });
+});
+
+describe("maintenanceIcs", () => {
+  const DAY = 24 * 60 * 60_000;
+  const WEEK = 7 * DAY;
+  // Sunday 4 October 2026, 02:00 in Copenhagen.
+  const FIRST = Date.parse("2026-10-04T00:00:00Z");
+  const site = parseConfig(`
+sites:
+  - name: Example
+    host: Status.Example.com
+    url: https://status.example.com
+    timezone: Europe/Copenhagen
+    monitors:
+      - name: API
+        url: https://api.example.com
+      - name: Web
+        url: https://example.com
+    maintenance:
+      - title: Database upgrade
+        start: 2026-10-04T00:00:00Z
+        end: 2026-10-04T02:00:00Z
+        monitors: [API, Web]
+        notes: The API may be slow, and writes pause; then all is well.
+        repeat: weekly
+      - title: Router swap
+        start: 2027-06-01T00:00:00Z
+        end: 2027-06-01T01:00:00Z
+      - title: Old work
+        start: 2026-08-01T00:00:00Z
+        end: 2026-08-01T01:00:00Z
+`).sites[0];
+  const unfold = (text: string) => text.replaceAll("\r\n ", "");
+  const uid = (date: string, slug: string) =>
+    `UID:maintenance-${date}-${slug}@status.example.com\r\n`;
+
+  it("lists what is planned and what will repeat, each under one UID throughout", () => {
+    const raw = maintenanceIcs(site, FIRST - 2 * DAY);
+    expect(raw.startsWith("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n")).toBe(true);
+    expect(raw.endsWith("END:VCALENDAR\r\n")).toBe(true);
+    expect(raw).not.toMatch(/[^\r]\n/);
+    // Long lines are folded at 75 octets.
+    for (const line of raw.split("\r\n"))
+      expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
+    const before = unfold(raw);
+    expect(before).toContain("X-WR-CALNAME:Example maintenance\r\n");
+    expect(before).toContain("SUMMARY:Example: Database upgrade\r\n");
+    expect(before).toContain(
+      "DTSTART:20261004T000000Z\r\nDTEND:20261004T020000Z\r\n",
+    );
+    expect(before).toContain(
+      "DESCRIPTION:The API may be slow\\, and writes pause\\; then all is well.\\n\\nAffects API\\, Web.\r\n",
+    );
+    // A repeat not planned yet is in the calendar already, and links to the page.
+    const second = uid("2026-10-11-0000", "database-upgrade");
+    expect(before).toContain(
+      `${second}DTSTAMP:20261002T000000Z\r\nDTSTART:20261011T000000Z`,
+    );
+    expect(before).toMatch(
+      /DTSTART:20261011T000000Z[^]*?URL:https:\/\/status\.example\.com\r\n/,
+    );
+    // Planned, a week ahead, it keeps its UID and links to its own page.
+    const after = unfold(maintenanceIcs(site, FIRST));
+    expect(after.split(second)).toHaveLength(2);
+    expect(after).toContain(
+      "URL:https://status.example.com/incidents/maintenance-2026-10-11-0000-database-upgrade\r\n",
+    );
+    // Every Sunday to 90 days ahead, and the window written for June.
+    expect(before.match(/BEGIN:VEVENT/g)).toHaveLength(13 + 1);
+    expect(before).toContain(uid("2027-06-01-0000", "router-swap"));
+    // Winter time: 02:00 in Copenhagen is 01:00 UTC.
+    expect(before).toContain(
+      `${uid("2026-10-25-0100", "database-upgrade")}DTSTAMP:20261002T000000Z\r\nDTSTART:20261025T010000Z\r\n`,
+    );
+  });
+
+  it("keeps the last 30 days and lets older windows go", () => {
+    const now = Date.parse("2026-08-20T00:00:00Z");
+    expect(unfold(maintenanceIcs(site, now))).toContain(
+      uid("2026-08-01-0000", "old-work"),
+    );
+    expect(maintenanceIcs(site, now + 30 * DAY)).not.toContain("Old work");
+    const later = unfold(maintenanceIcs(site, FIRST + 10 * WEEK));
+    expect(later).not.toContain(uid("2026-10-04-0000", "database-upgrade"));
+    expect(later).toContain(uid("2026-11-22-0100", "database-upgrade"));
   });
 });

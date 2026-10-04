@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
-import { isTimeZone, rowId } from "./format";
+import { isTimeZone, localDate, rowId } from "./format";
+import { longestWindow, REPEATS } from "./repeats";
 import { normalizeVendorUrl } from "./vendors";
 
 /** The request methods a monitor can use. */
@@ -410,6 +411,30 @@ export function monitorsFromCheckpoints(value: unknown): unknown {
   return value;
 }
 
+/** A day on the calendar, like 2027-03-31, kept as written. */
+const dateSchema = z.unknown().transform((value, ctx) => {
+  const text =
+    value instanceof Date
+      ? value.toISOString().slice(0, 10)
+      : typeof value === "string"
+        ? value.trim()
+        : "";
+  const ms = /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? Date.parse(`${text}T00:00:00Z`)
+    : NaN;
+  if (
+    !Number.isFinite(ms) ||
+    new Date(ms).toISOString().slice(0, 10) !== text
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: `"${String(value)}" is not a date. Write it like 2027-03-31.`,
+    });
+    return z.NEVER;
+  }
+  return text;
+});
+
 const maintenanceWindowSchema = z
   .object({
     title: z.string().min(1),
@@ -418,10 +443,33 @@ const maintenanceWindowSchema = z
     /** Monitor names the window covers. Omit it for the whole site. */
     monitors: z.array(z.string().min(1)).min(1).optional(),
     notes: z.string().optional(),
+    /**
+     * Repeats at the first window's time of day in the site's zone: every
+     * week on its weekday, every month on its date, or every month on its
+     * weekday (the second Tuesday, the last Friday).
+     */
+    repeat: z
+      .enum(REPEATS, { error: "must be weekly, monthly or monthly-weekday" })
+      .optional(),
+    /** The last day a repeat may start on, in the site's zone. */
+    until: dateSchema.optional(),
   })
-  .refine((window) => window.end > window.start, {
-    message: "end must be after start",
-    path: ["end"],
+  .superRefine((window, ctx) => {
+    const fail = (path: string, message: string) =>
+      ctx.addIssue({ code: "custom", path: [path], message });
+    if (window.end <= window.start) fail("end", "end must be after start");
+    if (window.until !== undefined && window.repeat === undefined)
+      fail("until", "until is for a window that repeats; add repeat");
+    if (
+      window.repeat !== undefined &&
+      window.end - window.start >= longestWindow(window.repeat)
+    )
+      fail(
+        "end",
+        window.repeat === "weekly"
+          ? "a window that repeats every week has to be shorter than a week"
+          : "a window that repeats every month has to be shorter than four weeks",
+      );
   });
 
 const maintenanceSchema = z.preprocess(
@@ -579,6 +627,17 @@ const siteObjectSchema = z
           "two maintenance windows have the same title and start in the same minute",
       });
     site.maintenance.forEach((window, i) => {
+      // A zone that is not one is refused on its own.
+      if (
+        window.until !== undefined &&
+        isTimeZone(site.timezone) &&
+        window.until < localDate(window.start, site.timezone)
+      )
+        ctx.addIssue({
+          code: "custom",
+          path: ["maintenance", i, "until"],
+          message: `until is before the first window, which starts on ${localDate(window.start, site.timezone)}`,
+        });
       for (const name of window.monitors ?? []) {
         if (!names.includes(name))
           ctx.addIssue({

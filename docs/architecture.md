@@ -28,6 +28,8 @@ POST /heartbeat/<token> ──► heartbeat         POST /deploys ──► depl
 | `src/lib/alerts.ts`            | The words of alerts and notices, and delivery to every channel, with retries.                                                    |
 | `src/lib/notices.ts`           | Which incident updates and maintenance stages are due to go to the alert destinations.                                           |
 | `src/lib/incidents.ts`         | Incident files, maintenance windows and automatic incidents, and which of them the page shows, in what order.                    |
+| `src/lib/maintenance.ts`       | A site's maintenance windows as they fall: the ones written, and the repeats planned a week ahead.                               |
+| `src/lib/repeats.ts`           | When a repeating window falls, at its time of day in a zone.                                                                     |
 | `src/lib/incident-files.ts`    | Reads the incidents folder, again whenever a file changes.                                                                       |
 | `src/lib/incident-history.ts`  | The history's months and pages.                                                                                                  |
 | `src/lib/stated.ts`            | What open incidents and maintenance say about each row, beside what its checks say.                                              |
@@ -38,7 +40,8 @@ POST /heartbeat/<token> ──► heartbeat         POST /deploys ──► depl
 | `src/lib/check-detail.ts`      | The checks behind one bar.                                                                                                       |
 | `src/lib/strip-shapes.ts`      | A strip's bars as one SVG path per colour.                                                                                       |
 | `src/lib/status-data.ts`       | Gathers what a page or endpoint needs for one site: monitor and component views, incidents, the budget.                          |
-| `src/lib/public-feeds.ts`      | status.json, the badges, the RSS and Atom feeds and the widget script.                                                           |
+| `src/lib/public-feeds.ts`      | status.json, the badges, the RSS and Atom feeds, the maintenance calendar and the widget script.                                 |
+| `src/lib/ics.ts`               | iCalendar text: escaping, folding and the calendar around the events.                                                            |
 | `src/lib/site-routes.ts`       | The route handlers for those endpoints and the others, picking the site by `Host` header and checking the password.              |
 | `src/lib/access.ts`            | Password pages: the unlock cookie, the embed key, the brake on guessing.                                                         |
 | `src/lib/assets.ts`            | Logos and favicons read from next to the configuration.                                                                          |
@@ -77,7 +80,7 @@ A heartbeat is judged by the scheduler rather than checked: it passes when a pin
 
 ## Incidents
 
-The page merges three sources: files in the incidents folder, maintenance windows from the configuration, and the `auto_incident` rows the scheduler writes. The folder is listed on every request and the files are parsed again only when a name, size or modification time has changed. An open incident with an impact raises the headline above what the checks say; it never lowers it. A state an incident gives a row it names is shown on that row when it is worse than the checks.
+The page merges three sources: files in the incidents folder, maintenance windows from the configuration with the repeats of those that repeat, and the `auto_incident` rows the scheduler writes. The folder is listed on every request and the files are parsed again only when a name, size or modification time has changed. An open incident with an impact raises the headline above what the checks say; it never lowers it. A state an incident gives a row it names is shown on that row when it is worse than the checks.
 
 After each round the scheduler sends the incident updates and maintenance stages that are new and recent to the alert destinations, and notes them in `notified`.
 
