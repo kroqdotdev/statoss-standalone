@@ -1,0 +1,312 @@
+{
+  "components": [
+    {
+      "id": 46327,
+      "name": "API",
+      "description": null,
+      "state": "partially-degraded",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=46327",
+          "count": 4
+        }
+      },
+      "parent_id": null,
+      "position": 1,
+      "created_at": "2022-12-17T17:54:22.245Z",
+      "updated_at": "2026-09-28T15:22:00.244Z"
+    },
+    {
+      "id": 87153,
+      "name": "General",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=87153",
+          "count": 0
+        }
+      },
+      "parent_id": 46327,
+      "position": 2,
+      "created_at": "2024-12-05T03:51:14.423Z",
+      "updated_at": "2026-09-28T15:22:00.246Z"
+    },
+    {
+      "id": 87154,
+      "name": "Sending",
+      "description": null,
+      "state": "degraded",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=87154",
+          "count": 0
+        }
+      },
+      "parent_id": 46327,
+      "position": 3,
+      "created_at": "2024-12-05T03:51:14.447Z",
+      "updated_at": "2026-09-28T15:22:00.248Z"
+    },
+    {
+      "id": 88825,
+      "name": "Receiving",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=88825",
+          "count": 0
+        }
+      },
+      "parent_id": 46327,
+      "position": 4,
+      "created_at": "2025-05-02T18:33:24.107Z",
+      "updated_at": "2025-09-05T23:16:26.727Z"
+    },
+    {
+      "id": 93905,
+      "name": "Sandbox",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=93905",
+          "count": 0
+        }
+      },
+      "parent_id": 46327,
+      "position": 5,
+      "created_at": "2026-03-04T17:43:18.627Z",
+      "updated_at": "2026-03-04T17:46:45.733Z"
+    },
+    {
+      "id": 46328,
+      "name": "SMTP",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=46328",
+          "count": 3
+        }
+      },
+      "parent_id": null,
+      "position": 6,
+      "created_at": "2022-12-17T17:54:34.094Z",
+      "updated_at": "2026-09-28T15:22:00.250Z"
+    },
+    {
+      "id": 87155,
+      "name": "General",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=87155",
+          "count": 0
+        }
+      },
+      "parent_id": 46328,
+      "position": 7,
+      "created_at": "2024-12-05T03:51:14.475Z",
+      "updated_at": "2026-09-28T15:22:00.251Z"
+    },
+    {
+      "id": 87151,
+      "name": "Sending",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=87151",
+          "count": 0
+        }
+      },
+      "parent_id": 46328,
+      "position": 8,
+      "created_at": "2024-12-05T03:50:04.809Z",
+      "updated_at": "2026-09-28T15:22:00.253Z"
+    },
+    {
+      "id": 87152,
+      "name": "Receiving",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=87152",
+          "count": 0
+        }
+      },
+      "parent_id": 46328,
+      "position": 9,
+      "created_at": "2024-12-05T03:50:04.868Z",
+      "updated_at": "2026-03-04T17:43:18.663Z"
+    },
+    {
+      "id": 91953,
+      "name": "Inbound",
+      "description": null,
+      "state": "degraded",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=91953",
+          "count": 0
+        }
+      },
+      "parent_id": null,
+      "position": 10,
+      "created_at": "2025-12-18T23:00:35.015Z",
+      "updated_at": "2026-09-28T17:55:57.459Z"
+    },
+    {
+      "id": 93625,
+      "name": "Webhooks",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=93625",
+          "count": 0
+        }
+      },
+      "parent_id": null,
+      "position": 11,
+      "created_at": "2026-02-11T23:24:37.975Z",
+      "updated_at": "2026-09-28T17:55:22.584Z"
+    },
+    {
+      "id": 46330,
+      "name": "Web App",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=46330",
+          "count": 3
+        }
+      },
+      "parent_id": null,
+      "position": 12,
+      "created_at": "2022-12-17T17:55:00.197Z",
+      "updated_at": "2026-09-17T21:58:38.343Z"
+    },
+    {
+      "id": 91954,
+      "name": "General",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=91954",
+          "count": 0
+        }
+      },
+      "parent_id": 46330,
+      "position": 13,
+      "created_at": "2025-12-18T23:00:35.109Z",
+      "updated_at": "2026-09-17T21:58:38.345Z"
+    },
+    {
+      "id": 91955,
+      "name": "Login",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=91955",
+          "count": 0
+        }
+      },
+      "parent_id": 46330,
+      "position": 14,
+      "created_at": "2025-12-18T23:00:35.188Z",
+      "updated_at": "2026-03-04T17:43:18.694Z"
+    },
+    {
+      "id": 94198,
+      "name": "Billing & Subscriptions",
+      "description": null,
+      "state": "operational",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=94198",
+          "count": 0
+        }
+      },
+      "parent_id": 46330,
+      "position": 15,
+      "created_at": "2026-03-26T17:13:03.215Z",
+      "updated_at": "2026-03-26T17:24:04.641Z"
+    },
+    {
+      "id": 86718,
+      "name": "Analytics",
+      "description": null,
+      "state": "under-maintenance",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=86718",
+          "count": 3
+        }
+      },
+      "parent_id": null,
+      "position": 16,
+      "created_at": "2024-11-18T15:02:25.051Z",
+      "updated_at": "2026-08-24T17:44:16.684Z"
+    },
+    {
+      "id": 87156,
+      "name": "General",
+      "description": null,
+      "state": "under-maintenance",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=87156",
+          "count": 0
+        }
+      },
+      "parent_id": 86718,
+      "position": 17,
+      "created_at": "2024-12-05T03:51:14.687Z",
+      "updated_at": "2026-03-26T17:13:03.288Z"
+    },
+    {
+      "id": 91956,
+      "name": "Statistics",
+      "description": null,
+      "state": "under-maintenance",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=91956",
+          "count": 0
+        }
+      },
+      "parent_id": 86718,
+      "position": 18,
+      "created_at": "2025-12-18T23:00:35.612Z",
+      "updated_at": "2026-08-24T17:44:16.687Z"
+    },
+    {
+      "id": 86719,
+      "name": "Link Tracking",
+      "description": null,
+      "state": "under-maintenance",
+      "links": {
+        "children": {
+          "href": "/api/v1/components?filter%5Bparent_id_eq%5D=86719",
+          "count": 0
+        }
+      },
+      "parent_id": 86718,
+      "position": 19,
+      "created_at": "2024-11-18T15:02:25.098Z",
+      "updated_at": "2026-03-26T17:13:03.310Z"
+    }
+  ],
+  "meta": {
+    "count": 19,
+    "total_count": 19
+  }
+}

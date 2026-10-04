@@ -1,4 +1,21 @@
 import type { AppConfig, ComponentState } from "./config";
+import {
+  isBetterStack,
+  isHeroku,
+  isInstatusSummary,
+  isSlack,
+  isSorryStatus,
+  parseBetterStack,
+  parseHeroku,
+  parseInstatus,
+  parseSlack,
+  parseSorry,
+  parseStatusIo,
+  sorryOpenNotices,
+  STATUS_IO_API,
+  statusIoId,
+  statusIoName,
+} from "./vendor-formats";
 
 /**
  * Vendor status. A component can stand for a vendor: it names the vendor's
@@ -8,8 +25,10 @@ import type { AppConfig, ComponentState } from "./config";
  * anything. Readings are kept in memory: after a restart the pages are
  * simply read again.
  *
- * Two formats are read: Atlassian Statuspage's /api/v2/summary.json, which
- * incident.io pages serve too, and a StatOSS page's /status.json.
+ * Atlassian Statuspage's /api/v2/summary.json is read, which incident.io
+ * pages serve too, a StatOSS page's /status.json, and the platforms in
+ * vendor-formats.ts: Instatus, Better Stack, status.io, Sorry, and Heroku's
+ * and Slack's own pages.
  */
 
 /** How often each vendor page is read. */
@@ -175,6 +194,10 @@ export function parseStatoss(body: unknown, pageUrl: string): VendorReading {
  * address in a configuration may answer with a stream that never ends.
  */
 async function cappedText(res: Response): Promise<string> {
+  if (Number(res.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
+    void res.body?.cancel().catch(() => {});
+    throw new Error("answer too large");
+  }
   if (!res.body) return "";
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -192,14 +215,18 @@ async function cappedText(res: Response): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** A GET for JSON. Null for a 404 or a body that is not JSON. */
-async function getJson(
+/** A vendor's answer other than 404 and success: the format may still be another. */
+class Refused extends Error {}
+
+/** A GET. Null on 404; a Refused on any other answer that is not a success. */
+async function get(
   url: string,
   fetchFn: typeof fetch,
-): Promise<unknown | null> {
+  accept = "application/json",
+): Promise<{ headers: Headers; body: string } | null> {
   const res = await fetchFn(url, {
     headers: {
-      accept: "application/json",
+      accept,
       "user-agent":
         "statoss-standalone vendor status (+https://github.com/kroqdotdev/statoss-standalone)",
     },
@@ -208,22 +235,112 @@ async function getJson(
   if (!res.ok) {
     void res.body?.cancel().catch(() => {});
     if (res.status === 404) return null;
-    throw new Error(`answered ${res.status}`);
+    throw new Refused(`answered ${res.status}`);
   }
+  return { headers: res.headers, body: await cappedText(res) };
+}
+
+/** A GET for JSON. Null for a 404 or a body that is not JSON. */
+async function getJson(
+  url: string,
+  fetchFn: typeof fetch,
+): Promise<unknown | null> {
+  const got = await get(url, fetchFn);
+  if (got === null) return null;
   try {
-    return JSON.parse(await cappedText(res)) as unknown;
-  } catch (err) {
-    if (err instanceof Error && err.message === "answer too large") throw err;
+    return JSON.parse(got.body) as unknown;
+  } catch {
     return null;
   }
 }
 
-type VendorFormat = "statuspage" | "statoss";
+export type VendorFormat =
+  | "statuspage"
+  | "instatus"
+  | "statoss"
+  | "betterstack"
+  | "statusio"
+  | "sorry"
+  | "heroku"
+  | "slack";
 
-const FEED_PATH: Record<VendorFormat, string> = {
-  statuspage: "/api/v2/summary.json",
-  statoss: "/status.json",
+/**
+ * One reader per platform: the reading, or null when the address does not
+ * serve that platform's feed. Each costs one request to rule out, Sorry
+ * and status.io one or two more once recognised.
+ */
+const READERS: Record<
+  VendorFormat,
+  (url: string, fetchFn: typeof fetch) => Promise<VendorReading | null>
+> = {
+  async statuspage(url, fetchFn) {
+    const body = await getJson(`${url}/api/v2/summary.json`, fetchFn);
+    // Instatus answers at the same address in its own shape.
+    if (body === null || isInstatusSummary(body)) return null;
+    return parseStatuspage(body, url);
+  },
+  async instatus(url, fetchFn) {
+    const summary = await getJson(`${url}/summary.json`, fetchFn);
+    if (!isInstatusSummary(summary)) return null;
+    const parts = await getJson(`${url}/v2/components.json`, fetchFn).catch(
+      () => null,
+    );
+    return parseInstatus(summary, parts, url);
+  },
+  async statoss(url, fetchFn) {
+    const body = await getJson(`${url}/status.json`, fetchFn);
+    return body === null ? null : parseStatoss(body, url);
+  },
+  async betterstack(url, fetchFn) {
+    const body = await getJson(`${url}/index.json`, fetchFn);
+    return isBetterStack(body) ? parseBetterStack(body, url) : null;
+  },
+  async statusio(url, fetchFn) {
+    const page = await get(url, fetchFn, "text/html");
+    const id = statusIoId(page?.headers.get("x-status-page-id") ?? null);
+    if (page === null || id === null) return null;
+    const body = await getJson(`${STATUS_IO_API}/${id}`, fetchFn);
+    if (body === null) return null;
+    return parseStatusIo(body, url, id, statusIoName(page.body));
+  },
+  async sorry(url, fetchFn) {
+    const status = await getJson(`${url}/api/v1/status`, fetchFn);
+    if (!isSorryStatus(status)) return null;
+    const [parts, notices] = await Promise.all([
+      getJson(`${url}/api/v1/components`, fetchFn),
+      getJson(
+        `${url}/api/v1/notices?filter%5Btimeline_state_eq%5D=present`,
+        fetchFn,
+      ),
+    ]);
+    // Only a notice read on its own says which components it touches.
+    const open = sorryOpenNotices(notices).slice(0, 5);
+    const details = await Promise.all(
+      open.map((id) =>
+        getJson(`${url}/api/v1/notices/${id}`, fetchFn).catch(() => null),
+      ),
+    );
+    return parseSorry(status, parts, details, url);
+  },
+  async heroku(url, fetchFn) {
+    const body = await getJson(`${url}/api/v4/current-status`, fetchFn);
+    return isHeroku(body) ? parseHeroku(body, url) : null;
+  },
+  async slack(url, fetchFn) {
+    const body = await getJson(`${url}/api/v2.0.0/current`, fetchFn);
+    return isSlack(body) ? parseSlack(body, url) : null;
+  },
 };
+
+/** The order an address no format is remembered for is tried in. */
+const ORDER = Object.keys(READERS) as VendorFormat[];
+
+/** The parsers' "this is not my format", as against a failed connection. */
+function isShapeError(err: unknown): boolean {
+  return (
+    err instanceof Error && /^not (a|an|Heroku's|Slack's) /.test(err.message)
+  );
+}
 
 interface Stored {
   reading: VendorReading | null;
@@ -242,40 +359,73 @@ function store(): Map<string, Stored> {
   return globals.__statusVendors;
 }
 
-/** The address as it is kept: no trailing slash, no query. */
+/**
+ * Status pages that are only a shell, by host, and the address their feed
+ * is read from: status.stripe.com is Statuspage at www.stripestatus.com.
+ */
+const MOVED: Record<string, string> = {
+  "status.stripe.com": "https://www.stripestatus.com",
+};
+
+/**
+ * The address as it is kept: no query, no trailing slash, and no feed path
+ * after it, since someone who pastes the feed's address means its page.
+ */
 export function normalizeVendorUrl(input: string): string {
   const url = new URL(input);
-  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+  const moved = MOVED[url.hostname.toLowerCase()];
+  if (moved) return moved;
+  const path = url.pathname
+    .replace(
+      /\/(api\/v2\/summary\.json|summary\.json|status\.json|index\.json|api\/v4\/current-status|api\/v2\.0\.0\/current|api\/v1\/status)$/i,
+      "",
+    )
+    .replace(/\/+$/, "");
+  return `${url.origin}${path}`;
 }
 
 /**
- * Reads a vendor's page in whichever of the two formats it serves. The
- * format that read last time is asked first; when that one fails the other
- * is tried, so a vendor that changes platform is read again at once.
+ * Reads a vendor's page in whichever format it serves. The format that read
+ * last time is asked first, so a page is not asked for feeds it does not
+ * have at every refresh; when it fails in any way the others are tried, so
+ * a vendor that changes platform is read again at once. An address that
+ * cannot be reached at all ends the round; one that answers in a shape or
+ * a status a reader does not take moves on to the next.
  */
 export async function fetchVendor(
   url: string,
   fetchFn: typeof fetch = fetch,
   known?: VendorFormat,
 ): Promise<{ reading: VendorReading; format: VendorFormat }> {
-  const order: VendorFormat[] =
-    known === "statoss" ? ["statoss", "statuspage"] : ["statuspage", "statoss"];
+  const order: VendorFormat[] = known
+    ? [known, ...ORDER.filter((f) => f !== known)]
+    : [...ORDER];
   let failure: unknown = null;
   for (const format of order) {
     try {
-      const body = await getJson(`${url}${FEED_PATH[format]}`, fetchFn);
-      if (body === null) continue;
-      const reading =
-        format === "statuspage"
-          ? parseStatuspage(body, url)
-          : parseStatoss(body, url);
+      const reading = await READERS[format](url, fetchFn);
+      if (reading === null) continue;
       return { reading, format };
     } catch (err) {
+      // A refusal or a body of another shape: perhaps another platform.
+      if (!(err instanceof Refused) && !isShapeError(err)) throw err;
       failure ??= err;
     }
   }
   if (failure !== null) throw failure;
   throw new Error("no status feed at that address");
+}
+
+/** What a vendor is called: its page's own name, or its address. */
+export function vendorName(url: string, own?: string | null): string {
+  // "Acme Status" is the page; the vendor is Acme.
+  const name = own?.replace(/\s+status(\s+page)?$/i, "").trim();
+  if (name) return name;
+  try {
+    return new URL(url).hostname.replace(/^(www|status)\./, "");
+  } catch {
+    return url;
+  }
 }
 
 /** Every vendor page the configuration's components follow. */
@@ -343,6 +493,13 @@ export async function refreshVendors(
   return due.length > 0;
 }
 
+const PART_RANK: Record<VendorState, number> = {
+  unknown: 0,
+  up: 0,
+  slow: 1,
+  down: 2,
+};
+
 const STATES: Record<VendorState, ComponentState | null> = {
   up: "operational",
   slow: "degraded",
@@ -356,6 +513,8 @@ export interface VendorView {
   url: string;
   /** Its hostname, for "reported by". */
   host: string;
+  /** What the vendor is called, for alerts: its page's name, or the host. */
+  name: string;
   /** The part of it this component follows, or null for the whole page. */
   part: string | null;
   /** Null until the vendor has been read, when it cannot be, or when the part is not there. */
@@ -372,7 +531,13 @@ export function vendorView(
   now: number,
 ): VendorView {
   const stored = store().get(url);
-  const base = { url, host: new URL(url).host, part, incidents: [] };
+  const base = {
+    url,
+    host: new URL(url).host,
+    name: vendorName(url, stored?.reading?.name),
+    part,
+    incidents: [],
+  };
   if (!stored || stored.reading === null || stored.fetchedAt === null)
     return {
       ...base,
@@ -394,13 +559,18 @@ export function vendorView(
         reading.state === "unknown" ? "does not know its own state" : null,
     };
   const key = part.trim().toLowerCase();
-  const found = reading.components.find(
+  const matches = reading.components.filter(
     (c) => c.name.trim().toLowerCase() === key,
   );
-  if (!found)
+  if (matches.length === 0)
     return { ...base, state: null, problem: `has no part named "${part}"` };
-  if (found.state === "unknown")
+  // A page may list one name under two headings; the worse of them counts.
+  const known = matches.filter((c) => c.state !== "unknown");
+  if (known.length === 0)
     return { ...base, state: null, problem: "does not know that part's state" };
+  const found = known.reduce((a, b) =>
+    PART_RANK[b.state] > PART_RANK[a.state] ? b : a,
+  );
   return {
     ...base,
     state: STATES[found.state],

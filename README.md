@@ -19,7 +19,7 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 - **Groups.** Monitors with the same group name are shown together under one heading with a one-line summary.
 - **Components.** A part of the product with no check, such as a mobile app, shown with a state you set or an incident sets.
 - **Incidents and maintenance.** Write incidents as Markdown or YAML files in a folder; the page picks them up without a restart. Every incident and window has a page of its own, and older ones are listed by month under Incident history. Plan maintenance windows in the configuration: checks during a window are shown but not counted, and no alert goes out. A monitor that goes down opens an incident by itself and resolves it on recovery.
-- **Alerts where you are.** Email, Slack, Discord, PagerDuty, Opsgenie, ntfy and a signed webhook, per site or for all of them, with an optional repeat while a monitor stays down. Incident updates and maintenance notices go the same way.
+- **Alerts where you are.** Email, Slack, Discord, PagerDuty, Opsgenie, ntfy and a signed webhook, per site or for all of them, with an optional repeat while a monitor stays down. Incident updates and maintenance notices go the same way, and a vendor's outage goes to email, Slack, Discord and ntfy.
 - **Endpoints for machines.** `status.json`, `badge.svg` and `badge.json` for shields.io, `feed.xml` and `feed.atom`, and `widget.js` to embed a live status dot anywhere.
 - **Your look.** A logo, a favicon, an accent colour, a fixed light or dark theme, a description and a support link, per site.
 - **Times where the visitor is.** Every time on the page is written in the visitor's own time zone.
@@ -165,6 +165,7 @@ Open `https://status.example.com` to see the page.
 | `alerts.to[]`                        | no       | `[]`             | Destinations for every site without a list of its own. See below.                                            |
 | `alerts.repeatMinutes`               | no       | `0`              | Minutes between "still down" notices while a monitor stays down. `0` sends none.                             |
 | `alerts.updates`                     | no       | `true`           | `false` sends no incident updates or maintenance notices to the destinations.                                |
+| `alerts.vendors`                     | no       | `true`           | `false` sends nothing when a vendor a component follows changes state. See Vendor components.                |
 | `sites[].name`                       | yes      |                  | Shown in the headline, for example `example.com is up.`                                                      |
 | `sites[].host`                       | yes      |                  | Hostname that serves this site's page. Must be unique.                                                       |
 | `sites[].url`                        | no       | `https://<host>` | Where alerts and feeds link to.                                                                              |
@@ -180,7 +181,7 @@ Open `https://status.example.com` to see the page.
 | `sites[].password`                   | no       |                  | With a password, the page and its endpoints are locked. See Password pages.                                  |
 | `sites[].embedKey`                   | no       |                  | Lets embeds past the password with `?key=`. At least 8 letters, digits, dashes or underscores.               |
 | `sites[].uptimeTarget`               | no       |                  | Percent of checks that should pass each month, for example `99.9`. Shows the error budget.                   |
-| `sites[].alerts`                     | no       |                  | `false` to send no alerts for this site, or an object with `to`, `repeatMinutes` and `updates` for it alone. |
+| `sites[].alerts`                     | no       |                  | `false` to send no alerts for this site, or an object holding `to`, `repeatMinutes`, `updates` or `vendors`. |
 | `sites[].monitors[].name`            | yes      |                  | Shown above the strip. Must be unique within the site.                                                       |
 | `sites[].monitors[].type`            | no       | `http`           | `http`, `tcp`, `dns`, `ping`, `certificate`, `domain` or `heartbeat`. See Monitor types.                     |
 | `sites[].monitors[].url`             | for http |                  | The URL to request.                                                                                          |
@@ -371,11 +372,25 @@ components:
     part: Actions # one component on that page, by its name there
 ```
 
-`vendor` is the address of a public status page run on Atlassian Statuspage or incident.io (both serve `/api/v2/summary.json`) or of another StatOSS page, hosted or standalone (`/status.json`). Each page is read every five minutes, whatever the number of components that follow it.
+`vendor` is the address of a public status page on one of these:
 
-Vendor components sit in their own section, Third-party services, one row each: the state, whose report it is, and links to up to three of the vendor's open incidents. Without `part` the component follows the whole page; with it, that one part, and only the incidents that touch it. **A vendor's trouble does not move your headline, your badge or `status.json`'s `site.status`.** If that is what you want, open an incident of your own and name the component.
+| Platform                             | For example            | Read from                                                    |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------ |
+| Atlassian Statuspage and incident.io | GitHub, Stripe, OpenAI | `/api/v2/summary.json`                                       |
+| Instatus                             | Koyeb, Zed             | `/summary.json` and `/v2/components.json`                    |
+| Better Stack                         | Polar, Turso           | `/index.json`                                                |
+| status.io                            | GitLab, Neon           | the page's `x-status-page-id` header, then `api.status.io`   |
+| Sorry                                | Postmark               | `/api/v1/status`, `/api/v1/components` and `/api/v1/notices` |
+| Heroku's and Slack's own pages       | Heroku, Slack          | `/api/v4/current-status` and `/api/v2.0.0/current`           |
+| StatOSS, hosted or standalone        |                        | `/status.json`                                               |
+
+The first reading asks each platform in turn, up to eight requests; after that the one that answered is asked first. Each page is read every five minutes, whatever the number of components that follow it. A feed's address, such as `https://www.githubstatus.com/api/v2/summary.json`, is taken as its page's, and `https://status.stripe.com` is read from `https://www.stripestatus.com`, where its feed is.
+
+Vendor components sit in their own section, Third-party services, one row each: the state, whose report it is, and links to up to three of the vendor's open incidents. Without `part` the component follows the whole page; with it, that one part, and only the incidents that touch it. A name the page lists twice, under two headings, takes the worse state of the two. **A vendor's trouble does not move your headline, your badge or `status.json`'s `site.status`.** If that is what you want, open an incident of your own and name the component.
 
 A vendor that cannot be read keeps its last reading for 30 minutes; after that the component shows the `state` from the configuration (`operational` unless you set one) and the row says the page could not be read. The reason is logged with `[vendors]` in front.
+
+**Alerts.** When the vendor reports an outage, trouble, or things working again, the site's email, Slack, Discord and ntfy destinations are told, with up to three of the vendor's open incidents: "shop: GitHub Actions reports an outage". PagerDuty, Opsgenie and webhooks get none: they are for your own outages. The first reading after you add a component sends nothing, and neither does a vendor that cannot be read; the next reading is compared with the last one that said something. What each component was last told is kept in the database, so a restart repeats nothing. `vendors: false` under `alerts`, or under a site's `alerts`, keeps them on the page only.
 
 ### Deploy markers
 

@@ -1,0 +1,55 @@
+{
+  "status": "active",
+  "date_created": "2026-10-01T05:39:35-07:00",
+  "date_updated": "2026-10-01T06:58:40-07:00",
+  "active_incidents": [
+    {
+      "id": 1579,
+      "title": "Free Plan Customers Are Experiencing Message Failures",
+      "type": "outage",
+      "status": "active",
+      "url": "https://slack-status.com/2026-10/6c28dfb7b670dc02",
+      "date_created": "2026-10-01T05:39:35-07:00",
+      "date_updated": "2026-10-01T06:58:40-07:00",
+      "services": ["Messaging", "Apps/Integrations/APIs"],
+      "notes": [
+        {
+          "body": "<p>We're aware that some customers are unable to send messages.</p>",
+          "date_created": "2026-10-01T05:39:35-07:00"
+        }
+      ]
+    },
+    {
+      "id": 1580,
+      "title": "Some users may see delays loading huddles",
+      "type": "incident",
+      "status": "active",
+      "url": "https://slack-status.com/2026-10/0123456789abcdef",
+      "date_created": "2026-10-01T06:10:00-07:00",
+      "date_updated": "2026-10-01T06:20:00-07:00",
+      "services": ["Huddles"],
+      "notes": [
+        {
+          "body": "<p>We're investigating.</p>",
+          "date_created": "2026-10-01T06:10:00-07:00"
+        }
+      ]
+    },
+    {
+      "id": 1581,
+      "title": "Search results may be out of date",
+      "type": "notice",
+      "status": "active",
+      "url": "https://slack-status.com/2026-10/fedcba9876543210",
+      "date_created": "2026-10-01T06:30:00-07:00",
+      "date_updated": "2026-10-01T06:30:00-07:00",
+      "services": ["Search"],
+      "notes": [
+        {
+          "body": "<p>Recently sent messages may take a few minutes to appear in search.</p>",
+          "date_created": "2026-10-01T06:30:00-07:00"
+        }
+      ]
+    }
+  ]
+}

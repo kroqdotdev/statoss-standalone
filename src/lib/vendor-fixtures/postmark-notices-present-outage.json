@@ -1,0 +1,56 @@
+{
+  "notices": [
+    {
+      "id": 510500,
+      "type": "unplanned",
+      "state": "investigating",
+      "timeline_state": "present",
+      "subject": "Delayed Message Delivery",
+      "url": "https://status.postmarkapp.com/notices/1h45dwcxmxdt3dl8-delayed-message-delivery",
+      "began_at": "2026-10-02T13:49:00.000Z",
+      "ended_at": null,
+      "created_at": "2026-10-02T13:49:00.000Z",
+      "updated_at": "2026-10-02T13:55:00.000Z",
+      "tag_list": [],
+      "links": {
+        "self": "/api/v1/notices/510500"
+      },
+      "latest_update": {
+        "id": 51230000,
+        "state": "investigating",
+        "content": "We are investigating delays sending through the API and to Inbound.",
+        "url": "https://status.postmarkapp.com/notices/1h45dwcxmxdt3dl8-delayed-message-delivery#update-51230000",
+        "created_at": "2026-10-02T13:55:00.000Z",
+        "updated_at": "2026-10-02T13:55:00.000Z"
+      }
+    },
+    {
+      "id": 510501,
+      "type": "planned",
+      "state": "underway",
+      "timeline_state": "present",
+      "subject": "Analytics database maintenance",
+      "url": "https://status.postmarkapp.com/notices/aaaaaaaaaaaaaaaa-analytics-database-maintenance",
+      "began_at": "2026-10-02T13:00:00.000Z",
+      "ended_at": null,
+      "created_at": "2026-09-30T10:00:00.000Z",
+      "updated_at": "2026-10-02T13:00:00.000Z",
+      "tag_list": [],
+      "links": {
+        "self": "/api/v1/notices/510501"
+      },
+      "latest_update": {
+        "id": 51230001,
+        "state": "underway",
+        "content": "Maintenance has started.",
+        "url": "https://status.postmarkapp.com/notices/aaaaaaaaaaaaaaaa-analytics-database-maintenance#update-51230001",
+        "created_at": "2026-10-02T13:00:00.000Z",
+        "updated_at": "2026-10-02T13:00:00.000Z"
+      }
+    }
+  ],
+  "meta": {
+    "count": 2,
+    "total_count": 2
+  }
+}

@@ -78,6 +78,15 @@ CREATE TABLE IF NOT EXISTS auto_incident (
   error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_auto_incident_site ON auto_incident(site, started_at);
+CREATE TABLE IF NOT EXISTS vendor_state (
+  site TEXT NOT NULL,
+  component TEXT NOT NULL,
+  vendor TEXT NOT NULL,
+  part TEXT,
+  state TEXT NOT NULL,
+  since INTEGER NOT NULL,
+  PRIMARY KEY (site, component)
+);
 `;
 
 /**
@@ -569,4 +578,59 @@ export function listDeploys(
         ? [site, since, until]
         : [site, since, until, limit]),
     ) as DeployRow[];
+}
+
+// ---------------------------------------------------------------------------
+// Vendor states: what each component that follows a vendor was last told,
+// so that a change is alerted once, and a restart repeats nothing.
+
+export interface VendorStateRow {
+  site: string;
+  component: string;
+  vendor: string;
+  part: string | null;
+  state: string;
+  since: number;
+}
+
+export function vendorStates(db: Database.Database): VendorStateRow[] {
+  return db
+    .prepare(
+      "SELECT site, component, vendor, part, state, since FROM vendor_state",
+    )
+    .all() as VendorStateRow[];
+}
+
+export function getVendorState(
+  db: Database.Database,
+  site: string,
+  component: string,
+): VendorStateRow | undefined {
+  return db
+    .prepare(
+      `SELECT site, component, vendor, part, state, since FROM vendor_state
+       WHERE site = ? AND component = ?`,
+    )
+    .get(site, component) as VendorStateRow | undefined;
+}
+
+export function setVendorState(
+  db: Database.Database,
+  row: VendorStateRow,
+): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO vendor_state (site, component, vendor, part, state, since)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(row.site, row.component, row.vendor, row.part, row.state, row.since);
+}
+
+export function deleteVendorState(
+  db: Database.Database,
+  site: string,
+  component: string,
+): void {
+  db.prepare("DELETE FROM vendor_state WHERE site = ? AND component = ?").run(
+    site,
+    component,
+  );
 }

@@ -1,0 +1,709 @@
+{
+  "data": {
+    "id": "158916",
+    "type": "status_page",
+    "attributes": {
+      "company_name": "Turso",
+      "company_url": "https://turso.tech",
+      "contact_url": null,
+      "logo_url": "https://d1lppblt9t2x15.cloudfront.net/logos/ce36349b1a2ff16fe9785f064af061c0.png",
+      "timezone": "UTC",
+      "subdomain": "turso",
+      "custom_domain": "status.turso.tech",
+      "announcement": null,
+      "logo_remote_url": null,
+      "aggregate_state": "operational",
+      "created_at": "2023-03-22T13:37:41.970Z",
+      "updated_at": "2026-10-02T22:18:10.973Z"
+    },
+    "relationships": {
+      "sections": {
+        "data": [
+          {
+            "id": "156123",
+            "type": "status_page_section"
+          },
+          {
+            "id": "216093",
+            "type": "status_page_section"
+          }
+        ]
+      },
+      "resources": {
+        "data": [
+          {
+            "id": "2838979",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "1606861",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "8547864",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "8582224",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "8547865",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "9019167",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "9019168",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "8547866",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "9019165",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "8547867",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "8547868",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "9019169",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "8426222",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "8426223",
+            "type": "status_page_resource"
+          },
+          {
+            "id": "8455352",
+            "type": "status_page_resource"
+          }
+        ]
+      },
+      "status_reports": {
+        "data": [
+          {
+            "id": "996229",
+            "type": "status_report"
+          }
+        ]
+      }
+    }
+  },
+  "included": [
+    {
+      "id": "156123",
+      "type": "status_page_section",
+      "attributes": {
+        "name": "Web and Platform",
+        "position": 0
+      }
+    },
+    {
+      "id": "216093",
+      "type": "status_page_section",
+      "attributes": {
+        "name": "Turso Fly Locations",
+        "position": 1
+      }
+    },
+    {
+      "id": "2838979",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 1180132,
+        "resource_type": "Monitor",
+        "public_name": "Turso Website",
+        "explanation": "This tracks the status of the Turso web assets, the Turso blog, and the Turso web app",
+        "position": 0,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "1606861",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 1112905,
+        "resource_type": "Monitor",
+        "public_name": "Turso API",
+        "explanation": "This track the status of the Turso API, used to create, manage and delete databases. The status of individual databases is not affected by this metric",
+        "position": 1,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8547864",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 3091183,
+        "resource_type": "Monitor",
+        "public_name": "AWS us-east-1 (N. Virginia)",
+        "explanation": "",
+        "position": 2,
+        "availability": 0.999877,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8582224",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 3344221,
+        "resource_type": "Monitor",
+        "public_name": "AWS us-east-2",
+        "explanation": "",
+        "position": 3,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8547865",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 3091193,
+        "resource_type": "Monitor",
+        "public_name": "AWS us-west-2 (Oregon)",
+        "explanation": "",
+        "position": 4,
+        "availability": 0.999866,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "9019167",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 5007349,
+        "resource_type": "Monitor",
+        "public_name": "AWS ca-central-1",
+        "explanation": "",
+        "position": 5,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "not_monitored",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "9019168",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 5007426,
+        "resource_type": "Monitor",
+        "public_name": "AWS sa-east-1",
+        "explanation": "",
+        "position": 6,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "not_monitored",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8547866",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 3091174,
+        "resource_type": "Monitor",
+        "public_name": "AWS eu-west-1 (Ireland)",
+        "explanation": "",
+        "position": 7,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "9019165",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 5007439,
+        "resource_type": "Monitor",
+        "public_name": "AWS eu-north-1",
+        "explanation": "",
+        "position": 8,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "not_monitored",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8547867",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 3091202,
+        "resource_type": "Monitor",
+        "public_name": "AWS ap-northeast-1 (Tokyo)",
+        "explanation": "",
+        "position": 9,
+        "availability": 0.999953,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8547868",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 3091192,
+        "resource_type": "Monitor",
+        "public_name": "AWS ap-south-1 (Mumbai)",
+        "explanation": "",
+        "position": 10,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "9019169",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 156123,
+        "resource_id": 5007434,
+        "resource_type": "Monitor",
+        "public_name": "AWS ap-southeast-2",
+        "explanation": "",
+        "position": 11,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "not_monitored",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8426222",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 216093,
+        "resource_id": 1325371,
+        "resource_type": "ResourceGroup",
+        "public_name": "Global",
+        "explanation": "This tracks the status of each individual region available on Turso. It is obtained by querying a database deployed in all regions. Other factors like individual host failures can affect your databases further",
+        "position": 0,
+        "availability": 0.99949,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8426223",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 216093,
+        "resource_id": 1853839,
+        "resource_type": "Monitor",
+        "public_name": "Amsterdam, Netherlands\t",
+        "explanation": "This tracks the status of each individual region available on Turso. It is obtained by querying a database deployed in all regions. Other factors like individual host failures can affect your databases further",
+        "position": 1,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "8455352",
+      "type": "status_page_resource",
+      "attributes": {
+        "status_page_section_id": 216093,
+        "resource_id": 1853836,
+        "resource_type": "Monitor",
+        "public_name": "Ashburn, Virginia (US)",
+        "explanation": "",
+        "position": 2,
+        "availability": 1.0,
+        "status": "operational",
+        "status_history": [
+          {
+            "day": "2026-09-30",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-01",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          },
+          {
+            "day": "2026-10-02",
+            "status": "operational",
+            "downtime_duration": 0,
+            "maintenance_duration": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "5528592",
+      "type": "status_update",
+      "attributes": {
+        "message": "The router component is experiencing a high number of 502. At the moment, we only see databases in us-east-1 affected but are monitoring the situation and working on a mitigation",
+        "published_at": "2026-08-04T22:18:00.000Z",
+        "published_at_timezone": "Bogota",
+        "notify_subscribers": true,
+        "affected_resources": [
+          {
+            "status_page_resource_id": "1606861",
+            "status": "degraded"
+          },
+          {
+            "status_page_resource_id": "8547864",
+            "status": "degraded"
+          }
+        ]
+      }
+    },
+    {
+      "id": "5528735",
+      "type": "status_update",
+      "attributes": {
+        "message": "We had identified and resolved the issue. The issue was a software issue that brought a particular multitenant server down, which then cascaded due to retries to a load issue in the routing layer increasing the blast radius of the incident. We estimate that around 30 customers were affected and we deeply apologize for the disruption to those affected",
+        "published_at": "2026-08-04T23:06:00.000Z",
+        "published_at_timezone": "Bogota",
+        "notify_subscribers": true,
+        "affected_resources": [
+          {
+            "status_page_resource_id": "1606861",
+            "status": "resolved"
+          },
+          {
+            "status_page_resource_id": "8547864",
+            "status": "resolved"
+          }
+        ]
+      }
+    },
+    {
+      "id": "996229",
+      "type": "status_report",
+      "attributes": {
+        "title": "Elevated errors of 502 on database queries",
+        "report_type": "manual",
+        "starts_at": "2026-08-04T22:18:00.000Z",
+        "ends_at": null,
+        "affected_resources": [
+          {
+            "status_page_resource_id": "1606861",
+            "status": "resolved"
+          },
+          {
+            "status_page_resource_id": "8547864",
+            "status": "resolved"
+          }
+        ],
+        "aggregate_state": "resolved"
+      },
+      "relationships": {
+        "status_updates": {
+          "data": [
+            {
+              "id": "5528592",
+              "type": "status_update"
+            },
+            {
+              "id": "5528735",
+              "type": "status_update"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

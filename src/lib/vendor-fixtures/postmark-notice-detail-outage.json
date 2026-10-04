@@ -1,0 +1,62 @@
+{
+  "notice": {
+    "id": 510500,
+    "type": "unplanned",
+    "state": "investigating",
+    "timeline_state": "present",
+    "subject": "Delayed Message Delivery",
+    "url": "https://status.postmarkapp.com/notices/1h45dwcxmxdt3dl8-delayed-message-delivery",
+    "began_at": "2026-10-02T13:49:00.000Z",
+    "ended_at": null,
+    "created_at": "2026-10-02T13:49:00.000Z",
+    "updated_at": "2026-10-02T13:55:00.000Z",
+    "tag_list": [],
+    "links": {
+      "self": "/api/v1/notices/510500"
+    },
+    "components": [
+      {
+        "id": 87154,
+        "name": "Sending",
+        "description": null,
+        "state": "degraded",
+        "links": {
+          "children": {
+            "href": "/api/v1/components?filter%5Bparent_id_eq%5D=87154",
+            "count": 0
+          }
+        },
+        "parent_id": 46327,
+        "position": 3,
+        "created_at": "2024-12-05T03:51:14.447Z",
+        "updated_at": "2026-09-28T15:22:00.248Z"
+      },
+      {
+        "id": 91953,
+        "name": "Inbound",
+        "description": null,
+        "state": "degraded",
+        "links": {
+          "children": {
+            "href": "/api/v1/components?filter%5Bparent_id_eq%5D=91953",
+            "count": 0
+          }
+        },
+        "parent_id": null,
+        "position": 10,
+        "created_at": "2025-12-18T23:00:35.015Z",
+        "updated_at": "2026-09-28T17:55:57.459Z"
+      }
+    ],
+    "updates": [
+      {
+        "id": 51230000,
+        "state": "investigating",
+        "content": "We are investigating delays sending through the API and to Inbound.",
+        "url": "https://status.postmarkapp.com/notices/1h45dwcxmxdt3dl8-delayed-message-delivery#update-51230000",
+        "created_at": "2026-10-02T13:55:00.000Z",
+        "updated_at": "2026-10-02T13:55:00.000Z"
+      }
+    ]
+  }
+}

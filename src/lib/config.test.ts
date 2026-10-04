@@ -7,6 +7,7 @@ import {
   parseConfig,
   parseTimestamp,
   siteSendsUpdates,
+  siteSendsVendorAlerts,
   siteDestinations,
   siteRepeatMinutes,
   siteUrl,
@@ -506,6 +507,32 @@ sites:
       true,
     ]);
   });
+
+  it("tells of vendors unless a site, or every site, says vendors: false", () => {
+    const config = parseConfig(`
+alerts:
+  to:
+    - slack: https://hooks.slack.com/x
+  vendors: false
+sites:
+  - name: a
+    host: a
+  - name: b
+    host: b
+    alerts:
+      vendors: true
+  - name: c
+    host: c
+    alerts: false
+`);
+    expect(config.sites.map((s) => siteSendsVendorAlerts(config, s))).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    const on = parseConfig(withTo("    - slack: https://hooks.slack.com/x"));
+    expect(siteSendsVendorAlerts(on, on.sites[0])).toBe(true);
+  });
 });
 
 describe("page settings", () => {
@@ -597,6 +624,19 @@ ${component}
       part: "Git Operations",
       state: "operational",
     });
+  });
+
+  it("follow the page when the feed's address is given, and Stripe where its feed is", () => {
+    const vendors = parseConfig(
+      withComponent(`      - name: Linear
+        vendor: https://linearstatus.com/api/v2/summary.json
+      - name: Stripe
+        vendor: https://status.stripe.com`),
+    ).sites[0].components.map((c) => c.vendor);
+    expect(vendors).toEqual([
+      "https://linearstatus.com",
+      "https://www.stripestatus.com",
+    ]);
   });
 
   it.each([

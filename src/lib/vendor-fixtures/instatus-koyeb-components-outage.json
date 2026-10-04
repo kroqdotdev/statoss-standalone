@@ -1,0 +1,187 @@
+{
+  "components": [
+    {
+      "id": "clph4f5ih104469b9n5mqbfl5lw",
+      "name": "Frankfurt - FRA",
+      "description": "",
+      "status": "MAJOROUTAGE",
+      "group": {
+        "id": "clhj42pod0002srmz3t349b1u-h5zh6yjhc7mm",
+        "name": "Europe",
+        "description": ""
+      },
+      "activeIncidents": [
+        {
+          "id": "cmg0000000000000000000001",
+          "name": "Elevated API errors in Frankfurt",
+          "status": "IDENTIFIED",
+          "started": "2026-10-02T09:58:00.000Z",
+          "impact": "MAJOROUTAGE",
+          "url": "https://status.koyeb.com/incident/cmg0000000000000000000001"
+        }
+      ]
+    },
+    {
+      "id": "clhj42pod0001srmzdk9nhjcd-yb4rh598wsw9",
+      "name": "Control Panel",
+      "description": "The Koyeb control panel at available at app.koyeb.com.",
+      "status": "OPERATIONAL",
+      "group": null
+    },
+    {
+      "id": "clph4llxy115361b9n5nkbuakr1",
+      "name": "Washington, D.C. - WAS",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": {
+        "id": "clhj42pod0003srmz5n4p7ka9-l1b4r31sylcv",
+        "name": "North America",
+        "description": ""
+      }
+    },
+    {
+      "id": "clph4pyi7120132b9n5u61iytsz",
+      "name": "Tokyo - TYO",
+      "description": "",
+      "status": "UNDERMAINTENANCE",
+      "group": {
+        "id": "clph4ktov110270bgn5rdo5tb10",
+        "name": "Asia\u2013Pacific - APAC",
+        "description": ""
+      },
+      "activeMaintenances": [
+        {
+          "id": "cmg0000000000000000000003",
+          "name": "Tokyo network maintenance",
+          "start": "2026-10-02T09:00:00.000Z",
+          "duration": "120",
+          "status": "INPROGRESS",
+          "url": "https://status.koyeb.com/maintenance/cmg0000000000000000000003"
+        }
+      ]
+    },
+    {
+      "id": "clhj42poc0000srmz5q7fd394-8t421gx2ph1b",
+      "name": "API",
+      "description": "",
+      "status": "PARTIALOUTAGE",
+      "group": null,
+      "activeIncidents": [
+        {
+          "id": "cmg0000000000000000000001",
+          "name": "Elevated API errors in Frankfurt",
+          "status": "IDENTIFIED",
+          "started": "2026-10-02T09:58:00.000Z",
+          "impact": "MAJOROUTAGE",
+          "url": "https://status.koyeb.com/incident/cmg0000000000000000000001"
+        }
+      ]
+    },
+    {
+      "id": "clph4n4hd116769b9n5uahhdtvk",
+      "name": "San Francisco - SFO",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": {
+        "id": "clhj42pod0003srmz5n4p7ka9-l1b4r31sylcv",
+        "name": "North America",
+        "description": ""
+      }
+    },
+    {
+      "id": "clph4fnmb105193b9n5gjty0yoq",
+      "name": "Paris - PAR",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": {
+        "id": "clhj42pod0002srmz3t349b1u-h5zh6yjhc7mm",
+        "name": "Europe",
+        "description": ""
+      }
+    },
+    {
+      "id": "clph4s3w8118158bgn56phm2f9w",
+      "name": "Singapore - SIN",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": {
+        "id": "clph4ktov110270bgn5rdo5tb10",
+        "name": "Asia\u2013Pacific - APAC",
+        "description": ""
+      }
+    },
+    {
+      "id": "clpwbirqm137047bso68m1k57pl",
+      "name": "Build / Provisioning",
+      "description": "",
+      "status": "DEGRADEDPERFORMANCE",
+      "group": null,
+      "activeIncidents": [
+        {
+          "id": "cmg0000000000000000000002",
+          "name": "Slow builds",
+          "status": "MONITORING",
+          "started": "2026-10-02T09:40:00.000Z",
+          "impact": "DEGRADEDPERFORMANCE",
+          "url": "https://status.koyeb.com/incident/cmg0000000000000000000002"
+        }
+      ]
+    },
+    {
+      "id": "clhj42pod0003srmz5n4p7ka9-l1b4r31sylcv",
+      "name": "North America",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": null
+    },
+    {
+      "id": "clhj42pod0002srmz3t349b1u-h5zh6yjhc7mm",
+      "name": "Europe",
+      "description": "",
+      "status": "MAJOROUTAGE",
+      "group": null
+    },
+    {
+      "id": "clph4ktov110270bgn5rdo5tb10",
+      "name": "Asia\u2013Pacific - APAC",
+      "description": "",
+      "status": "UNDERMAINTENANCE",
+      "group": null
+    },
+    {
+      "id": "clhja3owx126587symzkjni8jox",
+      "name": "Third Party: Github \u2192 API Requests",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": null
+    },
+    {
+      "id": "clhj5vvol1631701symzbt515bgq",
+      "name": "Third Party: Github \u2192 Webhooks",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": null
+    },
+    {
+      "id": "clowpjlmx188635biog8af5jpe0",
+      "name": "Third Party: Cloudflare \u2192 Cloudflare Sites and Services \u2192 API",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": null
+    },
+    {
+      "id": "clowphvna185911biogi7ytahqd",
+      "name": "Third Party: Docker \u2192 Registry",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": null
+    },
+    {
+      "id": "clowplx2v1086bln043y4zp0l",
+      "name": "Third Party: Quay \u2192 Registry",
+      "description": "",
+      "status": "OPERATIONAL",
+      "group": null
+    }
+  ]
+}

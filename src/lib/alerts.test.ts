@@ -6,15 +6,18 @@ import {
   formatDuration,
   RETRY_DELAYS_MS,
   describeNotice,
+  describeVendor,
   headerText,
   sendAlerts,
   sendNotice,
+  sendVendorAlert,
   signWebhook,
   slackPayload,
   webhookPayload,
   type AlertEvent,
   type Mail,
   type NoticeEvent,
+  type VendorEvent,
 } from "./alerts";
 
 const NOW = 1_700_000_000_000;
@@ -440,6 +443,85 @@ describe("notices", () => {
       status: "Identified",
       monitors: ["API"],
     });
+  });
+});
+
+describe("vendor alerts", () => {
+  const OUTAGE: VendorEvent = {
+    kind: "vendor-changed",
+    site: "shop",
+    component: "GitHub Actions",
+    pageUrl: "https://status.shop.example",
+    vendor: {
+      name: "GitHub",
+      url: "https://www.githubstatus.com",
+      part: "Actions",
+      state: "major",
+      incidents: [
+        { name: "Delays in Actions runs", url: "https://stspg.io/abc" },
+      ],
+    },
+    since: NOW - 3_600_000,
+    stateSince: NOW,
+    now: NOW,
+  };
+
+  it("say what the vendor reports, with its open incidents", () => {
+    expect(describeVendor(OUTAGE)).toEqual({
+      subject: "shop: GitHub Actions reports an outage",
+      lines: [
+        "GitHub Actions reports an outage. GitHub Actions on shop shows it.",
+        "Delays in Actions runs: https://stspg.io/abc",
+        "Time: 2023-11-14 22:13 UTC",
+      ],
+    });
+    const whole = { ...OUTAGE.vendor, part: null };
+    expect(
+      describeVendor({ ...OUTAGE, vendor: { ...whole, state: "degraded" } })
+        .subject,
+    ).toBe("shop: GitHub reports trouble");
+    expect(
+      describeVendor({
+        ...OUTAGE,
+        vendor: { ...whole, state: "operational", incidents: [] },
+      }).lines,
+    ).toEqual([
+      "GitHub reports it working again, after 1 h. GitHub Actions on shop shows it.",
+      "Time: 2023-11-14 22:13 UTC",
+    ]);
+  });
+
+  it("go to mail, chat and ntfy, never to a pager or a webhook", async () => {
+    const { calls, fetchFn } = fakeFetch();
+    const send = vi.fn<(mail: Mail) => Promise<unknown>>().mockResolvedValue(1);
+    const results = await sendVendorAlert(
+      [
+        { email: "ops@example.com" },
+        { slack: "https://hooks.slack.com/x" },
+        { discord: "https://discord.com/api/webhooks/y" },
+        { ntfy: "https://ntfy.sh/ops" },
+        { webhook: "https://example.com/hook", secret: "s" },
+        { pagerduty: "R0UT1NG" },
+        { opsgenie: "KEY" },
+      ],
+      OUTAGE,
+      { send, from: "status@example.com", fetch: fetchFn },
+    );
+    expect(results.map((r) => r.channel)).toEqual([
+      "email",
+      "slack",
+      "discord",
+      "ntfy",
+    ]);
+    expect(send.mock.calls[0][0].subject).toBe(
+      "shop: GitHub Actions reports an outage",
+    );
+    expect(calls.map((c) => c.url)).toEqual([
+      "https://hooks.slack.com/x",
+      "https://discord.com/api/webhooks/y",
+      "https://ntfy.sh/ops",
+    ]);
+    expect(calls[2].headers).toMatchObject({ priority: "3", tags: "cloud" });
   });
 });
 

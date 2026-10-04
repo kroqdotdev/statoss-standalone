@@ -2,11 +2,13 @@ import type Database from "better-sqlite3";
 import {
   sendAlerts,
   sendNotice,
+  sendVendorAlert,
   smtpSend,
   type AlertDeps,
   type AlertEvent,
   type AlertKind,
   type NoticeEvent,
+  type VendorEvent,
 } from "./alerts";
 import { monitorSpec, runCheck } from "./checker";
 import type { CheckOutcome, CheckSpec } from "./checker";
@@ -47,6 +49,11 @@ import { readIncidentFiles } from "./incident-files";
 import { inMaintenance, maintenanceView } from "./incidents";
 import { dueNotices } from "./notices";
 import { applyResult, lateAfterMs, type CheckVerdict } from "./state";
+import {
+  forgetUnfollowedVendors,
+  vendorAlertHolds,
+  vendorAlerts,
+} from "./vendor-alerts";
 import { refreshVendors } from "./vendors";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -369,6 +376,22 @@ export function sendDueNotices(
 }
 
 /**
+ * Tells each site's destinations when a vendor one of its components
+ * follows has changed state. Called after vendor pages have been read.
+ */
+export function sendVendorAlerts(
+  config: AppConfig,
+  db: Database.Database,
+  send: (destinations: Destination[], event: VendorEvent) => Promise<unknown>,
+  now: number,
+): void {
+  for (const { destinations, event } of vendorAlerts(config, db, now))
+    send(destinations, event).catch((err: unknown) => {
+      console.error("[scheduler] vendor alert failed", err);
+    });
+}
+
+/**
  * How long a tick spreads its checks over: three quarters of the interval,
  * 45 seconds at most, so the last check and its timeout end before the next
  * tick at the default of a minute.
@@ -412,6 +435,8 @@ export function startScheduler(): void {
   const db = getDb();
   const jobs = loadJobs(config);
   recordComponentStates(db, config.sites, Date.now());
+  // No round of vendor alerts runs once no component follows a vendor.
+  forgetUnfollowedVendors(config, db);
 
   if (config.alerts?.smtp && !process.env.SMTP_PASS) {
     console.warn(
@@ -448,12 +473,23 @@ export function startScheduler(): void {
   const run = async () => {
     try {
       // Not awaited: a slow vendor must not hold up the checks.
-      void refreshVendors(config, Date.now()).then(
-        (read) => {
-          if (read) bumpDataVersion();
-        },
-        (err: unknown) => console.error("[vendors] refresh failed", err),
-      );
+      void refreshVendors(config, Date.now())
+        .then((read) => {
+          if (!read) return;
+          bumpDataVersion();
+          sendVendorAlerts(
+            config,
+            db,
+            (destinations, event) =>
+              sendVendorAlert(destinations, event, alertDeps, () =>
+                vendorAlertHolds(db, event),
+              ),
+            Date.now(),
+          );
+        })
+        .catch((err: unknown) =>
+          console.error("[vendors] refresh failed", err),
+        );
       await tick(deps);
       sendDueNotices(
         config,

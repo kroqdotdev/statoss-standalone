@@ -1,0 +1,123 @@
+{
+  "status": [
+    {
+      "system": "Apps",
+      "status": "green"
+    },
+    {
+      "system": "Data",
+      "status": "green"
+    },
+    {
+      "system": "Tools",
+      "status": "green"
+    }
+  ],
+  "incidents": [],
+  "scheduled": [
+    {
+      "id": 2965,
+      "title": "Heroku Platform Maintenance",
+      "state": "upcoming",
+      "created_at": "2026-09-30T17:00:11.226Z",
+      "updated_at": "2026-09-30T17:13:13.605Z",
+      "resolved": false,
+      "href": "https://status.heroku.com/api/v4/incidents/2965",
+      "full_url": "https://status.heroku.com/incidents/2965",
+      "duration": 0,
+      "resolved_at": null,
+      "review": false,
+      "systems": [
+        {
+          "name": "Apps",
+          "status": "green",
+          "services": ["Apps"]
+        }
+      ],
+      "tags": ["EMEA", "NA"],
+      "updates": [
+        {
+          "id": 8687,
+          "created_at": "2026-09-30T22:00:00.000Z",
+          "updated_at": "2026-09-30T22:00:00.000Z",
+          "incident_id": 2965,
+          "contents": "The maintenance is now complete. All functionality has now returned to normal.",
+          "title": "Resolved",
+          "update_type": "resolved",
+          "systems": []
+        },
+        {
+          "id": 8686,
+          "created_at": "2026-09-30T17:00:11.226Z",
+          "updated_at": "2026-09-30T17:00:11.226Z",
+          "incident_id": 2965,
+          "contents": "On September 30, 2026, starting at 17:00 UTC (13:00 EDT) and continuing until 22:00 UTC (18:00 EDT) (5 hours), Heroku will be performing scheduled maintenance.",
+          "title": "Heroku Platform Maintenance",
+          "update_type": "scheduled",
+          "systems": [
+            {
+              "name": "Apps",
+              "status": "green",
+              "services": ["Apps"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2959,
+      "title": "Heroku Platform Maintenance",
+      "state": "upcoming",
+      "created_at": "2026-07-15T17:00:24.339Z",
+      "updated_at": "2026-07-15T17:00:24.472Z",
+      "resolved": false,
+      "href": "https://status.heroku.com/api/v4/incidents/2959",
+      "full_url": "https://status.heroku.com/incidents/2959",
+      "duration": 0,
+      "resolved_at": null,
+      "review": false,
+      "systems": [
+        {
+          "name": "Apps",
+          "status": "green",
+          "services": ["Apps"]
+        }
+      ],
+      "tags": ["EMEA", "NA", "APAC"],
+      "updates": [
+        {
+          "id": 8668,
+          "created_at": "2026-07-15T21:23:52.796Z",
+          "updated_at": "2026-07-15T21:23:52.800Z",
+          "incident_id": 2959,
+          "contents": "Maintenance is complete",
+          "title": "Heroku Maintenance Update",
+          "update_type": "scheduled",
+          "systems": [
+            {
+              "name": "Apps",
+              "status": "green",
+              "services": ["Apps"]
+            }
+          ]
+        },
+        {
+          "id": 8667,
+          "created_at": "2026-07-15T17:00:24.339Z",
+          "updated_at": "2026-07-15T17:00:24.339Z",
+          "incident_id": 2959,
+          "contents": "On July 15, 2026, starting at 17:00 UTC (13:00 EDT) and continuing until 20:00 UTC (16:00 EDT) (3 hours), Heroku will be performing scheduled maintenance.",
+          "title": "Heroku Platform Maintenance",
+          "update_type": "scheduled",
+          "systems": [
+            {
+              "name": "Apps",
+              "status": "green",
+              "services": ["Apps"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

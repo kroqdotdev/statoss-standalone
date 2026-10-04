@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import nodemailer from "nodemailer";
-import type { Destination, SmtpConfig } from "./config";
+import type { ComponentState, Destination, SmtpConfig } from "./config";
 import { formatCount, formatDuration, formatUtcStamp } from "./format";
 
 export { formatDuration };
@@ -242,6 +242,61 @@ export function noticeWebhookPayload(
 }
 
 // ---------------------------------------------------------------------------
+// Vendors: a component that follows a vendor's status page moved with it.
+
+export type VendorKind = "vendor-changed";
+
+export interface VendorEvent {
+  kind: VendorKind;
+  site: string;
+  /** The component on the page that follows the vendor. */
+  component: string;
+  pageUrl: string;
+  vendor: {
+    /** What the vendor is called. */
+    name: string;
+    /** The vendor's page. */
+    url: string;
+    /** The part of it the component follows, or null for the whole page. */
+    part: string | null;
+    /** What the vendor says now. */
+    state: ComponentState;
+    /** Its open incidents. */
+    incidents: Array<{ name: string; url: string }>;
+  };
+  /** When the state it left began. */
+  since: number;
+  /** When this state began, so a late retry can tell it is still this one. */
+  stateSince: number;
+  now: number;
+}
+
+export function describeVendor(event: VendorEvent): {
+  subject: string;
+  lines: string[];
+} {
+  const v = event.vendor;
+  const what = v.part ? `${v.name} ${v.part}` : v.name;
+  const said =
+    v.state === "major"
+      ? "reports an outage"
+      : v.state === "operational"
+        ? "reports it working again"
+        : "reports trouble";
+  const shows = `${event.component} on ${event.site} shows it.`;
+  return {
+    subject: `${event.site}: ${what} ${said}`,
+    lines: [
+      v.state === "operational"
+        ? `${what} ${said}, after ${formatDuration(event.now - event.since)}. ${shows}`
+        : `${what} ${said}. ${shows}`,
+      ...v.incidents.slice(0, 3).map((i) => `${i.name}: ${i.url}`),
+      `Time: ${formatUtcStamp(event.now)}`,
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // One message, whatever it is about, in the shape every channel can send.
 
 export interface Message {
@@ -250,7 +305,8 @@ export interface Message {
   subject: string;
   lines: string[];
   pageUrl: string;
-  webhook: Record<string, unknown>;
+  /** The webhook's body, or null for a message no webhook gets. */
+  webhook: Record<string, unknown> | null;
   ntfy: { priority: string; tags: string };
   /**
    * What PagerDuty and Opsgenie do with it: open an alert, close the one
@@ -269,18 +325,21 @@ export interface Message {
   } | null;
 }
 
-const NTFY: Record<AlertKind | NoticeKind, { priority: string; tags: string }> =
-  {
-    "went-down": { priority: "5", tags: "rotating_light" },
-    "still-down": { priority: "4", tags: "rotating_light" },
-    "went-slow": { priority: "4", tags: "turtle" },
-    recovered: { priority: "3", tags: "white_check_mark" },
-    "back-to-normal": { priority: "3", tags: "white_check_mark" },
-    "incident-update": { priority: "3", tags: "memo" },
-    "maintenance-scheduled": { priority: "2", tags: "wrench" },
-    "maintenance-started": { priority: "3", tags: "wrench" },
-    "maintenance-ended": { priority: "2", tags: "white_check_mark" },
-  };
+const NTFY: Record<
+  AlertKind | NoticeKind | VendorKind,
+  { priority: string; tags: string }
+> = {
+  "went-down": { priority: "5", tags: "rotating_light" },
+  "still-down": { priority: "4", tags: "rotating_light" },
+  "went-slow": { priority: "4", tags: "turtle" },
+  recovered: { priority: "3", tags: "white_check_mark" },
+  "back-to-normal": { priority: "3", tags: "white_check_mark" },
+  "incident-update": { priority: "3", tags: "memo" },
+  "maintenance-scheduled": { priority: "2", tags: "wrench" },
+  "maintenance-started": { priority: "3", tags: "wrench" },
+  "maintenance-ended": { priority: "2", tags: "white_check_mark" },
+  "vendor-changed": { priority: "3", tags: "cloud" },
+};
 
 export function alertMessage(event: AlertEvent): Message {
   const { subject, lines } = describeAlert(event);
@@ -323,6 +382,23 @@ export function noticeMessage(event: NoticeEvent): Message {
     lines,
     pageUrl: event.pageUrl,
     webhook: noticeWebhookPayload(event),
+    ntfy: NTFY[event.kind],
+    pager: null,
+  };
+}
+
+/**
+ * A vendor's change goes to the channels a person reads: email, Slack,
+ * Discord and ntfy. A pager or a webhook is for your own outages.
+ */
+export function vendorMessage(event: VendorEvent): Message {
+  const { subject, lines } = describeVendor(event);
+  return {
+    event: event.kind,
+    subject,
+    lines,
+    pageUrl: event.pageUrl,
+    webhook: null,
     ntfy: NTFY[event.kind],
     pager: null,
   };
@@ -453,7 +529,8 @@ function closeAside(
 
 /**
  * Sends one message to one destination. Null when the destination has no
- * use for it: an email without SMTP, a notice to a pager.
+ * use for it: an email without SMTP, a notice to a pager, a vendor's change
+ * to a webhook.
  */
 function deliver(
   d: Destination,
@@ -556,6 +633,7 @@ function deliver(
       },
       "text/plain; charset=utf-8",
     );
+  if (message.webhook === null) return null;
   const body = JSON.stringify(message.webhook);
   return post(deps.fetch, d.webhook, body, {
     "x-statoss-event": message.event,
@@ -675,4 +753,13 @@ export function sendNotice(
   deps: AlertDeps,
 ): Promise<AlertResult[]> {
   return sendMessage(destinations, noticeMessage(event), deps);
+}
+
+export function sendVendorAlert(
+  destinations: Destination[],
+  event: VendorEvent,
+  deps: AlertDeps,
+  stillHolds?: () => boolean,
+): Promise<AlertResult[]> {
+  return sendMessage(destinations, vendorMessage(event), deps, stillHolds);
 }

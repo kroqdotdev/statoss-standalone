@@ -1,0 +1,68 @@
+{
+  "status": [
+    {
+      "system": "Apps",
+      "status": "red"
+    },
+    {
+      "system": "Data",
+      "status": "green"
+    },
+    {
+      "system": "Tools",
+      "status": "yellow"
+    }
+  ],
+  "incidents": [
+    {
+      "id": 2964,
+      "title": "Heroku Feature Degradation",
+      "state": "open",
+      "created_at": "2026-09-24T14:56:09.928Z",
+      "updated_at": "2026-09-24T16:26:10.525Z",
+      "resolved": false,
+      "href": "https://status.heroku.com/api/v4/incidents/2964",
+      "full_url": "https://status.heroku.com/incidents/2964",
+      "duration": 0,
+      "resolved_at": null,
+      "review": false,
+      "systems": [
+        {
+          "name": "Apps",
+          "status": "red",
+          "services": ["Apps"]
+        },
+        {
+          "name": "Tools",
+          "status": "yellow",
+          "services": ["Tools"]
+        }
+      ],
+      "tags": ["NA"],
+      "updates": [
+        {
+          "id": 8681,
+          "created_at": "2026-09-24T14:56:09.928Z",
+          "updated_at": "2026-09-24T14:56:09.928Z",
+          "incident_id": 2964,
+          "contents": "Heroku engineers are investigating.",
+          "title": "Heroku Feature Degradation",
+          "update_type": "investigating",
+          "systems": [
+            {
+              "name": "Apps",
+              "status": "red",
+              "services": ["Apps"]
+            },
+            {
+              "name": "Tools",
+              "status": "yellow",
+              "services": ["Tools"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "scheduled": []
+}

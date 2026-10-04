@@ -1,0 +1,38 @@
+{
+  "page": {
+    "name": "Koyeb",
+    "url": "https://status.koyeb.com",
+    "status": "HASISSUES"
+  },
+  "activeIncidents": [
+    {
+      "id": "cmg0000000000000000000001",
+      "name": "Elevated API errors in Frankfurt",
+      "started": "2026-10-02T09:58:00.000Z",
+      "status": "IDENTIFIED",
+      "impact": "MAJOROUTAGE",
+      "url": "https://status.koyeb.com/incident/cmg0000000000000000000001",
+      "updatedAt": "2026-10-02T10:10:00.000Z"
+    },
+    {
+      "id": "cmg0000000000000000000002",
+      "name": "Slow builds",
+      "started": "2026-10-02T09:40:00.000Z",
+      "status": "MONITORING",
+      "impact": "DEGRADEDPERFORMANCE",
+      "url": "https://status.koyeb.com/incident/cmg0000000000000000000002",
+      "updatedAt": "2026-10-02T10:00:00.000Z"
+    }
+  ],
+  "activeMaintenances": [
+    {
+      "id": "cmg0000000000000000000003",
+      "name": "Tokyo network maintenance",
+      "start": "2026-10-02T09:00:00.000Z",
+      "status": "INPROGRESS",
+      "duration": "120",
+      "url": "https://status.koyeb.com/maintenance/cmg0000000000000000000003",
+      "updatedAt": "2026-10-02T09:00:00.000Z"
+    }
+  ]
+}
