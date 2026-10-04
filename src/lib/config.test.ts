@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   expandEnv,
   monitorIntervalSeconds,
@@ -406,6 +406,44 @@ describe("siteUrl", () => {
     expect(
       siteUrl({ host: "status.example.com", url: "http://a.example/s" }),
     ).toBe("http://a.example/s");
+  });
+
+  it("adds the base path to the host, and to a url that is only an origin", () => {
+    expect(siteUrl({ host: "statoss.com", url: undefined }, "/demo")).toBe(
+      "https://statoss.com/demo",
+    );
+    expect(siteUrl({ host: "localhost:3222", url: undefined }, "/sub")).toBe(
+      "http://localhost:3222/sub",
+    );
+    expect(
+      siteUrl({ host: "statoss.com", url: "https://statoss.com" }, "/demo"),
+    ).toBe("https://statoss.com/demo");
+    expect(
+      siteUrl({ host: "statoss.com", url: "https://statoss.com/" }, "/demo"),
+    ).toBe("https://statoss.com/demo");
+  });
+
+  it("takes a url with a path of its own as the page's whole address", () => {
+    expect(
+      siteUrl(
+        { host: "statoss.com", url: "https://statoss.com/demo" },
+        "/demo",
+      ),
+    ).toBe("https://statoss.com/demo");
+    expect(
+      siteUrl({ host: "statoss.com", url: "https://example.com/x/" }, "/demo"),
+    ).toBe("https://example.com/x/");
+  });
+
+  it("reads the base path the build wrote in", () => {
+    vi.stubEnv("STATOSS_BASE_PATH", "/demo");
+    try {
+      expect(siteUrl({ host: "statoss.com", url: undefined })).toBe(
+        "https://statoss.com/demo",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

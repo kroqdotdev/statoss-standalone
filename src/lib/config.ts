@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
+import { basePath } from "./base-path";
 import { isTimeZone, localDate, rowId } from "./format";
 import { longestWindow, REPEATS } from "./repeats";
 import { normalizeVendorUrl } from "./vendors";
@@ -530,7 +531,10 @@ const siteObjectSchema = z
   .object({
     name: z.string().min(1),
     host: z.string().min(1),
-    /** Where the page lives, for links in alerts. Default: https://<host>. */
+    /**
+     * Where the page lives, for links in alerts and feeds. Default:
+     * https://<host> and the base path.
+     */
     url: z.url().optional(),
     /** A sentence or two under the headline. */
     description: z.string().min(1).max(400).optional(),
@@ -744,12 +748,24 @@ export function siteSendsVendorAlerts(
   return site.alerts?.vendors ?? config.alerts.vendors;
 }
 
-/** The public address of a site's page, for links in alerts and feeds. */
-export function siteUrl(site: Pick<SiteConfig, "host" | "url">): string {
-  if (site.url) return site.url;
+/**
+ * The public address of a site's page, for links in alerts and feeds: the
+ * configured url, else the host. Under a base path the default is the host
+ * and the path, and a url that is only an origin gets the path too; a url
+ * with a path of its own is taken as it is.
+ */
+export function siteUrl(
+  site: Pick<SiteConfig, "host" | "url">,
+  base = basePath(),
+): string {
+  if (site.url) {
+    const given = new URL(site.url);
+    const origin = given.pathname === "/" && !given.search && !given.hash;
+    return base && origin ? `${given.origin}${base}` : site.url;
+  }
   const bare = site.host.split(":")[0].toLowerCase();
   const local = bare === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(bare);
-  return `${local ? "http" : "https"}://${site.host}`;
+  return `${local ? "http" : "https"}://${site.host}${base}`;
 }
 
 /**

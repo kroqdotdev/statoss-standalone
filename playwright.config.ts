@@ -5,9 +5,12 @@ import { defineConfig, devices } from "@playwright/test";
  * The browser journeys: the built server against a seeded database, at
  * desktop and phone width. `pnpm build` first; `pnpm e2e` seeds, starts
  * and runs. Every screen is measured for sideways overflow (see
- * e2e/journeys.ts).
+ * e2e/journeys.ts). With BASE_PATH set for both, the build and the
+ * journeys run under that path, as behind a proxy that sends one path of a
+ * domain to the app.
  */
 const PORT = 3222;
+const BASE = process.env.BASE_PATH ?? "";
 
 export default defineConfig({
   testDir: "e2e",
@@ -41,7 +44,7 @@ export default defineConfig({
       // next to it, as the Dockerfile does.
       command:
         "node e2e/seed.mts && cp -r .next/static .next/standalone/.next/ && node .next/standalone/server.js",
-      url: `http://localhost:${PORT}/status.json`,
+      url: `http://localhost:${PORT}${BASE}/status.json`,
       reuseExistingServer: false,
       timeout: 60_000,
       env: {

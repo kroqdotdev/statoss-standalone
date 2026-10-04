@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
-import { isRemote, readAsset } from "./assets";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { assetSrc, isRemote, readAsset } from "./assets";
 
 const dir = mkdtempSync(join(tmpdir(), "status-assets-"));
 writeFileSync(
@@ -32,5 +32,32 @@ describe("readAsset", () => {
 
   it("does not leave the configuration's folder by a relative path", () => {
     expect(readAsset("../logo.svg", join(dir, "sub"))).toBeNull();
+  });
+});
+
+describe("assetSrc", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("points at the app's own route with the file's stamp, under the base path", () => {
+    vi.stubEnv("CONFIG_PATH", join(dir, "config.yaml"));
+    const version = readAsset("logo.svg", dir)?.version;
+    expect(assetSrc("logo.svg", "/logo")).toBe(`/logo?v=${version}`);
+    vi.stubEnv("STATOSS_BASE_PATH", "/status");
+    expect(assetSrc("logo.svg", "/logo")).toBe(`/status/logo?v=${version}`);
+    expect(assetSrc("logo.svg", "/favicon")).toBe(
+      `/status/favicon?v=${version}`,
+    );
+  });
+
+  it("leaves an address as it is, and has nothing for a missing file", () => {
+    vi.stubEnv("CONFIG_PATH", join(dir, "config.yaml"));
+    vi.stubEnv("STATOSS_BASE_PATH", "/status");
+    expect(assetSrc("https://example.com/logo.png", "/logo")).toBe(
+      "https://example.com/logo.png",
+    );
+    expect(assetSrc("none.png", "/logo")).toBeNull();
+    expect(assetSrc(undefined, "/logo")).toBeNull();
   });
 });

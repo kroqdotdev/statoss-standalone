@@ -10,8 +10,20 @@ import {
  * it for sideways overflow.
  */
 
+/**
+ * The path the server was built under, from BASE_PATH, or none. The
+ * journeys run under it: `BASE_PATH=/sub pnpm build`, then
+ * `BASE_PATH=/sub pnpm e2e`.
+ */
+export const BASE = process.env.BASE_PATH ?? "";
+
+/** A path of the app, such as /status.json, under the base path. */
+export function at(path: string): string {
+  return BASE && path === "/" ? BASE : `${BASE}${path}`;
+}
+
 /** The password site answers on this address. */
-export const LOCKED = "http://127.0.0.1:3222";
+export const LOCKED = `http://127.0.0.1:3222${BASE}`;
 
 /** Elements that run past the viewport's right edge, ignoring intentional scrollers. */
 export async function overflow(page: Page): Promise<string[]> {

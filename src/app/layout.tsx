@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { accentVars } from "@/lib/accent";
 import { assetSrc } from "@/lib/assets";
+import { withBase } from "@/lib/base-path";
 import { findSiteByHost, getConfig } from "@/lib/config";
 import { SiteZone } from "@/lib/viewer-zone";
 import "./globals.css";
@@ -55,8 +56,8 @@ export async function generateMetadata(): Promise<Metadata> {
       : {}),
     alternates: {
       types: {
-        "application/rss+xml": "/feed.xml",
-        "application/atom+xml": "/feed.atom",
+        "application/rss+xml": withBase("/feed.xml"),
+        "application/atom+xml": withBase("/feed.atom"),
       },
     },
   };

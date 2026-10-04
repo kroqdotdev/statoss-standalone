@@ -12,6 +12,7 @@ import {
   unlockToken,
 } from "./access";
 import { readAsset } from "./assets";
+import { basePath, withBase } from "./base-path";
 import { describeBudget } from "./budget";
 import { checkDetail, MAX_DETAIL_WINDOW_MS } from "./check-detail";
 import { findSiteByHost, getConfig, siteUrl } from "./config";
@@ -228,31 +229,34 @@ export async function assetResponse(
 
 /**
  * The password form's answer. The right password sets the cookie and goes
- * back to the page; a wrong one goes back to the form, which says so.
+ * back to the page; a wrong one goes back to the form, which says so. A
+ * route handler's redirect is not given the base path by Next, so it is
+ * added here. The cookie is sent only under the base path, not to the rest
+ * of the domain.
  */
 export async function unlockResponse(request: Request): Promise<Response> {
   const site = await hostSite();
   if (!site) return notFound();
   const token = unlockToken(site);
-  if (token === null) redirect("/");
+  if (token === null) redirect(withBase("/"));
   const now = Date.now();
   const host = site.host.toLowerCase();
   const client = clientOf(request.headers);
-  if (tooManyFailures(host, client, now)) redirect("/?unlock=wait");
+  if (tooManyFailures(host, client, now)) redirect(withBase("/?unlock=wait"));
   const form = await request.formData().catch(() => null);
   const given = form?.get("password");
   if (typeof given !== "string" || !passwordMatches(site, given)) {
     noteFailure(host, client, now);
-    redirect("/?unlock=wrong");
+    redirect(withBase("/?unlock=wrong"));
   }
   (await cookies()).set(UNLOCK_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: siteUrl(site).startsWith("https:"),
-    path: "/",
+    path: basePath() || "/",
     maxAge: UNLOCK_DAYS * 24 * 60 * 60,
   });
-  redirect("/");
+  redirect(withBase("/"));
 }
 
 /**
@@ -444,7 +448,7 @@ The page is password-protected. Every link below answers 401 without \`?key=<key
 - MCP endpoint (Streamable HTTP, POST JSON-RPC, tools get_status, list_incidents, get_error_budget): ${base}/mcp
 - Badge: ${base}/badge.svg
 - Deploy markers as JSON: ${base}/deploys
-- The page for people: ${base}/
+- The page for people: ${base}
 - Past incidents by month, for people: ${base}/history; each incident at ${base}/incidents/<id>
 
 ## Monitors and components

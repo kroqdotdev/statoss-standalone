@@ -392,7 +392,7 @@ export function widgetJs(): string {
 var s=document.currentScript;if(!s||!s.parentNode)return;
 var src=new URL(s.src);var base=src.origin+src.pathname.replace(/widget\\.js$/,"");
 var key=src.searchParams.get("key");var q=key?"?key="+encodeURIComponent(key):"";
-var el=document.createElement("a");el.href=base;el.target="_blank";el.rel="noopener";
+var el=document.createElement("a");el.href=base.replace(/\\/$/,"");el.target="_blank";el.rel="noopener";
 el.style.cssText="display:inline-flex;align-items:center;gap:.5em;font:14px/1.2 system-ui,sans-serif;color:inherit;text-decoration:none;";
 var dot=document.createElement("span");dot.style.cssText="display:inline-block;width:.6em;height:.6em;border-radius:50%;background:#93a29a;";
 var text=document.createElement("span");text.textContent=s.getAttribute("data-loading")||"Checking status";
