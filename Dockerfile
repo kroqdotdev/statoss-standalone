@@ -26,6 +26,11 @@ RUN pnpm build
 # one for the platform this stage builds for, which is the one it loads.
 RUN find .next/standalone/node_modules -path '*/better-sqlite3/prebuilds/*.node' \
     ! -name "linux-$(node -p process.arch).node" -delete
+# import-kuma uses the server's better-sqlite3, which Next keeps under a
+# hashed name. Give it its own name too.
+RUN cd .next/standalone/node_modules \
+    && ln -s .pnpm/better-sqlite3@*/node_modules/better-sqlite3 better-sqlite3 \
+    && test -f better-sqlite3/package.json
 
 FROM node:22-trixie-slim AS run
 LABEL org.opencontainers.image.title="statoss-standalone" \
@@ -48,6 +53,12 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
+# import-kuma turns an Uptime Kuma database into a configuration. Node runs
+# its TypeScript as it is, so the sources are all it needs.
+COPY --chown=node:node scripts/import-kuma.mts ./scripts/
+COPY --chown=node:node src/lib/kuma/*.mts ./src/lib/kuma/
+RUN printf '#!/bin/sh\nexec node /app/scripts/import-kuma.mts "$@"\n' \
+    > /usr/local/bin/import-kuma && chmod 755 /usr/local/bin/import-kuma
 # /data belongs to the node user (uid 1000), so a new named volume starts
 # out writable. A bind-mounted directory must be writable by uid 1000 too.
 RUN mkdir /data && chown node:node /data
