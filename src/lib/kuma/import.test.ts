@@ -254,7 +254,7 @@ describe("a database from Uptime Kuma", () => {
       it("lists what it left out, and why", () => {
         const result = convert(fixtureDb(version));
         expect(result.skipped).toEqual([
-          'notification "Telegram" (telegram): telegram is not one of the destinations here',
+          'notification "Telegram" (telegram): its bot token is not one, which looks like 123456789:AAH4... as @BotFather gives it',
           'monitor "Broker" (mqtt, Example): mqtt monitors are not checked here; a tcp monitor on its port is the nearest',
           'monitor "CAA" (dns, Other monitors): CAA records are not checked here (A, AAAA, CNAME, MX, TXT and NS are)',
         ]);
@@ -1187,6 +1187,139 @@ describe("alerts", () => {
     ]);
     // A PagerDuty key of digits only is still read as text.
     expect(result.yaml).toContain('pagerduty: "${PAGERDUTY_EU_PAGER}"');
+  });
+
+  it("brings Telegram, Pushover and Teams over, with their tokens kept out of the file", () => {
+    const telegramToken = "123456:fake-telegram-bot-token-0000";
+    const appToken = "apptokenapptokenapptokenapp123";
+    const workflow =
+      "https://prod-12.westeurope.logic.azure.com/workflows/abc/triggers/manual/paths/invoke?sig=s1g";
+    const { result, config } = importRows({
+      monitor: [{ id: 1, name: "A", type: "ping", hostname: "a.example" }],
+      notification: [
+        {
+          id: 1,
+          name: "Ops chat",
+          config: {
+            type: "telegram",
+            telegramBotToken: telegramToken,
+            telegramChatID: "-1001234567890",
+            telegramMessageThreadID: "7",
+            telegramSendSilently: true,
+          },
+        },
+        {
+          id: 2,
+          name: "On call",
+          config: {
+            type: "pushover",
+            pushoveruserkey: "useruseruseruseruseruseruser12",
+            pushoverapptoken: appToken,
+            pushoverpriority: "2",
+            pushoverdevice: "phone",
+          },
+        },
+        {
+          id: 3,
+          name: "Quiet",
+          config: {
+            type: "pushover",
+            pushoveruserkey: "groupgroupgroupgroupgroupgro12",
+            pushoverapptoken: appToken,
+            pushoverpriority: "-1",
+          },
+        },
+        {
+          id: 4,
+          name: "Teams",
+          config: { type: "teams", webhookUrl: workflow },
+        },
+      ],
+      monitor_notification: [1, 2, 3, 4].map((id) => ({
+        monitor_id: 1,
+        notification_id: id,
+      })),
+    });
+    expect(config.alerts?.to).toEqual([
+      { telegram: "-1001234567890", token: telegramToken },
+      {
+        pushover: "useruseruseruseruseruseruser12",
+        token: appToken,
+        emergency: true,
+      },
+      { pushover: "groupgroupgroupgroupgroupgro12", token: appToken },
+      { teams: workflow },
+    ]);
+    for (const secret of [telegramToken, appToken, "s1g"])
+      expect(result.yaml).not.toContain(secret);
+    expect(result.yaml).toContain('telegram: "-1001234567890"');
+    expect(result.secrets.map((s) => s.name)).toEqual(
+      expect.arrayContaining(["TELEGRAM_OPS_CHAT_TOKEN", "TEAMS"]),
+    );
+    const notes = result.attention.join("\n");
+    expect(notes).toContain('"Ops chat": Kuma posted to topic 7 of the chat');
+    expect(notes).toContain('"Ops chat": Kuma sent without a sound');
+    expect(notes).toContain(
+      '"On call": Kuma sent every alert at emergency priority',
+    );
+    expect(notes).toContain('"On call": Kuma sent to the device phone only');
+    expect(notes).toContain('"Quiet": Kuma sent every alert at priority -1');
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("skips a Telegram, Pushover or Teams notification it cannot send to, and says why", () => {
+    const { result, config } = importRows({
+      monitor: [{ id: 1, name: "A", type: "ping", hostname: "a.example" }],
+      notification: [
+        {
+          id: 1,
+          name: "No chat",
+          config: { type: "telegram", telegramBotToken: "123456:abc" },
+        },
+        {
+          id: 2,
+          name: "Short key",
+          config: {
+            type: "pushover",
+            pushoveruserkey: "u123",
+            pushoverapptoken: "apptokenapptokenapptokenapp123",
+          },
+        },
+        {
+          id: 3,
+          name: "Old connector",
+          config: {
+            type: "teams",
+            webhookUrl:
+              "https://outlook.office.com/webhook/abc/IncomingWebhook/def",
+          },
+        },
+        {
+          id: 4,
+          name: "Connector",
+          config: {
+            type: "teams",
+            webhookUrl:
+              "https://contoso.webhook.office.com/webhookb2/abc/IncomingWebhook/def",
+          },
+        },
+      ],
+      monitor_notification: [1, 2, 3, 4].map((id) => ({
+        monitor_id: 1,
+        notification_id: id,
+      })),
+    });
+    expect(config.alerts?.to).toEqual([
+      {
+        teams:
+          "https://contoso.webhook.office.com/webhookb2/abc/IncomingWebhook/def",
+      },
+    ]);
+    expect(result.skipped).toEqual([
+      'notification "No chat" (telegram): it has no bot token or chat id',
+      'notification "Short key" (pushover): its user key or application token is not 30 letters and digits',
+      'notification "Old connector" (teams): its URL is neither a Teams workflow nor a webhook.office.com connector; make a workflow with "Post to a channel when a webhook request is received" and add teams: <its URL>',
+    ]);
   });
 });
 

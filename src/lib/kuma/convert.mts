@@ -182,6 +182,30 @@ function isHttpUrl(text: string): boolean {
   }
 }
 
+/** A Telegram chat id or a public channel's @name, as the loader takes it. */
+const TELEGRAM_CHAT = /^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/;
+/** A bot's token from @BotFather. */
+const TELEGRAM_TOKEN = /^\d+:[A-Za-z0-9_-]{20,}$/;
+/** Pushover's user, group and application keys. */
+const PUSHOVER_KEY = /^[A-Za-z0-9]{30}$/;
+
+/** A Teams workflow's address, or a webhook.office.com connector's. */
+function isTeamsWebhook(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return false;
+  const host = url.hostname.toLowerCase();
+  if (host.endsWith(".logic.azure.com") || host.endsWith(".powerplatform.com"))
+    return /\/workflows\//i.test(url.pathname);
+  if (host.endsWith(".webhook.office.com"))
+    return /^\/webhookb2\//i.test(url.pathname);
+  return false;
+}
+
 function bareHost(host: string): string {
   return host
     .trim()
@@ -763,6 +787,121 @@ export function convertKuma(
             email: false,
             notes,
             items: [item(...pairs)],
+          },
+        };
+      }
+      case "telegram": {
+        const chat = s("telegramChatID");
+        const token = s("telegramBotToken");
+        if (!chat || !token) return { skip: "it has no bot token or chat id" };
+        if (!TELEGRAM_CHAT.test(chat))
+          return { skip: "its chat id is not a number or a channel's @name" };
+        if (!TELEGRAM_TOKEN.test(token))
+          return {
+            skip: "its bot token is not one, which looks like 123456789:AAH4... as @BotFather gives it",
+          };
+        const thread = s("telegramMessageThreadID");
+        if (thread)
+          note(
+            `Kuma posted to topic ${thread} of the chat; this posts to the chat, which in a group with topics is General.`,
+          );
+        if (c.telegramSendSilently === true)
+          note("Kuma sent without a sound; this sends with one.");
+        const server = s("telegramServerUrl").replace(/\/+$/, "");
+        if (server && server !== "https://api.telegram.org")
+          note(
+            `Kuma sent through ${server}; this sends through api.telegram.org.`,
+          );
+        if (c.telegramUseTemplate === true)
+          note("Kuma sent its own template; this sends this app's message.");
+        const ref = secretRef(
+          `n${n.id}`,
+          `${base("TELEGRAM")}_TOKEN`,
+          token,
+          `${label}: Telegram bot token`,
+        );
+        return {
+          ok: {
+            id: n.id,
+            name: label,
+            email: false,
+            notes,
+            items: [
+              item(
+                { key: "telegram", value: chat },
+                { key: "token", value: ref },
+              ),
+            ],
+          },
+        };
+      }
+      case "pushover": {
+        const user = s("pushoveruserkey");
+        const token = s("pushoverapptoken");
+        if (!user || !token)
+          return { skip: "it has no user key or application token" };
+        if (!PUSHOVER_KEY.test(user) || !PUSHOVER_KEY.test(token))
+          return {
+            skip: "its user key or application token is not 30 letters and digits",
+          };
+        const pairs: Pair[] = [
+          { key: "pushover", value: user },
+          {
+            key: "token",
+            value: secretRef(
+              `n${n.id}`,
+              `${base("PUSHOVER")}_TOKEN`,
+              token,
+              `${label}: Pushover application token`,
+            ),
+          },
+        ];
+        const priority = s("pushoverpriority");
+        if (priority === "2") {
+          pairs.push({ key: "emergency", value: true });
+          note(
+            "Kuma sent every alert at emergency priority, repeated every 30 seconds for an hour. Here only a monitor going down is, repeated every minute for up to 3 hours until someone acknowledges it, and the rest go at high or normal priority.",
+          );
+        } else if (priority && priority !== "0") {
+          note(
+            `Kuma sent every alert at priority ${priority}; here a monitor going down is sent at high priority and the rest at normal.`,
+          );
+        }
+        const device = s("pushoverdevice");
+        if (device)
+          note(
+            `Kuma sent to the device ${device} only; this sends to all of the user's devices.`,
+          );
+        return {
+          ok: {
+            id: n.id,
+            name: label,
+            email: false,
+            notes,
+            items: [item(...pairs)],
+          },
+        };
+      }
+      case "teams": {
+        const url = s("webhookUrl");
+        if (!url) return { skip: "it has no webhook URL" };
+        if (!isTeamsWebhook(url))
+          return {
+            skip: 'its URL is neither a Teams workflow nor a webhook.office.com connector; make a workflow with "Post to a channel when a webhook request is received" and add teams: <its URL>',
+          };
+        const ref = secretRef(
+          `n${n.id}`,
+          base("TEAMS"),
+          url,
+          `${label}: Teams webhook URL`,
+        );
+        return {
+          ok: {
+            id: n.id,
+            name: label,
+            email: false,
+            notes,
+            items: [item({ key: "teams", value: ref })],
           },
         };
       }
