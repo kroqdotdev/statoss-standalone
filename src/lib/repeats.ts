@@ -87,8 +87,8 @@ export interface SeriesTimes {
   firstStartsAt: number;
 }
 
-/** The start of the kth window, the first being k = 0. */
-function nthStart(series: SeriesTimes, first: Parts, k: number): number {
+/** The start of the kth window, the first being k = 0, to the minute. */
+function nthMinute(series: SeriesTimes, first: Parts, k: number): number {
   if (series.repeat === "weekly") {
     const d = new Date(Date.UTC(first.year, first.month, first.day + 7 * k));
     return zonedTime(
@@ -140,9 +140,12 @@ export function startsBetween(
     }
     k0 = Math.max(0, k0);
   }
+  // The seconds and milliseconds of the first start, which every repeat
+  // keeps: the wall clock is read to the minute.
+  const rest = ((series.firstStartsAt % MINUTE_MS) + MINUTE_MS) % MINUTE_MS;
   const out: number[] = [];
   for (let k = k0; k < k0 + limit + 3 && out.length < limit; k++) {
-    const start = nthStart(series, first, k);
+    const start = nthMinute(series, first, k) + rest;
     if (!Number.isFinite(start) || start > until) break;
     if (start > after) out.push(start);
   }

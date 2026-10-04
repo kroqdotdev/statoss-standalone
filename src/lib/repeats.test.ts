@@ -208,6 +208,29 @@ describe("when repeating maintenance falls", () => {
     ).toEqual([]);
   });
 
+  it("keeps the seconds of the first start", () => {
+    const series: SeriesTimes = {
+      repeat: "weekly",
+      zone: "Europe/Copenhagen",
+      firstStartsAt: at("2026-10-18T01:00:30.250Z"),
+    };
+    expect(
+      startsBetween(series, series.firstStartsAt - 1, at("2026-11-01T03:00Z")),
+    ).toEqual([
+      series.firstStartsAt,
+      at("2026-10-25T02:00:30.250Z"),
+      at("2026-11-01T02:00:30.250Z"),
+    ]);
+    // Just after a repeat's minute begins, that repeat is still ahead.
+    expect(
+      startsBetween(
+        series,
+        at("2026-10-25T02:00:00Z"),
+        at("2026-10-25T03:00:00Z"),
+      ),
+    ).toEqual([at("2026-10-25T02:00:30.250Z")]);
+  });
+
   it("lets a window last up to a week, or four weeks", () => {
     expect(longestWindow("weekly")).toBe(7 * DAY);
     expect(longestWindow("monthly")).toBe(28 * DAY);
