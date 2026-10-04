@@ -100,8 +100,7 @@ function describeCounts(s: {
   latencyMs: number | null;
 }): string {
   const parts = [pluralize(s.total, "check")];
-  if (s.latencyMs !== null)
-    parts.push(`average ${formatCount(s.latencyMs)} ms`);
+  if (s.latencyMs !== null) parts.push(`median ${formatCount(s.latencyMs)} ms`);
   const failed = failureSummary(s.total - s.up, s.timeouts);
   parts.push(failed ?? "all passed");
   if (s.slow > 0) parts.push(`${formatCount(s.slow)} slow`);
@@ -239,7 +238,14 @@ export function CheckStrip({
   // The newest bar holds now, so its UTC day is in now's UTC year.
   const now = givenNow ?? buckets[n - 1]?.ts ?? 0;
   const { bucketMs } = RANGES[range];
-  const scaleMax = Math.max(...buckets.map((b) => b.latencyMs ?? 0), 1);
+  // The window's 95th percentile tops the scale, so it holds still from
+  // one check to the next; a bar above it lifts it.
+  const p95 = summary.latencyP95 ?? null;
+  const scaleMax = Math.max(
+    p95 ?? 0,
+    ...buckets.map((b) => b.latencyMs ?? 0),
+    1,
+  );
   const ticks = axisTicks(buckets, range, zone);
   const layers = useMemo(
     () =>
@@ -323,10 +329,8 @@ export function CheckStrip({
         >
           {readout}
         </p>
-        {timed && summary.latencyMs !== null && (
-          <p className="shrink-0 text-muted">
-            up to {formatCount(Math.round(scaleMax))} ms
-          </p>
+        {timed && summary.latencyMs !== null && p95 !== null && (
+          <p className="shrink-0 text-muted">95% under {formatCount(p95)} ms</p>
         )}
       </div>
 

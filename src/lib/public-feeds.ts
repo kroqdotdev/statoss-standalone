@@ -1,6 +1,11 @@
 import type Database from "better-sqlite3";
 import type { ErrorBudget } from "./budget";
-import { siteUrl, type ComponentState, type SiteConfig } from "./config";
+import {
+  LATENCY_TYPES,
+  siteUrl,
+  type ComponentState,
+  type SiteConfig,
+} from "./config";
 import { getState, type DeployRow } from "./db";
 import { formatUtcStamp } from "./format";
 import { icsCalendar, type IcsEvent } from "./ics";
@@ -15,7 +20,12 @@ import { maintenanceWindows, PLAN_AHEAD_MS } from "./maintenance";
 import { windowSummary } from "./queries";
 import { pageOverall, type MonitorStatus, type Overall } from "./state";
 import { componentStatus, statedByName, statusWithStated } from "./stated";
-import { componentViews, liveStatus, rowNames } from "./status-data";
+import {
+  componentViews,
+  dayFigures,
+  liveStatus,
+  rowNames,
+} from "./status-data";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -55,6 +65,7 @@ export interface StatusJson {
     /** Certificate and domain monitors: when it expires. */
     expiresAt: string | null;
     uptime24h: number | null;
+    /** The median response time over the last 24 hours, as the page gives it. */
     latencyMs24h: number | null;
   }>;
   /** The same list under its name before 0.2, so older scripts keep working. */
@@ -117,7 +128,11 @@ export function statusJson(
         : null,
       uptime24h:
         day.total === 0 ? null : Math.round((day.up / day.total) * 10000) / 100,
-      latencyMs24h: day.latencyMs,
+      // The median, as the strip gives it. A heartbeat, a certificate or a
+      // domain has none.
+      latencyMs24h: LATENCY_TYPES.has(cp.type)
+        ? dayFigures(db, site.name, cp.name, now).medianMs
+        : null,
     };
   });
   const components = componentViews(site, stated);

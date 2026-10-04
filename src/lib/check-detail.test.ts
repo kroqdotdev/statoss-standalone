@@ -41,7 +41,8 @@ describe("checkDetail", () => {
       timeouts: 1,
       slow: 1,
       maintenance: 1,
-      latency: { mean: 500, min: 100, max: 900 },
+      // The median, by nearest rank: the lower of the two.
+      latency: { median: 100, min: 100, max: 900 },
       listed: "all",
     });
     expect(detail.checks.map((c) => [c.ok, c.slow, c.problem])).toEqual([
@@ -121,9 +122,22 @@ describe("checkDetail", () => {
       total: 2,
       passed: 1,
       timeouts: 1,
+      latency: { median: 100, min: null, max: null },
       listed: "none",
       checks: [],
     });
+  });
+
+  it("gives the median the hours kept once the checks are gone", () => {
+    const db = openDb(":memory:");
+    for (const ms of [100, 110, 120, 2000]) seed(db, T + ms, 1, ms);
+    db.prepare(
+      "UPDATE check_hour SET latency_p50 = 110, latency_p95 = 2000",
+    ).run();
+    db.exec("DELETE FROM checks");
+    const detail = checkDetail(db, "s", "m", null, T, T + HOUR);
+    // Not the mean of 583.
+    expect(detail.latency).toEqual({ median: 110, min: null, max: null });
   });
 
   it("says so when only some of them are left", () => {

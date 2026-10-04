@@ -453,7 +453,7 @@ ${rows || "- None yet"}
 
 ## How to read status.json
 
-site.status is one of operational, degraded, partial, major or unknown. Each monitor has a status of up, slow, down or unknown, a since time, lastCheckedAt, stale (true when its checks have stopped arriving, and its status is then unknown), uptime24h as a percentage and latencyMs24h, the mean response time. Each component has a status of operational, degraded, partial or major; one with a vendor follows that vendor's status page and does not count toward site.status. budget, when the site has an uptime target, holds the month so far. incidents holds what is open; maintenance holds what is in progress or planned within the next week. Times inside incidents and maintenance are epoch milliseconds; the others are ISO 8601.
+site.status is one of operational, degraded, partial, major or unknown. Each monitor has a status of up, slow, down or unknown, a since time, lastCheckedAt, stale (true when its checks have stopped arriving, and its status is then unknown), uptime24h as a percentage and latencyMs24h, the median response time over the last 24 hours. Each component has a status of operational, degraded, partial or major; one with a vendor follows that vendor's status page and does not count toward site.status. budget, when the site has an uptime target, holds the month so far. incidents holds what is open; maintenance holds what is in progress or planned within the next week. Times inside incidents and maintenance are epoch milliseconds; the others are ISO 8601.
 `;
   return new Response(text, {
     headers: {

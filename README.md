@@ -9,8 +9,9 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 
 ## Features
 
-- **Every failed check is visible.** Each monitor has a strip of bars. Bar height is response time. A mark at the top of a bar shows the failed checks in that time slot: amber for a timeout, red for any other failure. One failed check out of 1,440 in a day still gets a visible mark.
+- **Every failed check is visible.** Each monitor has a strip of bars. Bar height is the median response time. A mark at the top of a bar shows the failed checks in that time slot: amber for a timeout, red for any other failure. One failed check out of 1,440 in a day still gets a visible mark.
 - **Four views.** The last 24 hours in 5-minute slots, 7 days in 1-hour slots, and 90 days or a year in 1-day slots. Point at a bar, or use the arrow keys, to read the numbers for one slot and the incidents that touched it. Click a bar, or press Enter, to list the checks behind it and where each one's time went: the DNS lookup, the connection, the TLS handshake and the first byte.
+- **Response times are medians.** On the 24-hour view each bar is the median of the eleven checks around it, so one slow check makes no spike and the bars hold still. Above the strip are the median and the figure 95% of checks came in under.
 - **An error budget.** Give a site an uptime target and the page says how much of the month's allowance of downtime is spent.
 - **Failed checks are listed.** Consecutive failures are grouped into runs. Each run shows the reason (timeout, HTTP status, keyword, or connection error), when it started, and how long the monitor did not respond.
 - **Seven kinds of monitor.** HTTP, TCP port, DNS, ping, certificate expiry, domain expiry, and a heartbeat that a scheduled job pings.
@@ -39,7 +40,7 @@ The checker runs inside the server process:
 3. A monitor becomes **down** after 2 failed checks in a row and **up** again after 1 successful check. With a `slowThresholdMs`, it becomes **slow** after 2 successful checks over the threshold and back to normal after 1 under it. Each change of state sends one alert to every destination of the site. With `repeatMinutes`, a monitor that stays down sends a "still down" notice at that interval.
 4. A monitor going down opens an incident on the page; the first success after it resolves the incident.
 5. Checks made inside a maintenance window are stored with a flag. The page shows them in grey and leaves them out of every total, and they change no state and send no alert.
-6. Every check is kept for `retentionDays` (90 unless you change it). Each check is also added to its hour's totals, which are kept for 400 days and are what the 7-day, 90-day and 1-year views and the error budget read. Older rows are deleted once a day.
+6. Every check is kept for `retentionDays` (90 unless you change it). Each check is also added to its hour's totals, which are kept for 400 days and are what the 7-day, 90-day and 1-year views and the error budget read. A few minutes after an hour ends, its median and 95th percentile response time are taken from its checks and kept with the totals. Older rows are deleted once a day.
 
 The server reads the `Host` header of each request and shows the site with the matching hostname. Any other hostname gets a 404.
 
@@ -299,6 +300,10 @@ The 24-hour view is drawn from the checks themselves and follows every check. Th
 
 A database from 0.2 gets its hourly totals filled in from its checks on the first start, so the 90-day view looks the same as before and the year fills up from there.
 
+Response times are medians. On the 24-hour view each bar is the median of the eleven checks around it: its own last check and five either side, fewer at the live end. On the 7-day view a bar is its hour's median, and on the 90-day and 1-year views its day's, worked out from its hours' medians and 95th percentiles. Above each strip are the median over the view and the figure 95% of checks came in under, which is also the top of the scale. A bar is drawn slow when it is over the threshold or when half its checks or more were slow. `status.json` gives the same 24-hour median.
+
+A database from 0.3 has its hours given their medians from the checks it still keeps, a batch every round, newest first, after the first start. Hours older than those checks keep their mean.
+
 With `uptimeTarget: 99.9` on a site, the foot of the page carries one sentence for the calendar month (UTC), for example "September so far: 99.97% up against a 99.9% target. 12 min of the 43 min downtime budget spent." The allowance is the month's length times what the target leaves over. Time down is the share of failed checks, across all the site's monitors, applied to the hours that had checks, so a monitor added late in the month is not counted as up before it existed. Checks made during maintenance spend nothing. `status.json` carries the same figures under `budget`.
 
 ### Incidents
@@ -487,7 +492,7 @@ Next to every page, on the same hostname:
 
 | Path               | What it is                                                                                                                                                                                                                                               |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/status.json`     | The site's state, every monitor with its status, when it was last checked, uptime and mean response time over the last day (also listed as `checkpoints`, their name in 0.1), the components, the error budget, and current incidents.                   |
+| `/status.json`     | The site's state, every monitor with its status, when it was last checked, uptime and median response time over the last day (also listed as `checkpoints`, their name in 0.1), the components, the error budget, and current incidents.                 |
 | `/badge.svg`       | A badge in the shields.io style. Add `?label=api` to change the left half.                                                                                                                                                                               |
 | `/badge.json`      | The same in the [shields.io endpoint format](https://shields.io/badges/endpoint-badge), for a badge shields.io draws.                                                                                                                                    |
 | `/feed.xml`        | An RSS feed of the incidents and maintenance of the last 30 days. Each entry links to the incident's page and carries the window's times, every update with its status word, and the post-mortem.                                                        |

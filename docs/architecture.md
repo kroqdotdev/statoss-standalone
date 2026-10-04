@@ -23,6 +23,8 @@ POST /heartbeat/<token> ──► heartbeat         POST /deploys ──► depl
 | `src/lib/state.ts`             | The up, slow and down state machine, the roll-up into one site status, and when a state is too old to trust.                     |
 | `src/lib/db.ts`                | Opens SQLite, creates and upgrades the schema, and the small reads and writes on it.                                             |
 | `src/lib/queries.ts`           | Reads for the page: bucketed series from checks or hourly totals, window totals, runs of failed checks.                          |
+| `src/lib/response-times.ts`    | Response times as medians: the bars, the median and the 95th percentile, from checks or from hours.                              |
+| `src/lib/hour-figures.ts`      | Gives each hour that is over the median and 95th percentile of its checks.                                                       |
 | `src/lib/cache.ts`             | Caches page data per check, or for minutes for the longer views.                                                                 |
 | `src/lib/budget.ts`            | The month's error budget.                                                                                                        |
 | `src/lib/alerts.ts`            | The words of alerts and notices, and delivery to every channel, with retries.                                                    |
@@ -61,7 +63,7 @@ POST /heartbeat/<token> ──► heartbeat         POST /deploys ──► depl
 Created on first start. A database from an earlier release gets the tables and columns added since on the next start; `openDb` checks `PRAGMA table_info` and runs `ALTER TABLE ADD COLUMN` for each one missing, and fills in `check_hour` from `checks` when it is empty.
 
 - `checks`: one row per check with `site`, `monitor`, `ts`, `ok`, `status_code`, `latency_ms` (null for types without a response time), `error`, and `maintenance`, which is 1 for a check made inside a maintenance window. Kept for `retentionDays`.
-- `check_hour`: one row per monitor and hour with the counts (`total`, `up`, `timeouts`, `slow`, `maintenance`) and the sum and number of response times. Every check is added to its hour in the same transaction that stores it. Kept for 400 days; the 7-day, 90-day and 1-year views and the error budget read it.
+- `check_hour`: one row per monitor and hour with the counts (`total`, `up`, `timeouts`, `slow`, `maintenance`), the sum and number of response times, and their median and 95th percentile (`latency_p50`, `latency_p95`). Every check is added to its hour in the same transaction that stores it. The median and 95th percentile are taken from the checks after each round, five minutes after the hour ends, and cleared if a response time lands in the hour later; an hour without them is read as its mean. Kept for 400 days; the 7-day, 90-day and 1-year views and the error budget read it.
 - `monitor_state`: one row per monitor with the current `status` (`up`, `slow` or `down`), the counts of consecutive failures and slow responses, `since`, `last_alert_at` for repeat notices, `checked_at`, and `expires_at` for certificates and domains.
 - `auto_incident`: one row per outage the checker saw, with `started_at`, `resolved_at` and the first error.
 - `heartbeat`: when each heartbeat monitor was last pinged.
@@ -86,7 +88,9 @@ After each round the scheduler sends the incident updates and maintenance stages
 
 ## Queries
 
-The page never reads raw rows for its bars beyond a day. The 24-hour view groups checks into 5-minute slots; the longer views group the hourly totals into hours or days. Slots align to multiples of the slot length since the epoch, so daily slots start at UTC midnight. Failed runs are grouped with a window function: a running count of successful checks gives every failure between two successes the same group number.
+The page never reads raw rows for its bars beyond a day. The 24-hour view groups checks into 5-minute slots; the longer views group the hourly totals into hours or days.
+
+Response times are medians (`src/lib/response-times.ts`). A 24-hour bar is the median of the eleven checks around its last one, read with an hour of checks before the view so the first bars have neighbours. A longer view's bar is the median of its hours, each taken as log-normal through its median and 95th percentile. Above each strip are the median over the view and the 95th percentile, which also tops the scale. `status.json` takes its 24-hour median from the same function as the page. Slots align to multiples of the slot length since the epoch, so daily slots start at UTC midnight. Failed runs are grouped with a window function: a running count of successful checks gives every failure between two successes the same group number.
 
 The 24-hour figures are cached and recomputed after new checks land. The longer views are kept for 5 or 15 minutes, or until the monitor's state or latest result changes.
 

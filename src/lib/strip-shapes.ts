@@ -127,13 +127,15 @@ export function stripLayers(
       return;
     }
     const failed = b.total - b.up;
-    // Over the threshold, or, without a response time (a component's
-    // degraded spell), marked slow outright.
+    // Drawn over the threshold, or half its checks or more judged slow (a
+    // bar is the median of the checks around it, and can sit under the
+    // line while its own were slow), or, without a response time (a
+    // component's degraded spell), any of them.
     const slow =
       (slowThresholdMs !== null &&
         b.latencyMs !== null &&
         b.latencyMs > slowThresholdMs) ||
-      (b.latencyMs === null && b.slow > 0 && b.up > 0);
+      (b.slow > 0 && b.up > 0 && (b.latencyMs === null || b.slow * 2 >= b.up));
     // A check without a response time (a heartbeat) draws a flat bar, so a
     // quiet day still reads as checks that passed.
     const h =

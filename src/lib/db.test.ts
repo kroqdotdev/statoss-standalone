@@ -412,6 +412,8 @@ describe("hourly totals", () => {
         maintenance: 1,
         latency_sum: 1000,
         latency_n: 2,
+        latency_p50: null,
+        latency_p95: null,
       },
       {
         site: "s",
@@ -424,8 +426,65 @@ describe("hourly totals", () => {
         maintenance: 0,
         latency_sum: 0,
         latency_n: 0,
+        latency_p50: null,
+        latency_p95: null,
       },
     ]);
+  });
+
+  it("clears an hour's median when a response time lands in it late", () => {
+    const db = memDb();
+    const check = (ts: number, latencyMs: number | null, ok: 0 | 1 = 1) =>
+      insertCheck(db, {
+        ...base,
+        ts,
+        ok,
+        latencyMs,
+        error: ok ? null : "timeout",
+      });
+    check(HOUR + 1, 100);
+    db.exec("UPDATE check_hour SET latency_p50 = 100, latency_p95 = 100");
+    const figures = () =>
+      db
+        .prepare(
+          "SELECT latency_p50 AS p50, latency_p95 AS p95 FROM check_hour",
+        )
+        .get();
+    // A failure or a check without a response time leaves them be.
+    check(HOUR + 2, 5, 0);
+    check(HOUR + 3, null);
+    expect(figures()).toEqual({ p50: 100, p95: 100 });
+    check(HOUR + 4, 300);
+    expect(figures()).toEqual({ p50: null, p95: null });
+  });
+
+  it("gives a database from before medians the columns for them", () => {
+    const dir = mkdtempSync(join(tmpdir(), "status-p50-"));
+    const path = join(dir, "status.db");
+    const old = new Database(path);
+    old.exec(`CREATE TABLE check_hour (
+      site TEXT NOT NULL, monitor TEXT NOT NULL, ts INTEGER NOT NULL,
+      total INTEGER NOT NULL DEFAULT 0, up INTEGER NOT NULL DEFAULT 0,
+      timeouts INTEGER NOT NULL DEFAULT 0, slow INTEGER NOT NULL DEFAULT 0,
+      maintenance INTEGER NOT NULL DEFAULT 0,
+      latency_sum INTEGER NOT NULL DEFAULT 0, latency_n INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (site, monitor, ts)) WITHOUT ROWID`);
+    old
+      .prepare(
+        "INSERT INTO check_hour (site, monitor, ts, total, up, latency_sum, latency_n) VALUES ('s', 'c', 0, 2, 2, 300, 2)",
+      )
+      .run();
+    old.close();
+    const db = openDb(path);
+    expect(
+      db
+        .prepare(
+          "SELECT latency_n AS n, latency_p50 AS p50, latency_p95 AS p95 FROM check_hour",
+        )
+        .get(),
+    ).toEqual({ n: 2, p50: null, p95: null });
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("fills them in once for a database that has checks and no totals", () => {

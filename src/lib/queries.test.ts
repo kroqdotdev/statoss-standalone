@@ -5,7 +5,9 @@ import {
   RANGES,
   bucketSeries,
   failureRuns,
+  hourPeriods,
   parseRange,
+  passedReadings,
   rangeWindow,
   rollupSeries,
   rollupSummary,
@@ -318,5 +320,53 @@ describe("rollups", () => {
     expect(
       rollupSummary(db, "s", "c", NOW - 10 * DAY, NOW - 5 * DAY),
     ).toMatchObject({ total: 0, latencyMs: null, hours: 0 });
+  });
+});
+
+describe("response time readings", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  it("lists the passed checks with a response time, oldest first", () => {
+    const db = openDb(":memory:");
+    seed(db, NOW - 3000, 1, 300);
+    seed(db, NOW - 4000, 1, 100);
+    seed(db, NOW - 2000, 0, 50);
+    seed(db, NOW - 1000, 1, null);
+    insertCheck(db, {
+      site: "s",
+      monitor: "c",
+      ts: NOW - 500,
+      ok: 1,
+      statusCode: 200,
+      latencyMs: 900,
+      error: null,
+      maintenance: 1,
+    });
+    expect(passedReadings(db, "s", "c", NOW - DAY, NOW + 1)).toEqual([
+      { ts: NOW - 4000, ms: 100 },
+      { ts: NOW - 3000, ms: 300 },
+    ]);
+  });
+
+  it("gives each hour its kept median, reads this hour from the checks, and lets an old one stand in with its mean", () => {
+    const db = openDb(":memory:");
+    const hour = Math.floor(NOW / HOUR) * HOUR;
+    // Two days back, finished.
+    seed(db, hour - 48 * HOUR, 1, 100);
+    db.prepare(
+      "UPDATE check_hour SET latency_p50 = 90, latency_p95 = 140 WHERE ts = ?",
+    ).run(hour - 48 * HOUR);
+    // A day back, never finished.
+    seed(db, hour - 24 * HOUR, 1, 100);
+    seed(db, hour - 24 * HOUR + 1000, 1, 300);
+    // This hour.
+    for (const ms of [100, 110, 900]) seed(db, hour + ms, 1, ms);
+    expect(
+      hourPeriods(db, "s", "c", hour - 72 * HOUR, hour + HOUR, NOW),
+    ).toEqual([
+      { ts: hour - 48 * HOUR, n: 1, p50: 90, p95: 140 },
+      { ts: hour - 24 * HOUR, n: 2, p50: 200, p95: 200 },
+      { ts: hour, n: 3, p50: 110, p95: 900 },
+    ]);
   });
 });
