@@ -9,9 +9,11 @@ const basePath = parseBasePath(process.env.BASE_PATH);
 const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["better-sqlite3"],
-  // The server never reads the importer. The image copies the files it
-  // runs from on its own (see the Dockerfile), and its fixtures stay out.
-  outputFileTracingExcludes: { "**": ["src/lib/kuma/**"] },
+  // The server runs its compiled bundles and reads no file under src. The
+  // tracer still took every file there, tests and the importer's fixtures
+  // included, from the config paths it cannot resolve at build time. The
+  // image copies the importer's sources on its own (see the Dockerfile).
+  outputFileTracingExcludes: { "**": ["src/**"] },
   basePath,
   // Written into the app's code, server and browser, for src/lib/base-path.ts.
   env: { STATOSS_BASE_PATH: basePath },

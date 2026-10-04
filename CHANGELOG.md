@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Changed
+
+- The image leaves out the app's TypeScript sources and their tests, which the server never read. `import-kuma` keeps its own.
+
 ## 0.5.0 - 2026-10-04
 
 ### Added
