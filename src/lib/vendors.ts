@@ -493,6 +493,13 @@ export async function refreshVendors(
   return due.length > 0;
 }
 
+const PART_RANK: Record<VendorState, number> = {
+  unknown: 0,
+  up: 0,
+  slow: 1,
+  down: 2,
+};
+
 const STATES: Record<VendorState, ComponentState | null> = {
   up: "operational",
   slow: "degraded",
@@ -552,13 +559,18 @@ export function vendorView(
         reading.state === "unknown" ? "does not know its own state" : null,
     };
   const key = part.trim().toLowerCase();
-  const found = reading.components.find(
+  const matches = reading.components.filter(
     (c) => c.name.trim().toLowerCase() === key,
   );
-  if (!found)
+  if (matches.length === 0)
     return { ...base, state: null, problem: `has no part named "${part}"` };
-  if (found.state === "unknown")
+  // A page may list one name under two headings; the worse of them counts.
+  const known = matches.filter((c) => c.state !== "unknown");
+  if (known.length === 0)
     return { ...base, state: null, problem: "does not know that part's state" };
+  const found = known.reduce((a, b) =>
+    PART_RANK[b.state] > PART_RANK[a.state] ? b : a,
+  );
   return {
     ...base,
     state: STATES[found.state],

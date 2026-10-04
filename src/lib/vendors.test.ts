@@ -205,6 +205,27 @@ describe("following a vendor", () => {
     });
   });
 
+  it("takes the worse of two parts with one name, whichever comes first", async () => {
+    await refreshVendors(
+      CONFIG,
+      0,
+      answering({
+        "/api/v2/summary.json": {
+          ...SUMMARY,
+          components: [
+            { name: "REST API", status: "operational" },
+            { name: "REST API", status: "major_outage" },
+            { name: "REST API", status: "degraded_performance" },
+          ],
+        },
+      }),
+    );
+    expect(vendorView(URL_, "REST API", 0)).toMatchObject({
+      state: "major",
+      incidents: [{ name: "Elevated errors" }, { name: "Odd link" }],
+    });
+  });
+
   it("reads a page again only every five minutes", async () => {
     const fetchFn = answering({ "/api/v2/summary.json": SUMMARY });
     await refreshVendors(CONFIG, 0, fetchFn);

@@ -49,7 +49,11 @@ import { readIncidentFiles } from "./incident-files";
 import { inMaintenance, maintenanceView } from "./incidents";
 import { dueNotices } from "./notices";
 import { applyResult, lateAfterMs, type CheckVerdict } from "./state";
-import { vendorAlertHolds, vendorAlerts } from "./vendor-alerts";
+import {
+  forgetUnfollowedVendors,
+  vendorAlertHolds,
+  vendorAlerts,
+} from "./vendor-alerts";
 import { refreshVendors } from "./vendors";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -431,6 +435,8 @@ export function startScheduler(): void {
   const db = getDb();
   const jobs = loadJobs(config);
   recordComponentStates(db, config.sites, Date.now());
+  // No round of vendor alerts runs once no component follows a vendor.
+  forgetUnfollowedVendors(config, db);
 
   if (config.alerts?.smtp && !process.env.SMTP_PASS) {
     console.warn(

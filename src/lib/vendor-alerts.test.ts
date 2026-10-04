@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { describeVendor } from "./alerts";
 import { parseConfig } from "./config";
 import { getVendorState, openDb } from "./db";
-import { vendorAlertHolds, vendorAlerts } from "./vendor-alerts";
+import {
+  forgetUnfollowedVendors,
+  vendorAlertHolds,
+  vendorAlerts,
+} from "./vendor-alerts";
 import {
   clearVendors,
   refreshVendors,
@@ -228,6 +232,26 @@ sites:
       state: "operational",
       since: MIN,
     });
+  });
+
+  it("forgets them all at start once no component follows a vendor", async () => {
+    await read(0, summary("partial_outage"));
+    vendorAlerts(CONFIG, db, 0);
+    const none = parseConfig(`
+sites:
+  - name: shop
+    host: status.shop.example
+    components:
+      - name: Acme API
+`);
+    // No vendor is due, so no round of alerts runs: the start tidies up.
+    expect(await refreshVendors(none, VENDOR_REFRESH_MS)).toBe(false);
+    forgetUnfollowedVendors(none, db);
+    expect(getVendorState(db, "shop", "Acme API")).toBeUndefined();
+    expect(getVendorState(db, "shop", "Acme")).toBeUndefined();
+    // Added again later, the first reading is quiet once more.
+    await read(2 * VENDOR_REFRESH_MS, summary("major_outage"));
+    expect(vendorAlerts(CONFIG, db, 2 * VENDOR_REFRESH_MS)).toEqual([]);
   });
 
   it("drops a retry once the vendor has moved again", async () => {

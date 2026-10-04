@@ -386,7 +386,7 @@ components:
 
 The first reading asks each platform in turn, up to eight requests; after that the one that answered is asked first. Each page is read every five minutes, whatever the number of components that follow it. A feed's address, such as `https://www.githubstatus.com/api/v2/summary.json`, is taken as its page's, and `https://status.stripe.com` is read from `https://www.stripestatus.com`, where its feed is.
 
-Vendor components sit in their own section, Third-party services, one row each: the state, whose report it is, and links to up to three of the vendor's open incidents. Without `part` the component follows the whole page; with it, that one part, and only the incidents that touch it. **A vendor's trouble does not move your headline, your badge or `status.json`'s `site.status`.** If that is what you want, open an incident of your own and name the component.
+Vendor components sit in their own section, Third-party services, one row each: the state, whose report it is, and links to up to three of the vendor's open incidents. Without `part` the component follows the whole page; with it, that one part, and only the incidents that touch it. A name the page lists twice, under two headings, takes the worse state of the two. **A vendor's trouble does not move your headline, your badge or `status.json`'s `site.status`.** If that is what you want, open an incident of your own and name the component.
 
 A vendor that cannot be read keeps its last reading for 30 minutes; after that the component shows the `state` from the configuration (`operational` unless you set one) and the row says the page could not be read. The reason is logged with `[vendors]` in front.
 

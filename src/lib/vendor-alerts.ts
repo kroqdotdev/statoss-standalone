@@ -38,6 +38,27 @@ export interface VendorAlert {
 const key = (site: string, component: string) => `${site}\0${component}`;
 
 /**
+ * Forgets what was noted for components that no longer follow a vendor, so
+ * one added again later starts with a quiet first reading. Run at start,
+ * since the configuration is read once, and with every round of alerts.
+ */
+export function forgetUnfollowedVendors(
+  config: Pick<AppConfig, "sites">,
+  db: Database.Database,
+): void {
+  const followed = new Set(
+    config.sites.flatMap((site) =>
+      site.components.flatMap((c) =>
+        c.vendor ? [key(site.name, c.name)] : [],
+      ),
+    ),
+  );
+  for (const row of vendorStates(db))
+    if (!followed.has(key(row.site, row.component)))
+      deleteVendorState(db, row.site, row.component);
+}
+
+/**
  * Notes what each vendor component's vendor says now, and returns an alert
  * for every one that moved since it was last noted and whose site wants to
  * hear of it. Forgets the components that no longer follow a vendor.
@@ -47,15 +68,14 @@ export function vendorAlerts(
   db: Database.Database,
   now: number,
 ): VendorAlert[] {
+  forgetUnfollowedVendors(config, db);
   const out: VendorAlert[] = [];
-  const followed = new Set<string>();
   for (const site of config.sites) {
     const destinations = siteSendsVendorAlerts(config, site)
       ? siteDestinations(config, site).filter(toldOfVendors)
       : [];
     for (const c of site.components) {
       if (!c.vendor) continue;
-      followed.add(key(site.name, c.name));
       const part = c.part ?? null;
       const view = vendorView(c.vendor, part, now);
       if (view.state === null) continue;
@@ -92,9 +112,6 @@ export function vendorAlerts(
       });
     }
   }
-  for (const row of vendorStates(db))
-    if (!followed.has(key(row.site, row.component)))
-      deleteVendorState(db, row.site, row.component);
   return out;
 }
 
