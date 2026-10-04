@@ -20,7 +20,7 @@ alerts:
     from: status@example.com
   # Where alerts go, for every site that has no list of its own.
   # Each entry is one of email, slack, discord, webhook with a secret,
-  # pagerduty, opsgenie or ntfy.
+  # pagerduty, opsgenie, ntfy, telegram, pushover or teams.
   to:
     - email: alerts@example.com
     # - slack: https://hooks.slack.com/services/T000/B000/XXXX
@@ -32,12 +32,24 @@ alerts:
     #   region: eu
     # - ntfy: https://ntfy.sh/my-topic
     #   token: ${NTFY_TOKEN}
+    # Telegram, through your own bot from @BotFather. The chat id, or a
+    # public channel's @name.
+    # - telegram: "-1001234567890"
+    #   token: ${TELEGRAM_BOT_TOKEN}
+    # Pushover: your user key or a group key, and an application's token.
+    # emergency: true sends a monitor going down at emergency priority.
+    # - pushover: ${PUSHOVER_USER_KEY}
+    #   token: ${PUSHOVER_APP_TOKEN}
+    #   emergency: true
+    # Microsoft Teams: the URL of a workflow made with "Post to a channel
+    # when a webhook request is received".
+    # - teams: ${TEAMS_WORKFLOW_URL}
   # Optional. false keeps incident updates and maintenance notices on the
   # page and sends them nowhere. Default: true.
   # updates: true
   # Optional. false sends nothing when a vendor that a component follows
   # reports an outage, trouble, or things working again. These go to email,
-  # Slack, Discord and ntfy only. Default: true.
+  # Slack, Discord, ntfy, Telegram, Pushover and Teams only. Default: true.
   # vendors: true
   # Optional. Send "still down" notices this many minutes apart while a
   # monitor stays down. 0 (the default) sends none.

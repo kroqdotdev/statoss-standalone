@@ -278,14 +278,47 @@ export type Destination =
   | { webhook: string; secret: string }
   | { pagerduty: string }
   | { opsgenie: string; region?: "us" | "eu" }
-  | { ntfy: string; token?: string };
+  | { ntfy: string; token?: string }
+  | { telegram: string; token: string }
+  | { pushover: string; token: string; emergency?: boolean }
+  | { teams: string };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const DESTINATION_HELP =
-  "A destination is one of: email: <address>, slack: <webhook url>, discord: <webhook url>, webhook: <url> with secret: <text>, pagerduty: <integration key>, opsgenie: <api key>, or ntfy: <topic url>.";
+  "A destination is one of: email: <address>, slack: <webhook url>, discord: <webhook url>, webhook: <url> with secret: <text>, pagerduty: <integration key>, opsgenie: <api key>, ntfy: <topic url>, telegram: <chat id> with token: <bot token>, pushover: <user key> with token: <app token>, or teams: <workflow url>.";
+
+/**
+ * A Telegram chat: a number, negative for a group or a channel, or a
+ * public channel's @name.
+ */
+const TELEGRAM_CHAT = /^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/;
+/** A bot's token from @BotFather: the bot's number, a colon, the secret. */
+const TELEGRAM_TOKEN = /^\d+:[A-Za-z0-9_-]{20,}$/;
+/** Pushover's user, group and application keys: 30 letters and digits. */
+const PUSHOVER_KEY = /^[A-Za-z0-9]{30}$/;
+
+/**
+ * A Teams workflow's address (Power Automate, on Azure Logic Apps or a
+ * Power Platform environment), or an older Office 365 connector's.
+ */
+export function isTeamsWebhook(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return false;
+  const host = url.hostname.toLowerCase();
+  if (host.endsWith(".logic.azure.com") || host.endsWith(".powerplatform.com"))
+    return /\/workflows\//i.test(url.pathname);
+  if (host.endsWith(".webhook.office.com"))
+    return /^\/webhookb2\//i.test(url.pathname);
+  return false;
+}
 
 function isHttpUrl(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -371,6 +404,65 @@ const destinationSchema = z.unknown().transform((value, ctx): Destination => {
     return token === undefined
       ? { ntfy: value.ntfy }
       : { ntfy: value.ntfy, token };
+  }
+  if ("telegram" in value) {
+    // An unquoted chat id is read from YAML as a number.
+    const chat =
+      typeof value.telegram === "number" && Number.isSafeInteger(value.telegram)
+        ? String(value.telegram)
+        : typeof value.telegram === "string"
+          ? value.telegram.trim()
+          : "";
+    if (!TELEGRAM_CHAT.test(chat))
+      return fail(
+        "telegram must be a chat id, like -1001234567890, or a public channel's @name.",
+      );
+    if (typeof value.token !== "string" || value.token.trim() === "")
+      return fail(
+        "telegram needs token: <bot token>, the token @BotFather gave your bot.",
+      );
+    if (!TELEGRAM_TOKEN.test(value.token.trim()))
+      return fail(
+        "telegram's token is not a bot token. A bot token looks like 123456789:AAH4..., as @BotFather gives it.",
+      );
+    if (keys.length !== 2)
+      return fail("telegram takes a chat id and token: <bot token>.");
+    return { telegram: chat, token: value.token.trim() };
+  }
+  if ("pushover" in value) {
+    const user =
+      typeof value.pushover === "string" ? value.pushover.trim() : "";
+    if (!PUSHOVER_KEY.test(user))
+      return fail(
+        "pushover must be your user key or a group key, 30 letters and digits.",
+      );
+    if (typeof value.token !== "string" || value.token.trim() === "")
+      return fail(
+        "pushover needs token: <app token>, the API token of an application you made on pushover.net.",
+      );
+    if (!PUSHOVER_KEY.test(value.token.trim()))
+      return fail(
+        "pushover's token is not an application token, which is 30 letters and digits.",
+      );
+    const emergency = value.emergency;
+    if (
+      (emergency !== undefined && typeof emergency !== "boolean") ||
+      keys.some((k) => k !== "pushover" && k !== "token" && k !== "emergency")
+    )
+      return fail(
+        "pushover takes a user key, token: <app token> and, optionally, emergency: true.",
+      );
+    return emergency === undefined
+      ? { pushover: user, token: value.token.trim() }
+      : { pushover: user, token: value.token.trim(), emergency };
+  }
+  if ("teams" in value) {
+    const url = typeof value.teams === "string" ? value.teams.trim() : "";
+    if (keys.length !== 1 || !isTeamsWebhook(url))
+      return fail(
+        'teams must be the URL of a Teams workflow made with "Post to a channel when a webhook request is received", on logic.azure.com or powerplatform.com.',
+      );
+    return { teams: url };
   }
   return fail(DESTINATION_HELP);
 });

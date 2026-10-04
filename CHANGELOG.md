@@ -2,6 +2,14 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- Telegram, Pushover and Microsoft Teams as alert destinations. `telegram: <chat id>` with `token:` posts through your own bot. `pushover: <user key>` with `token:` sends a monitor going down at high priority, or at emergency priority with `emergency: true`, and the rest at normal priority. `teams: <workflow url>` posts one Adaptive Card through a Teams workflow. They get everything Slack and Discord get: alerts, repeat notices, incident updates, maintenance notices and a vendor's changes.
+- A send that Telegram, Pushover or Teams refuses because the setup is wrong, such as a bad token, a chat it cannot find, a blocked bot or a deleted workflow, is not tried again. The log says what the service answered and what to check. Too many requests and server errors are tried again as before.
+- A Telegram, Pushover or Teams destination with no token, or with a chat id, key or URL that is not one, stops the start with a message that names it.
+
 ## 0.4.0 - 2026-10-04
 
 ### Added
