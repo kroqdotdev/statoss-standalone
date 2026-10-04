@@ -26,6 +26,7 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 - **Times where the visitor is.** Every time on the page is written in the visitor's own time zone.
 - **Password pages.** A site can ask for a password, which locks its endpoints too, with a key for embeds.
 - **One YAML file.** No admin interface, no accounts, no external services.
+- **Moving from Uptime Kuma.** One command turns a Kuma database into a configuration. See [Moving from Uptime Kuma](#moving-from-uptime-kuma).
 - **One process.** A Next.js server with an embedded checker and a SQLite file. Deploy it with Docker Compose behind any reverse proxy.
 
 ## How it works
@@ -151,6 +152,60 @@ The container listens on `127.0.0.1:3000`.
 2. Create a DNS record for each status hostname.
 
 Open `https://status.example.com` to see the page.
+
+## Moving from Uptime Kuma
+
+`import-kuma` reads an Uptime Kuma database and prints a configuration made from it. It reads the SQLite database of Kuma 1.23 and 2.x, and the JSON backup Kuma 1 could export (Kuma 2 has no such export). Kuma can keep running while it reads.
+
+1. Make the configuration. Kuma keeps `kuma.db` in its data folder, `/app/data` in its container, often on a volume called `uptime-kuma`. Mount the folder read-only and give its path inside the container:
+
+   ```sh
+   docker run --rm -v uptime-kuma:/kuma:ro ghcr.io/kroqdotdev/statoss-standalone import-kuma /kuma > config.yaml
+   ```
+
+   For a folder on the host, use `-v /path/to/kuma/data:/kuma:ro`. Mount the folder, not `kuma.db` alone: while Kuma runs, its newest changes are in `kuma.db-wal` beside it.
+
+2. Read the summary it prints on the terminal: what came across, what did not and why, and what to look at. In the file, those lines are marked `check:`, and what was not imported is listed at the end.
+
+3. Secrets are not written into the file. Webhook URLs, keys, tokens and passwords become `${NAME}` references. Print them, with their values, for a `.env` file next to it:
+
+   ```sh
+   docker run --rm -v uptime-kuma:/kuma:ro ghcr.io/kroqdotdev/statoss-standalone import-kuma --env /kuma > .env
+   ```
+
+   Keep `.env` private. Each value in it is written as it is, which is how `docker run --env-file .env` reads it. In Compose, give it to the service as `env_file: [{ path: .env, format: raw }]`, which reads it the same way.
+
+4. Set each site's `host`, where the importer could not tell it, and start the container as in [Quick start](#quick-start).
+
+From a clone, after `pnpm install`, with Node 22.6 or newer: `pnpm import-kuma path/to/kuma.db > config.yaml`. For a Kuma 1 backup, give the `.json` file instead.
+
+| In Uptime Kuma                                                     | Here                                                                                                                                                                                   |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP, keyword and JSON query monitors                              | `http`, with the method, headers, body, keyword or its absence, and one exact status if Kuma expected one. A JSON query is not checked.                                                |
+| TCP port, ping                                                     | `tcp`, `ping`                                                                                                                                                                          |
+| DNS                                                                | `dns` for A, AAAA, CNAME, MX, TXT and NS records, with a "contains" or "equals" condition as `expect`                                                                                  |
+| Push                                                               | `heartbeat`, with the same token (a new one if Kuma's is under 8 characters) and interval. The job now calls `https://<host>/heartbeat/<token>` instead of Kuma's `/api/push/<token>`. |
+| Certificate expiry notification                                    | a `certificate` monitor for the host, failing at the largest of Kuma's notify days                                                                                                     |
+| Domain expiry notification (Kuma 2)                                | a `domain` monitor for the domain                                                                                                                                                      |
+| Manual monitor (Kuma 2)                                            | a component in the same state                                                                                                                                                          |
+| Status page                                                        | a site, with its title, description, theme, a logo given as an address, and its first custom domain as `host` if Kuma published it                                                     |
+| A group on a status page                                           | `group` on its monitors. A Kuma group monitor on a page brings the monitors in it.                                                                                                     |
+| Monitors on no status page                                         | one more site, Other monitors, kept out of search engines                                                                                                                              |
+| Email (SMTP), Slack, Discord, webhook, PagerDuty, Opsgenie, ntfy   | alert destinations of the sites whose monitors used them                                                                                                                               |
+| Maintenance with a start and an end, still to come                 | a maintenance window, in UTC                                                                                                                                                           |
+| Maintenance on some weekdays, some days of the month, or every day | a window for each of those days with `repeat: weekly` or `monthly`, and `until` from its date range. The site takes Kuma's time zone, so the windows keep their time of day.           |
+| Paused monitors                                                    | left out, and listed at the end of the file                                                                                                                                            |
+
+Left out, each with the reason at the end of the file: the other kinds of monitor (Docker, databases, MQTT, gRPC, game servers and the rest), monitors in upside down mode or that sign in with OAuth2, NTLM or a client certificate, the other notification services, and maintenance that has no end or repeats every few days or on another schedule. A header a request cannot carry, such as a name with an underscore, is left out of its monitor and marked `check:`. The history, tags and users stay in Kuma.
+
+Some things work differently here:
+
+- Kuma picked notifications per monitor. Here a site's destinations get every monitor of the site.
+- A monitor goes down after two failed checks with a 10-second timeout. Kuma's retries, timeouts and repeated notifications are not carried over.
+- A webhook gets this app's JSON body, signed with a new secret, not Kuma's. See the webhook part of [Monitor types](#monitor-types).
+- The configuration has one SMTP server. Email notifications through other servers are sent through the first one.
+
+Kuma 2 can keep its data in MariaDB instead. `import-kuma` reads SQLite only, and Kuma 2 has no export to a file, so such an installation has to be moved by hand for now.
 
 ## Configuration
 
@@ -535,15 +590,16 @@ Or set `host: localhost` for one site in `config.yaml` and open <http://localhos
 
 Useful commands:
 
-| Command             | What it does                        |
-| ------------------- | ----------------------------------- |
-| `pnpm test`         | Runs the unit tests.                |
-| `pnpm lint`         | Runs ESLint.                        |
-| `pnpm format`       | Formats all files with Prettier.    |
-| `pnpm format:check` | Fails if any file is not formatted. |
-| `pnpm typecheck`    | Checks the types.                   |
-| `pnpm build`        | Builds the production server.       |
-| `pnpm e2e`          | Runs the browser journeys.          |
+| Command                   | What it does                                              |
+| ------------------------- | --------------------------------------------------------- |
+| `pnpm test`               | Runs the unit tests.                                      |
+| `pnpm lint`               | Runs ESLint.                                              |
+| `pnpm format`             | Formats all files with Prettier.                          |
+| `pnpm format:check`       | Fails if any file is not formatted.                       |
+| `pnpm typecheck`          | Checks the types.                                         |
+| `pnpm build`              | Builds the production server.                             |
+| `pnpm e2e`                | Runs the browser journeys.                                |
+| `pnpm import-kuma <file>` | Prints a configuration made from an Uptime Kuma database. |
 
 The browser journeys in `e2e/` run the built server against a seeded database, at desktop and phone width, and fail when anything on a screen runs off its right edge. Build first, install a browser once, then run them:
 

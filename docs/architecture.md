@@ -57,6 +57,7 @@ POST /heartbeat/<token> ──► heartbeat         POST /deploys ──► depl
 | `src/app/*/route.ts`           | The endpoints: `status.json`, badges, feeds, `widget.js`, `checks`, `deploys`, `mcp`, `llms.txt`, `heartbeat`, `unlock`, `logo`. |
 | `src/components/`              | The headline, incidents, range switch, groups, check strip and its panel, components, vendors, the password form.                |
 | `e2e/`                         | The browser journeys, their seed and the server their monitors check.                                                            |
+| `src/lib/kuma/`                | The Uptime Kuma importer, run by `scripts/import-kuma.mts`. See [uptime-kuma.md](uptime-kuma.md).                                |
 
 ## Database
 

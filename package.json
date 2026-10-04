@@ -34,7 +34,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "e2e": "playwright test",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "import-kuma": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/import-kuma.mts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
