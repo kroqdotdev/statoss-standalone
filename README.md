@@ -29,6 +29,21 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 - **Moving from Uptime Kuma.** One command turns a Kuma database into a configuration. See [Moving from Uptime Kuma](#moving-from-uptime-kuma).
 - **One process.** A Next.js server with an embedded checker and a SQLite file. Deploy it with Docker Compose behind any reverse proxy.
 
+## Compared with Uptime Kuma and Gatus
+
+Checked on 29 September 2026. Both move fast, so read their docs too.
+
+|               | statoss-standalone                                                                                                                                                            | Uptime Kuma                                                                       | Gatus                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Configuration | One YAML file; incidents as Markdown or YAML files                                                                                                                            | A web interface with one admin account                                            | One YAML file                                                                          |
+| Monitor types | HTTP, TCP, DNS, ping, certificate, domain, heartbeat                                                                                                                          | About 30, among them Docker, databases, MQTT, gRPC and a real browser             | HTTP, TCP, UDP, ping, DNS, SSH, TLS, WebSocket, gRPC, domain expiry and pushed results |
+| Status page   | Response-time bars with a mark for every failed check, failures with their reason, incidents with post-mortems, maintenance that can repeat, an error budget, vendors' status | Heartbeat bars and 24-hour uptime per monitor, pinned incidents, maintenance, RSS | Results per endpoint, badges, announcements, maintenance                               |
+| Alerts        | Email, Slack, Discord, PagerDuty, Opsgenie, ntfy and signed webhooks                                                                                                          | More than 90 providers                                                            | More than 40 providers                                                                 |
+| Storage       | One SQLite file                                                                                                                                                               | SQLite, or MariaDB on version 2                                                   | Memory, SQLite or PostgreSQL                                                           |
+| Licence       | MIT                                                                                                                                                                           | MIT                                                                               | Apache 2.0                                                                             |
+
+Pick Uptime Kuma to set monitors up in a web interface, or for one of its monitor types. Pick Gatus for SSH, UDP or WebSocket checks, or conditions on JSON fields. Pick this when the public page is the point: every failure shown with its reason, incidents and post-mortems kept in Git, and a page for each site on its own hostname. [Moving from Uptime Kuma](#moving-from-uptime-kuma) is one command.
+
 ## How it works
 
 You list sites in `config.yaml`. Each site has a hostname and one or more monitors. A monitor has a type, `http` unless you say otherwise. An HTTP monitor is a URL and, optionally, the method, headers and body to send, the HTTP status you expect, a keyword the response must contain, a slow threshold, and a group. The other types are described under [Monitor types](#monitor-types).
