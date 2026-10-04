@@ -1,11 +1,11 @@
-import { expect, LOCKED, test, walkBack } from "./journeys";
+import { at, expect, LOCKED, test, walkBack } from "./journeys";
 
 test.describe("the status page", () => {
   test("says what is wrong, in order, and shows every row", async ({
     page,
     fits,
   }) => {
-    await page.goto("/");
+    await page.goto(at("/"));
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Part of Northwind is down.",
     );
@@ -59,7 +59,7 @@ test.describe("the status page", () => {
     page,
     fits,
   }) => {
-    await page.goto("/");
+    await page.goto(at("/"));
     const strip = page.locator("#row-website").getByRole("img");
     await strip.focus();
     // The newest bar, then back to the outage five hours ago.
@@ -88,7 +88,7 @@ test.describe("the status page", () => {
   });
 
   test("has a year of history on the longer views", async ({ page, fits }) => {
-    await page.goto("/");
+    await page.goto(at("/"));
     await page.getByRole("link", { name: "1 year" }).click();
     await expect(page).toHaveURL(/range=1y/);
     await expect(page.locator("#row-website")).toContainText(
@@ -109,7 +109,7 @@ test.describe("incidents", () => {
     page,
     fits,
   }) => {
-    await page.goto("/");
+    await page.goto(at("/"));
     await page
       .getByLabel("Past incidents")
       .getByRole("link", { name: "Slow search" })
@@ -142,7 +142,7 @@ test.describe("incidents", () => {
   });
 
   test("an address that names no incident is not found", async ({ page }) => {
-    const response = await page.goto("/incidents/nothing-here");
+    const response = await page.goto(at("/incidents/nothing-here"));
     expect(response?.status()).toBe(404);
   });
 });
@@ -162,7 +162,7 @@ test.describe("a password page", () => {
       ).status(),
     ).toBe(200);
 
-    await page.goto(`${LOCKED}/`);
+    await page.goto(LOCKED);
     await expect(page.getByText("This page needs a password.")).toBeVisible();
     await expect(page.getByText("Wiki")).toHaveCount(0);
     await fits("the password form");
@@ -190,7 +190,7 @@ test.describe("for programs", () => {
   test("status.json, the feeds, the badge, the MCP endpoint and llms.txt answer", async ({
     request,
   }) => {
-    const status = await (await request.get("/status.json")).json();
+    const status = await (await request.get(at("/status.json"))).json();
     expect(status.site.name).toBe("Northwind");
     expect(status.monitors).toHaveLength(6);
     expect(status.components.map((c: { name: string }) => c.name)).toEqual([
@@ -205,11 +205,11 @@ test.describe("for programs", () => {
       "Uploads are failing for some customers",
     );
 
-    const rss = await (await request.get("/feed.xml")).text();
+    const rss = await (await request.get(at("/feed.xml"))).text();
     expect(rss).toContain("/incidents/slow-search</link>");
-    const atom = await (await request.get("/feed.atom")).text();
+    const atom = await (await request.get(at("/feed.atom"))).text();
     expect(atom).toContain('<feed xmlns="http://www.w3.org/2005/Atom">');
-    const calendar = await request.get("/maintenance.ics");
+    const calendar = await request.get(at("/maintenance.ics"));
     expect(calendar.headers()["content-type"]).toContain("text/calendar");
     const ics = (await calendar.text()).replaceAll("\r\n ", "");
     expect(ics).toContain("SUMMARY:Northwind: Database upgrade\r\n");
@@ -218,20 +218,20 @@ test.describe("for programs", () => {
       ics.split("SUMMARY:Northwind: Router swap\r\n").length - 1,
     ).toBeGreaterThanOrEqual(3);
     expect(
-      (await request.get("/badge.svg")).headers()["content-type"],
+      (await request.get(at("/badge.svg"))).headers()["content-type"],
     ).toContain("image/svg+xml");
-    expect(await (await request.get("/llms.txt")).text()).toContain(
+    expect(await (await request.get(at("/llms.txt"))).text()).toContain(
       "# Northwind status",
     );
 
     const tools = await (
-      await request.post("/mcp", {
+      await request.post(at("/mcp"), {
         data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
       })
     ).json();
     expect(tools.result.tools).toHaveLength(3);
     const budget = await (
-      await request.post("/mcp", {
+      await request.post(at("/mcp"), {
         data: {
           jsonrpc: "2.0",
           id: 2,
@@ -246,27 +246,29 @@ test.describe("for programs", () => {
   test("a heartbeat is pinged and a deploy is posted with its token only", async ({
     request,
   }) => {
-    expect((await request.get("/heartbeat/journey-heartbeat")).status()).toBe(
-      200,
-    );
+    expect(
+      (await request.get(at("/heartbeat/journey-heartbeat"))).status(),
+    ).toBe(200);
     // A ping is judged at once: the monitor is up without waiting its turn.
-    const status = await (await request.get("/status.json")).json();
+    const status = await (await request.get(at("/status.json"))).json();
     expect(
       status.monitors.find((m: { name: string }) => m.name === "Nightly backup")
         .status,
     ).toBe("up");
-    expect((await request.get("/heartbeat/some-other-token")).status()).toBe(
-      404,
-    );
     expect(
-      (await request.post("/deploys", { data: { version: "v9" } })).status(),
+      (await request.get(at("/heartbeat/some-other-token"))).status(),
+    ).toBe(404);
+    expect(
+      (
+        await request.post(at("/deploys"), { data: { version: "v9" } })
+      ).status(),
     ).toBe(401);
-    const posted = await request.post("/deploys", {
+    const posted = await request.post(at("/deploys"), {
       headers: { authorization: "Bearer journey-deploy-token" },
       data: { version: "v1.4.1", note: "From the journey" },
     });
     expect(posted.status()).toBe(201);
-    const list = await (await request.get("/deploys")).json();
+    const list = await (await request.get(at("/deploys"))).json();
     expect(list[0].version).toBe("v1.4.1");
   });
 });

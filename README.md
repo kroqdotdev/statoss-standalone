@@ -153,6 +153,51 @@ The container listens on `127.0.0.1:3000`.
 
 Open `https://status.example.com` to see the page.
 
+### Run under a path
+
+The page can live under a path of a domain that serves something else too, like `https://example.com/status`. The path is set when the image is built, so build it from source with the `BASE_PATH` build argument. The published image serves at the root.
+
+```sh
+docker build --build-arg BASE_PATH=/status -t statoss-standalone:status .
+```
+
+With Compose, put `BASE_PATH=/status` in `.env` and run the command in [Build from source](#build-from-source).
+
+`BASE_PATH` starts with a slash and does not end with one. It holds letters, digits, dots, dashes, underscores and tildes, in parts separated by single slashes, like `/status` or `/tools/status`. A wrong value stops the build with a message saying what is wrong. Setting it when the container starts changes nothing; the server logs a warning instead.
+
+Every site of the server is served under the path, and every address in this README moves under it: the page is `https://example.com/status`, then `https://example.com/status/status.json`, `https://example.com/status/heartbeat/<token>` for heartbeats, `POST https://example.com/status/deploys` for deploy markers, and so on. Anything outside the path answers 404.
+
+In `config.yaml`:
+
+- `host` stays the hostname, `example.com`. The server still picks the site by the `Host` header.
+- `url` is the page's whole address, path included: `https://example.com/status`. Leave it out and it is `https://<host>` and the path. A `url` that is only an origin, like `https://example.com`, gets the path added. Alerts, feeds, the calendar, `status.json` and `llms.txt` link to it.
+
+On a password page the cookie is sent only under the path, not to the rest of the domain.
+
+The reverse proxy must pass the path on as it is. With Caddy, use `handle`, not `handle_path`, which strips it:
+
+```
+example.com {
+    @status path /status /status/*
+    handle @status {
+        reverse_proxy 127.0.0.1:3000
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8080 # the rest of the domain
+    }
+}
+```
+
+With nginx, give `proxy_pass` no path, so the request's path goes on unchanged, and pass the `Host` header on, since the server picks the site by it:
+
+```nginx
+location ~ ^/status(/|$) {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
 ## Moving from Uptime Kuma
 
 `import-kuma` reads an Uptime Kuma database and prints a configuration made from it. It reads the SQLite database of Kuma 1.23 and 2.x, and the JSON backup Kuma 1 could export (Kuma 2 has no such export). Kuma can keep running while it reads.
@@ -225,7 +270,7 @@ Kuma 2 can keep its data in MariaDB instead. `import-kuma` reads SQLite only, an
 | `alerts.vendors`                     | no       | `true`           | `false` sends nothing when a vendor a component follows changes state. See Vendor components.                |
 | `sites[].name`                       | yes      |                  | Shown in the headline, for example `example.com is up.`                                                      |
 | `sites[].host`                       | yes      |                  | Hostname that serves this site's page. Must be unique.                                                       |
-| `sites[].url`                        | no       | `https://<host>` | Where alerts and feeds link to.                                                                              |
+| `sites[].url`                        | no       | `https://<host>` | Where alerts and feeds link to. Under a path, the whole address. See Run under a path.                       |
 | `sites[].description`                | no       |                  | A sentence or two under the headline.                                                                        |
 | `sites[].logo`, `favicon`            | no       |                  | An image file next to the configuration, or an http(s) address. See The look of a page.                      |
 | `sites[].accent`                     | no       |                  | The colour of links, focus rings and buttons, as `"#rrggbb"`.                                                |
@@ -344,6 +389,7 @@ Environment variables:
 | `INCIDENTS_DIR` | `incidents` next to the config | Folder of incident files.                           |
 | `DB_PATH`       | `./data/status.db`             | Path of the SQLite database.                        |
 | `PORT`          | `3000`                         | Port the server listens on.                         |
+| `BASE_PATH`     |                                | Read when the app is built. See Run under a path.   |
 
 The Docker image sets `CONFIG_PATH=/data/config.yaml` and `DB_PATH=/data/status.db`, so incidents live in `/data/incidents`. Docker Compose mounts `./data` there.
 
@@ -611,7 +657,14 @@ pnpm e2e
 
 `e2e/seed.mts` writes the configuration, the incidents and the database into `.e2e/`, and `e2e/target.mjs` is what the monitors check. The seed imports the app's TypeScript directly, which needs Node 22.18 or newer.
 
-CI runs the checks above, `pnpm audit`, and the journeys on every pull request. The Image scan workflow builds the image and scans it for known vulnerabilities each week.
+To run the journeys under a path, give both the build and the journeys the same `BASE_PATH`:
+
+```sh
+BASE_PATH=/sub pnpm build
+BASE_PATH=/sub pnpm e2e
+```
+
+CI runs the checks above, `pnpm audit`, and the journeys on every pull request, and the journeys again on a build under `/sub`. The Image scan workflow builds the image and scans it for known vulnerabilities each week.
 
 [docs/architecture.md](docs/architecture.md) describes how the pieces fit together.
 

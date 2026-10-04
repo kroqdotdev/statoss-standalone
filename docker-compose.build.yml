@@ -1,6 +1,11 @@
 # Builds the image from this checkout instead of pulling the published one:
 # docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# With BASE_PATH set, here or in .env, the page is served under that path.
+# See "Run under a path" in the README.
 services:
   statoss:
     image: statoss-standalone:local
-    build: .
+    build:
+      context: .
+      args:
+        BASE_PATH: ${BASE_PATH:-}

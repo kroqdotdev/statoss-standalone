@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearCache } from "./cache";
 import { parseConfig } from "./config";
 import { insertCheck, openDb, setState } from "./db";
@@ -9,6 +9,7 @@ import {
   feedAtom,
   feedEntry,
   feedXml,
+  incidentUrl,
   maintenanceIcs,
   statusJson,
   widgetJs,
@@ -348,6 +349,126 @@ describe("widgetJs", () => {
     expect(js).toContain('replace(/widget\\.js$/,"")');
     expect(js).toContain('base+"status.json"');
     expect(js).toContain("d.site.status");
+  });
+
+  /**
+   * Runs the script as a page would load it from `src`, and says what it
+   * asked for and where its link goes.
+   */
+  function runWidget(src: string) {
+    const fetched: string[] = [];
+    const placed: Array<{ href: string }> = [];
+    const element = () => ({
+      style: {},
+      href: "",
+      textContent: "",
+      appendChild() {},
+    });
+    const script = {
+      src,
+      getAttribute: () => null,
+      parentNode: { insertBefore: (el: { href: string }) => placed.push(el) },
+    };
+    const fetch = (url: string) => {
+      fetched.push(url);
+      return new Promise(() => {});
+    };
+    new Function("document", "fetch", "setInterval", widgetJs())(
+      { currentScript: script, createElement: element },
+      fetch,
+      () => 0,
+    );
+    return { fetched, href: placed[0]?.href };
+  }
+
+  it("links to the page it came from and reads its status.json", () => {
+    expect(runWidget("https://status.example.com/widget.js")).toEqual({
+      fetched: ["https://status.example.com/status.json"],
+      href: "https://status.example.com",
+    });
+  });
+
+  it("does the same under a base path, passing on the embed key", () => {
+    expect(
+      runWidget("https://example.com/status/widget.js?key=embed-key"),
+    ).toEqual({
+      fetched: ["https://example.com/status/status.json?key=embed-key"],
+      href: "https://example.com/status",
+    });
+  });
+});
+
+describe("under a base path", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const site = parseConfig(`
+sites:
+  - name: Example
+    host: example.com
+    monitors:
+      - name: API
+        url: https://api.example.com
+    maintenance:
+      - title: Backups
+        start: 2026-09-12T16:00:00Z
+        end: 2026-09-12T17:00:00Z
+`).sites[0];
+  const incidents: SiteIncidents = {
+    current: [],
+    past: [
+      {
+        id: "slow search",
+        kind: "incident",
+        title: "Slow search",
+        status: "resolved",
+        impact: "degraded",
+        startedAt: NOW - 3 * 60 * 60_000,
+        endsAt: null,
+        resolvedAt: NOW - 2 * 60 * 60_000,
+        auto: false,
+        states: {},
+        postmortem: null,
+        monitors: [],
+        updates: [],
+      },
+    ],
+  };
+
+  it("puts the path in every address status.json, the feeds and the calendar name", () => {
+    vi.stubEnv("STATOSS_BASE_PATH", "/status");
+    expect(incidentUrl(site, "slow search")).toBe(
+      "https://example.com/status/incidents/slow%20search",
+    );
+    expect(statusJson(openDb(":memory:"), site, NONE, NOW).site.url).toBe(
+      "https://example.com/status",
+    );
+    const rss = feedXml(site, incidents, NOW);
+    expect(rss).toContain("<link>https://example.com/status</link>");
+    expect(rss).toContain(
+      "<link>https://example.com/status/incidents/slow%20search</link>",
+    );
+    const atom = feedAtom(site, incidents, NOW);
+    expect(atom).toContain('<link href="https://example.com/status"/>');
+    expect(atom).toContain(
+      '<link rel="self" href="https://example.com/status/feed.atom"/>',
+    );
+    expect(atom).toContain(
+      '<link href="https://example.com/status/incidents/slow%20search"/>',
+    );
+    expect(maintenanceIcs(site, NOW).replaceAll("\r\n ", "")).toContain(
+      "URL:https://example.com/status/incidents/maintenance-2026-09-12-1600-backups\r\n",
+    );
+  });
+
+  it("leaves them at the root without one", () => {
+    expect(incidentUrl(site, "slow search")).toBe(
+      "https://example.com/incidents/slow%20search",
+    );
+    expect(feedAtom(site, incidents, NOW)).toContain(
+      '<link rel="self" href="https://example.com/feed.atom"/>',
+    );
   });
 });
 

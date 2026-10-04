@@ -47,6 +47,7 @@ POST /heartbeat/<token> ──► heartbeat         POST /deploys ──► depl
 | `src/lib/site-routes.ts`       | The route handlers for those endpoints and the others, picking the site by `Host` header and checking the password.              |
 | `src/lib/access.ts`            | Password pages: the unlock cookie, the embed key, the brake on guessing.                                                         |
 | `src/lib/assets.ts`            | Logos and favicons read from next to the configuration.                                                                          |
+| `src/lib/base-path.ts`         | `BASE_PATH`, checked at build time, and the app's own addresses with the base path in front.                                     |
 | `src/lib/accent.ts`            | Readable shades of a site's accent colour.                                                                                       |
 | `src/lib/mcp.ts`               | A stateless MCP server and the three tools it offers.                                                                            |
 | `src/lib/format.ts`            | Text helpers: durations, times in a zone, error labels.                                                                          |
@@ -104,3 +105,5 @@ The root layout reads the site too, for the tab's title and icon, the fixed them
 ## Deployment
 
 The Docker image is built from Next's standalone output and runs as the `node` user with a health check. Docker Compose mounts `./data` at `/data` for the configuration, the incidents and the database. A reverse proxy terminates TLS and forwards the `Host` header, which is how one container serves many sites.
+
+Built with `BASE_PATH`, the app answers only under that path, on every host. Next puts the path in front of its links, its files and a page's redirects. `src/lib/base-path.ts` puts it in front of the rest: plain links, the bar panel's `fetch`, the logo and favicon, the password form and its cookie, and redirects from route handlers. `siteUrl` adds it to the absolute addresses in alerts, feeds, the calendar, `status.json` and `llms.txt`.

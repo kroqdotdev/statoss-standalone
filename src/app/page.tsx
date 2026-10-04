@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { SitePage } from "@/components/SitePage";
 import { Unlock } from "@/components/Unlock";
 import { assetSrc } from "@/lib/assets";
+import { withBase } from "@/lib/base-path";
 import { siteUrl } from "@/lib/config";
 import { getDb, listDeploys } from "@/lib/db";
 import { pageSite } from "@/lib/page-site";
@@ -91,7 +92,7 @@ export default async function StatusPage(props: PageProps<"/">) {
         // A calendar app subscribes to a webcal address. It has no cookie,
         // so a password page offers the file to this browser instead.
         site.password
-          ? "/maintenance.ics"
+          ? withBase("/maintenance.ics")
           : `${siteUrl(site)
               .replace(/\/$/, "")
               .replace(/^https?:/, "webcal:")}/maintenance.ics`

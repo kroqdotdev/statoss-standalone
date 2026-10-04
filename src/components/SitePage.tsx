@@ -7,6 +7,7 @@ import { CurrentIncidents, PastIncidents } from "./IncidentList";
 import { RangeSwitch } from "./RangeSwitch";
 import { StatusHeadline } from "./StatusHeadline";
 import { LocalTime, ZoneName } from "./LocalTime";
+import { withBase } from "@/lib/base-path";
 import { formatInterval } from "@/lib/format";
 import {
   openImpacts,
@@ -137,7 +138,7 @@ export function SitePage({
   foldGroups = false,
   defaultRange,
   deploys = [],
-  calendar = "/maintenance.ics",
+  calendar = withBase("/maintenance.ics"),
 }: {
   /** Where a calendar app subscribes to the site's maintenance. */
   calendar?: string;
@@ -339,10 +340,10 @@ export function SitePage({
           className="mt-2 flex scroll-mt-6 flex-wrap gap-x-4 gap-y-1"
         >
           <span>Get updates:</span>
-          <a href="/feed.xml" className="page-link">
+          <a href={withBase("/feed.xml")} className="page-link">
             RSS
           </a>
-          <a href="/feed.atom" className="page-link">
+          <a href={withBase("/feed.atom")} className="page-link">
             Atom
           </a>
           <a href={calendar} className="page-link">
@@ -351,7 +352,7 @@ export function SitePage({
         </p>
         <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
           {FEEDS.map(([label, href]) => (
-            <a key={href} href={href} className="hover:text-ink">
+            <a key={href} href={withBase(href)} className="hover:text-ink">
               {label}
             </a>
           ))}

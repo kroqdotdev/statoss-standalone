@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { dirname, extname, isAbsolute, resolve, sep } from "node:path";
+import { withBase } from "./base-path";
 import { configPath } from "./config";
 
 /**
@@ -61,7 +62,8 @@ export function readAsset(
 
 /**
  * Where the page finds the image: the address itself, or the app's own
- * route with a stamp that changes with the file. Null when there is none.
+ * route, under the base path, with a stamp that changes with the file.
+ * Null when there is none.
  */
 export function assetSrc(
   value: string | undefined,
@@ -70,5 +72,5 @@ export function assetSrc(
   if (!value) return null;
   if (isRemote(value)) return value;
   const asset = readAsset(value);
-  return asset ? `${route}?v=${asset.version}` : null;
+  return asset ? withBase(`${route}?v=${asset.version}`) : null;
 }

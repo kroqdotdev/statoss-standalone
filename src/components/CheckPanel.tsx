@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { withBase } from "@/lib/base-path";
 import type { CheckDetail, DetailCheck } from "@/lib/check-detail";
 import {
   describeTiming,
@@ -63,7 +64,7 @@ export function CheckPanel({
       from: String(from),
       to: String(to),
     });
-    fetch(`/checks?${params}`, { signal: controller.signal })
+    fetch(withBase(`/checks?${params}`), { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error(String(res.status));
         return res.json() as Promise<CheckDetail>;

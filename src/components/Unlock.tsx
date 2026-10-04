@@ -1,3 +1,5 @@
+import { withBase } from "@/lib/base-path";
+
 /**
  * What a password page shows a browser that has not given the password:
  * the site's name and a form. Nothing about the site's state.
@@ -24,7 +26,11 @@ export function Unlock({
       <p className="mt-3 text-[15px] leading-relaxed text-muted">
         This page needs a password.
       </p>
-      <form method="post" action="/unlock" className="mt-6 space-y-3">
+      <form
+        method="post"
+        action={withBase("/unlock")}
+        className="mt-6 space-y-3"
+      >
         <label className="block text-[14px]">
           <span className="mb-1.5 block">Password</span>
           <input

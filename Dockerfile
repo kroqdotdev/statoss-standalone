@@ -21,6 +21,9 @@ FROM base AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Serves the app under a path of a domain, like /status, when given:
+# --build-arg BASE_PATH=/status. The published image has none.
+ARG BASE_PATH=""
 RUN pnpm build
 # better-sqlite3 ships a prebuilt binary for every platform. Keep only the
 # one for the platform this stage builds for, which is the one it loads.
