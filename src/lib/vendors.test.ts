@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseConfig } from "./config";
 import {
   clearVendors,
+  normalizeVendorUrl,
   parseStatoss,
   parseStatuspage,
   refreshVendors,
@@ -142,6 +143,36 @@ describe("following a vendor", () => {
     expect(vendorUrls(CONFIG)).toEqual([URL_]);
   });
 
+  it("keeps the page's address when the feed's is given, and reads Stripe where its feed is", () => {
+    expect(
+      normalizeVendorUrl("https://status.acme.example/api/v2/summary.json?x=1"),
+    ).toBe(URL_);
+    expect(normalizeVendorUrl("https://status.acme.example/index.json")).toBe(
+      URL_,
+    );
+    expect(normalizeVendorUrl("http://10.0.0.5:3000/status.json")).toBe(
+      "http://10.0.0.5:3000",
+    );
+    expect(normalizeVendorUrl("https://status.acme.example/eu/")).toBe(
+      `${URL_}/eu`,
+    );
+    expect(normalizeVendorUrl("https://status.stripe.com/")).toBe(
+      "https://www.stripestatus.com",
+    );
+  });
+
+  it("names the vendor by its page once read, and by its address before", async () => {
+    expect(vendorView(URL_, null, 0).name).toBe("acme.example");
+    await refreshVendors(
+      CONFIG,
+      0,
+      answering({
+        "/api/v2/summary.json": { ...SUMMARY, page: { name: "Acme Status" } },
+      }),
+    );
+    expect(vendorView(URL_, null, 0).name).toBe("Acme");
+  });
+
   it("says nothing before the first reading, then follows the page or one part of it", async () => {
     expect(vendorView(URL_, null, 0)).toMatchObject({
       state: null,
@@ -184,7 +215,7 @@ describe("following a vendor", () => {
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
-  it("falls back to status.json, and asks for it first the next time", async () => {
+  it("tries each platform in turn, and asks the one that read first the next time", async () => {
     const fetchFn = answering({
       "/status.json": {
         site: { name: "Other", status: "major" },
@@ -199,6 +230,7 @@ describe("following a vendor", () => {
     ).mock.calls.map((c) => new URL(String(c[0])).pathname);
     expect(asked).toEqual([
       "/api/v2/summary.json",
+      "/summary.json",
       "/status.json",
       "/status.json",
     ]);

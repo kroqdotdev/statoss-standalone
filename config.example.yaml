@@ -35,6 +35,10 @@ alerts:
   # Optional. false keeps incident updates and maintenance notices on the
   # page and sends them nowhere. Default: true.
   # updates: true
+  # Optional. false sends nothing when a vendor that a component follows
+  # reports an outage, trouble, or things working again. These go to email,
+  # Slack, Discord and ntfy only. Default: true.
+  # vendors: true
   # Optional. Send "still down" notices this many minutes apart while a
   # monitor stays down. 0 (the default) sends none.
   repeatMinutes: 0
@@ -137,8 +141,9 @@ sites:
     #     description: iOS and Android
     #   - name: Card payments
     #     state: operational # operational, degraded, partial or major
-    #   # A component can follow a vendor's status page (Statuspage,
-    #   # incident.io or StatOSS), or one part of it. It is shown under
+    #   # A component can follow a vendor's status page, or one part of it:
+    #   # Statuspage, incident.io, Instatus, Better Stack, status.io, Sorry,
+    #   # StatOSS, and Heroku's and Slack's own. It is shown under
     #   # Third-party services and does not move the headline.
     #   - name: GitHub Actions
     #     vendor: https://www.githubstatus.com

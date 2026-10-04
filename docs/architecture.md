@@ -32,7 +32,9 @@ POST /heartbeat/<token> ──► heartbeat         POST /deploys ──► depl
 | `src/lib/incident-history.ts`  | The history's months and pages.                                                                                                  |
 | `src/lib/stated.ts`            | What open incidents and maintenance say about each row, beside what its checks say.                                              |
 | `src/lib/component-history.ts` | A component's states over time, for its strip.                                                                                   |
-| `src/lib/vendors.ts`           | Reads vendors' status pages for the components that follow them.                                                                 |
+| `src/lib/vendors.ts`           | Reads vendors' status pages for the components that follow them, finding each page's platform.                                   |
+| `src/lib/vendor-formats.ts`    | Instatus, Better Stack, status.io, Sorry, Heroku and Slack, each read into one shape.                                            |
+| `src/lib/vendor-alerts.ts`     | Which components moved with their vendor since they were last noted, and where that is told.                                     |
 | `src/lib/check-detail.ts`      | The checks behind one bar.                                                                                                       |
 | `src/lib/strip-shapes.ts`      | A strip's bars as one SVG path per colour.                                                                                       |
 | `src/lib/status-data.ts`       | Gathers what a page or endpoint needs for one site: monitor and component views, incidents, the budget.                          |
@@ -63,6 +65,7 @@ Created on first start. A database from an earlier release gets the tables and c
 - `notified`: which incident updates and maintenance stages have gone to the alert destinations.
 - `component_state`: each component's configured state, noted at start whenever it changes.
 - `deploy`: deploy markers.
+- `vendor_state`: what each component that follows a vendor was last told, and since when, so that a change is alerted once.
 
 ## State machine
 

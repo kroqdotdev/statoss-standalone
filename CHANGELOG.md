@@ -4,11 +4,17 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+### Added
+
+- Vendor components follow pages on Instatus, Better Stack, status.io (GitLab, Neon) and Sorry (Postmark), and Slack's, Heroku's and Stripe's status. A page's platform is found by asking each in turn, and the one that answered is asked first after that. A feed's address in `vendor` is taken as its page's.
+- A component that follows a vendor alerts email, Slack, Discord and ntfy destinations when the vendor reports an outage, trouble, or things working again, with up to three of its open incidents. PagerDuty, Opsgenie and webhooks get none. The first reading sends nothing, and a restart repeats nothing. `vendors: false` under `alerts`, or under a site's `alerts`, turns them off.
+
 ### Fixed
 
 - A header a request cannot carry is refused when the configuration is loaded, and the message names the monitor and the header: a name that is not letters, digits and dashes, or a value with a character such as a curly quote or a line break. A line break at the end of a value is trimmed, as fetch would.
 - Dates from another year say which year: the bars of the 90-day and 1-year views, and the checks behind one of them.
 - An outage is dated from its first failed check, not the second that confirmed it: the monitor's "Down for" and "since", the headline, `status.json`, the incident it opens and where that shows on the strips and in the history, and `downSince` in alerts and the webhook body. It is never dated from before a gap in the checks of more than three intervals (five minutes at least), such as while the server was off.
+- Instatus pages, which answer `/api/v2/summary.json` in their own shape, could not be read.
 
 ### Development
 

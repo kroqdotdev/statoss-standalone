@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 import { isTimeZone, rowId } from "./format";
+import { normalizeVendorUrl } from "./vendors";
 
 /** The request methods a monitor can use. */
 export const METHODS = [
@@ -380,12 +381,15 @@ const alertsSchema = z.object({
   repeatMinutes: z.number().int().min(0).default(0),
   /** false keeps incident updates and maintenance notices to the page. */
   updates: z.boolean().default(true),
+  /** false sends nothing when a vendor a component follows changes state. */
+  vendors: z.boolean().default(true),
 });
 
 const siteAlertsSchema = z.object({
   to: z.array(destinationSchema).optional(),
   repeatMinutes: z.number().int().min(0).optional(),
   updates: z.boolean().optional(),
+  vendors: z.boolean().optional(),
 });
 
 /**
@@ -455,16 +459,13 @@ const componentSchema = z
     description: z.string().min(1).optional(),
     state: z.enum(COMPONENT_STATES).default("operational"),
     /**
-     * A vendor's public status page to follow (Statuspage, incident.io or
-     * StatOSS). The component's state is then the vendor's, and `state`
-     * only what it shows while the vendor cannot be read.
+     * A vendor's public status page to follow (see vendors.ts for the
+     * platforms read). The component's state is then the vendor's, and
+     * `state` only what it shows while the vendor cannot be read.
      */
     vendor: z
       .url({ protocol: /^https?$/ })
-      .transform((url) => {
-        const u = new URL(url);
-        return `${u.origin}${u.pathname.replace(/\/+$/, "")}`;
-      })
+      .transform((url) => normalizeVendorUrl(url))
       .optional(),
     /** One part of the vendor's page to follow, by its name there. */
     part: z.string().min(1).optional(),
@@ -673,6 +674,15 @@ export function siteSendsUpdates(
 ): boolean {
   if (site.alerts === false || !config.alerts) return false;
   return site.alerts?.updates ?? config.alerts.updates;
+}
+
+/** Whether a site's destinations are told when a vendor it follows changes state. */
+export function siteSendsVendorAlerts(
+  config: Pick<AppConfig, "alerts">,
+  site: Pick<SiteConfig, "alerts">,
+): boolean {
+  if (site.alerts === false || !config.alerts) return false;
+  return site.alerts?.vendors ?? config.alerts.vendors;
 }
 
 /** The public address of a site's page, for links in alerts and feeds. */

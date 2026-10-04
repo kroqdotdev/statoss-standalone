@@ -7,11 +7,13 @@ import {
   dueJobs,
   heartbeatOutcome,
   loadJobs,
+  sendVendorAlerts,
   spreadMs,
   tick,
   type Job,
   type SchedulerDeps,
 } from "./scheduler";
+import { clearVendors, refreshVendors, VENDOR_REFRESH_MS } from "./vendors";
 
 const CONFIG = parseConfig(`
 alerts:
@@ -562,5 +564,50 @@ sites:
       ["went-slow", false],
       ["went-down", true],
     ]);
+  });
+});
+
+describe("vendor alerts", () => {
+  it("sends each change once, and a send that fails is logged, not thrown", async () => {
+    clearVendors();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const config = parseConfig(`
+alerts:
+  to:
+    - slack: https://hooks.slack.com/x
+    - webhook: https://example.com/hook
+      secret: s3cret
+sites:
+  - name: shop
+    host: status.shop.example
+    components:
+      - name: Acme
+        vendor: https://status.acme.example
+`);
+    const answer = (indicator: string) =>
+      vi.fn(async () =>
+        Response.json({ status: { indicator }, components: [] }),
+      ) as unknown as typeof fetch;
+    const db = openDb(":memory:");
+    const send = vi.fn().mockRejectedValue(new Error("hooks.slack.com 500"));
+    await refreshVendors(config, 0, answer("none"));
+    sendVendorAlerts(config, db, send, 0);
+    expect(send).not.toHaveBeenCalled();
+    await refreshVendors(config, VENDOR_REFRESH_MS, answer("critical"));
+    sendVendorAlerts(config, db, send, VENDOR_REFRESH_MS);
+    sendVendorAlerts(config, db, send, VENDOR_REFRESH_MS);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toEqual([
+      { slack: "https://hooks.slack.com/x" },
+    ]);
+    expect(send.mock.calls[0][1]).toMatchObject({
+      kind: "vendor-changed",
+      component: "Acme",
+      vendor: { name: "acme.example", state: "major" },
+    });
+    await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled());
+    errorSpy.mockRestore();
+    logSpy.mockRestore();
   });
 });
