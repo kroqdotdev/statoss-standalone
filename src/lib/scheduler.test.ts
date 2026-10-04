@@ -60,6 +60,13 @@ function makeDeps(
 const state = (deps: SchedulerDeps) =>
   getState(deps.db, "webhooks.cc", "Main site");
 
+const lastCheckTs = (deps: SchedulerDeps) =>
+  (
+    deps.db.prepare("SELECT MAX(ts) AS ts FROM checks").get() as {
+      ts: number;
+    }
+  ).ts;
+
 describe("loadJobs", () => {
   it("builds one job per monitor with the site's destinations", () => {
     const jobs = loadJobs(CONFIG);
@@ -113,6 +120,37 @@ describe("tick", () => {
     });
   });
 
+  it("dates an outage from its first failed check, not the second", async () => {
+    const deps = makeDeps([{ ok: true }, { ok: false }, { ok: false }]);
+    await tick(deps);
+    await tick(deps);
+    const first = lastCheckTs(deps);
+    await tick(deps);
+    expect(lastCheckTs(deps)).toBeGreaterThan(first);
+    expect(state(deps)).toMatchObject({ status: "down", since: first });
+    expect(deps.alertSpy.mock.calls[0][1]).toMatchObject({
+      kind: "went-down",
+      downSince: first,
+      failingSince: first,
+      stateSince: first,
+    });
+    expect(autoIncidents(deps.db, "webhooks.cc", 0)[0].startedAt).toBe(first);
+  });
+
+  it("does not date an outage from before a gap in the checks", async () => {
+    const deps = makeDeps([{ ok: false }]);
+    let time = 10_000;
+    deps.now = () => time;
+    await tick(deps);
+    // The server was off for an hour between the two failures.
+    time = 3_610_000;
+    await tick(deps);
+    expect(state(deps)).toMatchObject({ status: "down", since: 3_610_000 });
+    expect(autoIncidents(deps.db, "webhooks.cc", 0)[0].startedAt).toBe(
+      3_610_000,
+    );
+  });
+
   it("alerts recovery with the downSince timestamp and resolves the incident", async () => {
     const deps = makeDeps([{ ok: false }, { ok: false }, { ok: true }]);
     await tick(deps);
@@ -156,7 +194,8 @@ sites:
     expect(deps.alertSpy).toHaveBeenCalledTimes(2);
     expect(deps.alertSpy.mock.calls[1][1]).toMatchObject({
       kind: "still-down",
-      downSince: 40_000,
+      // Down since the first failed check.
+      downSince: 20_000,
     });
     await tick(deps); // 120 s
     expect(deps.alertSpy).toHaveBeenCalledTimes(2);

@@ -22,6 +22,7 @@ export function CheckPanel({
   label,
   dayLong,
   timed,
+  now,
   onClose,
 }: {
   monitor: string;
@@ -32,6 +33,8 @@ export function CheckPanel({
   /** A bar of a day: its checks may fall on two dates where the visitor is. */
   dayLong: boolean;
   timed: boolean;
+  /** What a check's year is compared with: one from another year says it. */
+  now: number;
   onClose: () => void;
 }) {
   const zone = useViewerZone();
@@ -144,7 +147,7 @@ export function CheckPanel({
                     dateTime={new Date(c.ts).toISOString()}
                     className="text-muted"
                   >
-                    {dayLong ? `${formatUtcDay(c.ts, zone)} ` : ""}
+                    {dayLong ? `${formatUtcDay(c.ts, zone, now)} ` : ""}
                     {formatUtcClockSeconds(c.ts, zone)}
                   </time>
                   <span>

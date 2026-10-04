@@ -2,6 +2,18 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Fixed
+
+- A header a request cannot carry is refused when the configuration is loaded, and the message names the monitor and the header: a name that is not letters, digits and dashes, or a value with a character such as a curly quote or a line break. A line break at the end of a value is trimmed, as fetch would.
+- Dates from another year say which year: the bars of the 90-day and 1-year views, and the checks behind one of them.
+- An outage is dated from its first failed check, not the second that confirmed it: the monitor's "Down for" and "since", the headline, `status.json`, the incident it opens and where that shows on the strips and in the history, and `downSince` in alerts and the webhook body. It is never dated from before a gap in the checks of more than three intervals (five minutes at least), such as while the server was off.
+
+### Development
+
+- `pnpm audit` ignores GHSA-vfj7-8cjw-p6xm, a braces advisory with no fixed release, reached only through ESLint.
+
 ## 0.3.0 - 2026-09-30
 
 ### Added

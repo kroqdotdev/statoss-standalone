@@ -108,6 +108,46 @@ sites:
     ).toThrow(/method/);
   });
 
+  const withHeader = (line: string) =>
+    VALID.replace(
+      "url: https://webhooks.cc",
+      `url: https://webhooks.cc\n        headers:\n          ${line}`,
+    );
+
+  it("refuses a header value a request cannot carry, naming the monitor and the header", () => {
+    expect(() => parseConfig(withHeader("X-Token: “abc”"))).toThrow(
+      'sites.0.monitors.0.headers: the X-Token header of monitor "Main site" has a character a request cannot carry',
+    );
+    // A line break must not become a second header.
+    expect(() =>
+      parseConfig(withHeader('X-Token: "abc\\r\\nX-Admin: 1"')),
+    ).toThrow("the X-Token header of monitor");
+    expect(() => parseConfig(withHeader('X-Token: "a\\u0000b"'))).toThrow(
+      "the X-Token header of monitor",
+    );
+  });
+
+  it("refuses a header name that is not letters, digits and dashes", () => {
+    expect(() => parseConfig(withHeader('"X Token": abc'))).toThrow(
+      'the header name "X Token" of monitor "Main site" can only have letters, digits and dashes',
+    );
+    expect(() => parseConfig(withHeader('"X-Token:": abc'))).toThrow(
+      "can only have letters, digits and dashes",
+    );
+  });
+
+  it("keeps a header value with tabs and Latin-1 letters, and trims its ends", () => {
+    const config = parseConfig(
+      withHeader(
+        'X-Name: "Søren\\tÅ"\n          X-Block: |\n            Bearer x',
+      ),
+    );
+    expect(config.sites[0].monitors[0].headers).toEqual({
+      "X-Name": "Søren\tÅ",
+      "X-Block": "Bearer x",
+    });
+  });
+
   it("parses the SMTP shorthand and keeps the old `to` field working", () => {
     const config = parseConfig(VALID + SMTP + "    to: alerts@example.com\n");
     expect(config.alerts?.smtp?.host).toBe("smtp.example.com");

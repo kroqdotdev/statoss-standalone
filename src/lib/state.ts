@@ -143,10 +143,18 @@ export function pageOverall(
 }
 
 /**
- * Whether a monitor's checks have stopped arriving: three intervals with no
- * result, and five minutes at the least, so one slow round is not "late".
- * A stored state is only as good as the last check behind it. Null, a
- * state from before the time was kept, is not called late.
+ * How long a monitor can go without a check before its checks count as
+ * stopped: three intervals, and five minutes at the least, so one slow
+ * round is not "late".
+ */
+export function lateAfterMs(intervalSeconds: number): number {
+  return Math.max(3 * intervalSeconds, 5 * 60) * 1000;
+}
+
+/**
+ * Whether a monitor's checks have stopped arriving (see lateAfterMs). A
+ * stored state is only as good as the last check behind it. Null, a state
+ * from before the time was kept, is not called late.
  */
 export function checkLate(
   checkedAt: number | null | undefined,
@@ -154,5 +162,5 @@ export function checkLate(
   now: number,
 ): boolean {
   if (checkedAt === null || checkedAt === undefined) return false;
-  return now - checkedAt > Math.max(3 * intervalSeconds, 5 * 60) * 1000;
+  return now - checkedAt > lateAfterMs(intervalSeconds);
 }
