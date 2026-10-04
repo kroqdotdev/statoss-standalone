@@ -10,6 +10,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Dates from another year say which year: the bars of the 90-day and 1-year views, and the checks behind one of them.
 - An outage is dated from its first failed check, not the second that confirmed it: the monitor's "Down for" and "since", the headline, `status.json`, the incident it opens and where that shows on the strips and in the history, and `downSince` in alerts and the webhook body. It is never dated from before a gap in the checks of more than three intervals (five minutes at least), such as while the server was off.
 
+### Development
+
+- `pnpm audit` ignores GHSA-vfj7-8cjw-p6xm, a braces advisory with no fixed release, reached only through ESLint.
+
 ## 0.3.0 - 2026-09-30
 
 ### Added
