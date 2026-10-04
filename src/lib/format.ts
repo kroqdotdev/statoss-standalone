@@ -1,3 +1,5 @@
+import type { CheckTiming } from "./checker";
+
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
@@ -248,6 +250,34 @@ export function describeError(error: string | null): string {
   }
   if (error.startsWith("fetch failed")) return "Connection failed";
   return "Failed";
+}
+
+/**
+ * "DNS 3 ms, connect 12 ms, TLS 24 ms, first byte 61 ms": where a check's
+ * time went, without the steps it does not have. A check that timed out
+ * also says where it stopped. Null when there is nothing to say.
+ */
+export function describeTiming(
+  timing: CheckTiming | null,
+  timedOut = false,
+): string | null {
+  if (timing === null) return null;
+  const steps: Array<[string, number | null]> = [
+    ["DNS", timing.dnsMs],
+    ["connect", timing.connectMs],
+    ["TLS", timing.tlsMs],
+    ["first byte", timing.firstByteMs],
+  ];
+  const said = steps.flatMap(([step, ms]) =>
+    ms === null ? [] : [`${step} ${formatCount(ms)} ms`],
+  );
+  if (timedOut && timing.firstByteMs === null)
+    said.push(
+      timing.connectMs === null ? "no connection" : "no answer in time",
+    );
+  if (said.length === 0) return null;
+  const line = said.join(", ");
+  return `${line[0].toUpperCase()}${line.slice(1)}`;
 }
 
 /**

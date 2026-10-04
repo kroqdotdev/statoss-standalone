@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeError,
+  describeTiming,
   formatDuration,
   formatPercent,
   formatSpan,
@@ -78,6 +79,55 @@ describe("pluralize", () => {
     expect(pluralize(1, "check")).toBe("1 check");
     expect(pluralize(1440, "check")).toBe("1,440 checks");
     expect(pluralize(2, "timeout")).toBe("2 timeouts");
+  });
+});
+
+describe("describeTiming", () => {
+  it("names each step a check took", () => {
+    expect(
+      describeTiming({ dnsMs: 3, connectMs: 12, tlsMs: 24, firstByteMs: 1061 }),
+    ).toBe("DNS 3 ms, connect 12 ms, TLS 24 ms, first byte 1,061 ms");
+  });
+
+  it("leaves out a step the check does not have", () => {
+    expect(
+      describeTiming({
+        dnsMs: null,
+        connectMs: 2,
+        tlsMs: null,
+        firstByteMs: 9,
+      }),
+    ).toBe("Connect 2 ms, first byte 9 ms");
+    expect(
+      describeTiming({ dnsMs: 1, connectMs: 2, tlsMs: 30, firstByteMs: null }),
+    ).toBe("DNS 1 ms, connect 2 ms, TLS 30 ms");
+  });
+
+  it("says where a check that timed out stopped", () => {
+    expect(
+      describeTiming(
+        { dnsMs: 3, connectMs: null, tlsMs: null, firstByteMs: null },
+        true,
+      ),
+    ).toBe("DNS 3 ms, no connection");
+    expect(
+      describeTiming(
+        { dnsMs: 3, connectMs: 12, tlsMs: 24, firstByteMs: null },
+        true,
+      ),
+    ).toBe("DNS 3 ms, connect 12 ms, TLS 24 ms, no answer in time");
+    // Timed out reading the body, after the headers came.
+    expect(
+      describeTiming(
+        { dnsMs: 3, connectMs: 12, tlsMs: 24, firstByteMs: 40 },
+        true,
+      ),
+    ).toBe("DNS 3 ms, connect 12 ms, TLS 24 ms, first byte 40 ms");
+  });
+
+  it("says nothing for a check without timings", () => {
+    expect(describeTiming(null)).toBeNull();
+    expect(describeTiming(null, true)).toBeNull();
   });
 });
 

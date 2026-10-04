@@ -182,6 +182,7 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
     // monitored thing's response time, and a heartbeat has none.
     latencyMs: LATENCY_TYPES.has(job.type) ? outcome.latencyMs : null,
     error: outcome.error,
+    timing: outcome.timing ?? null,
   } as const;
   if (inMaintenance(job.maintenance, job.monitor, ts, job.timezone)) {
     insertCheck(db, { ...row, maintenance: 1 });

@@ -10,6 +10,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A component that follows a vendor alerts email, Slack, Discord and ntfy destinations when the vendor reports an outage, trouble, or things working again, with up to three of its open incidents. PagerDuty, Opsgenie and webhooks get none. The first reading sends nothing, and a restart repeats nothing. `vendors: false` under `alerts`, or under a site's `alerts`, turns them off.
 - Maintenance that repeats: `repeat: weekly`, `monthly` or `monthly-weekday` on a window, and `until` for the last day one may start. A repeat keeps the window's time of day in the site's `timezone`, is planned a week before it starts, and is then shown, announced to the alert destinations (planned, started, over, once each) and given a page like a window written by hand, with an id made from its own start and title.
 - A calendar of each site's maintenance at `/maintenance.ics`: the last 30 days, every window written for later and the repeats of the next 90 days, each under one UID from planned to over. Get updates on the page links to it.
+- The checks behind a bar show where each one's time went: the DNS lookup, the connection, the TLS handshake and the first byte, for HTTP, TCP and certificate monitors. A check that timed out says where it stopped. `/checks` gives the same as `timing` on each check. A 0.3 database gets the columns for them on its first start; its older checks show as before.
+
+### Changed
+
+- A host's addresses are tried side by side, the next one starting a quarter second after the last, instead of each being dropped after a quarter second, so a far host with several addresses no longer reads a quarter second slower for each one. Every HTTP check opens its own connection, with a full TLS handshake, and times are read from a clock that a change to the system time does not move.
+- The image sets `UV_THREADPOOL_SIZE=32`, so a few host lookups that hang do not hold up the other checks' lookups.
 
 ### Fixed
 

@@ -173,17 +173,24 @@ db.transaction(() => {
         60 - bad,
       );
     }
-    // The last day, check by check, with an outage five hours back.
+    // The last day, check by check, with an outage five hours back. The
+    // last six hours say where their time went; the checks before are
+    // from before that was measured.
     for (let i = 24 * 60; i >= 1; i--) {
       const failed = i > 300 && i < 309;
+      const latencyMs = failed ? 12 : base + Math.floor(random() * 40);
       insertCheck(db, {
         site: "Northwind",
         monitor,
         ts: now - i * MINUTE,
         ok: failed ? 0 : 1,
         statusCode: failed ? 503 : 200,
-        latencyMs: failed ? 12 : base + Math.floor(random() * 40),
+        latencyMs,
         error: failed ? "unexpected status 503" : null,
+        timing:
+          i > 360
+            ? null
+            : { dnsMs: 1, connectMs: 2, tlsMs: 4, firstByteMs: latencyMs - 7 },
       });
     }
     setState(db, {

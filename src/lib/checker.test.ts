@@ -1,7 +1,18 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { createServer as createTcpServer, type AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import * as tls from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { expiryOutcome, monitorSpec, runCheck } from "./checker";
+import {
+  expiryOutcome,
+  monitorSpec,
+  runCheck,
+  type CheckOutcome,
+} from "./checker";
 import { parseConfig } from "./config";
 
 let server: Server;
@@ -235,5 +246,237 @@ describe("tcp checks", () => {
     await new Promise((resolve) => server.close(resolve));
     const closed = await runCheck({ type: "tcp", url: "127.0.0.1", port });
     expect(closed).toMatchObject({ ok: false, error: "ECONNREFUSED" });
+  });
+});
+
+/** The steps of a timed outcome added up, nulls as nothing. */
+function stepsSum(outcome: CheckOutcome): number {
+  const t = outcome.timing;
+  return (
+    (t?.dnsMs ?? 0) +
+    (t?.connectMs ?? 0) +
+    (t?.tlsMs ?? 0) +
+    (t?.firstByteMs ?? 0)
+  );
+}
+
+/** Listens on loopback and gives the port. */
+async function listen(server: {
+  listen: (port: number, host: string, cb: () => void) => unknown;
+  address: () => AddressInfo | string | null;
+}): Promise<number> {
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return (server.address() as AddressInfo).port;
+}
+
+describe("where a check's time goes", () => {
+  it("splits an HTTP reading into the connection and the wait for the headers", async () => {
+    const outcome = await runCheck({ url: `${base}/slow` });
+    expect(outcome.ok).toBe(true);
+    // An IP address is not looked up, and plain HTTP has no handshake.
+    expect(outcome.timing).toMatchObject({ dnsMs: null, tlsMs: null });
+    expect(outcome.timing?.connectMs).toBeGreaterThanOrEqual(0);
+    expect(outcome.timing?.firstByteMs).toBeGreaterThanOrEqual(490);
+    expect(stepsSum(outcome)).toBe(outcome.latencyMs);
+  });
+
+  it("times the lookup of a name", async () => {
+    const port = (server.address() as AddressInfo).port;
+    const outcome = await runCheck({ url: `http://localhost:${port}/ok` });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.timing?.dnsMs).toBeGreaterThanOrEqual(0);
+    expect(outcome.timing?.connectMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("keeps each check's steps its own when many run at once", async () => {
+    const outcomes = await Promise.all(
+      Array.from({ length: 12 }, (_, i) =>
+        runCheck({ url: `${base}/${i % 2 ? "slow" : "ok"}` }),
+      ),
+    );
+    outcomes.forEach((outcome, i) => {
+      expect(outcome.ok).toBe(true);
+      expect(stepsSum(outcome)).toBe(outcome.latencyMs);
+      if (i % 2)
+        expect(outcome.timing?.firstByteMs).toBeGreaterThanOrEqual(490);
+      else expect(outcome.timing?.firstByteMs).toBeLessThan(400);
+    });
+  });
+
+  it("counts a server slow to take up an accepted connection as waiting for the first byte", async () => {
+    // The system accepts the connection at once; the server reads it only
+    // later, so the wait shows as time to the first byte, not connecting.
+    const slow = createTcpServer({ pauseOnConnect: true }, (socket) => {
+      setTimeout(() => {
+        socket.resume();
+        socket.end("HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok");
+      }, 150);
+    });
+    const port = await listen(slow);
+    try {
+      const outcome = await runCheck({ url: `http://127.0.0.1:${port}/` });
+      expect(outcome.ok).toBe(true);
+      expect(outcome.timing?.firstByteMs).toBeGreaterThanOrEqual(140);
+      expect(outcome.timing?.connectMs).toBeLessThan(100);
+    } finally {
+      slow.close();
+    }
+  });
+
+  it("says how far a failed check got", async () => {
+    // Accepts the connection and never answers.
+    const silent = createTcpServer(() => {});
+    const port = await listen(silent);
+    try {
+      const unanswered = await runCheck({
+        url: `http://127.0.0.1:${port}/`,
+        timeoutMs: 300,
+      });
+      expect(unanswered.error).toBe("timeout");
+      expect(unanswered.timing?.connectMs).toBeGreaterThanOrEqual(0);
+      expect(unanswered.timing?.firstByteMs).toBeNull();
+    } finally {
+      silent.close();
+    }
+    const refused = await runCheck({
+      url: `http://127.0.0.1:${port}/`,
+      timeoutMs: 1000,
+    });
+    expect(refused.error).toBe("fetch failed (ECONNREFUSED)");
+    expect(refused.timing?.connectMs).toBeNull();
+  });
+
+  it("times a TCP connection, and a lookup that finds nothing", async () => {
+    const port = (server.address() as AddressInfo).port;
+    const open = await runCheck({ type: "tcp", url: "localhost", port });
+    expect(open.ok).toBe(true);
+    expect(open.timing).toMatchObject({ tlsMs: null, firstByteMs: null });
+    expect(open.timing?.dnsMs).toBeGreaterThanOrEqual(0);
+    expect(open.timing?.connectMs).toBeGreaterThanOrEqual(0);
+    const missing = await runCheck({
+      type: "tcp",
+      url: "no-such-host.invalid",
+      port,
+    });
+    expect(missing.error).toMatch(/ENOTFOUND|EAI_AGAIN/);
+    expect(missing.timing?.dnsMs).toBeGreaterThanOrEqual(0);
+    expect(missing.timing?.connectMs).toBeNull();
+  });
+
+  it("gives no steps for a check without a connection of its own", async () => {
+    const dns = await runCheck({ type: "dns", url: "localhost" });
+    expect(dns.timing ?? null).toBeNull();
+  });
+});
+
+/**
+ * Trusts a certificate for the rest of the process, and gives back what
+ * undoes it. Node 22 may lack the call for it; there, verification is
+ * switched off for the while instead.
+ */
+function trust(cert: Buffer): () => void {
+  const store = tls as typeof tls & {
+    getCACertificates?: (type: string) => string[];
+    setDefaultCACertificates?: (certs: string[]) => void;
+  };
+  if (store.getCACertificates && store.setDefaultCACertificates) {
+    const before = store.getCACertificates("default");
+    store.setDefaultCACertificates([...before, cert.toString()]);
+    return () => store.setDefaultCACertificates?.(before);
+  }
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  return () => delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+}
+
+describe("timing over TLS", () => {
+  let dir = "";
+  let key: Buffer | null = null;
+  let cert: Buffer | null = null;
+
+  beforeAll(() => {
+    try {
+      dir = mkdtempSync(join(tmpdir(), "statoss-cert-"));
+      execFileSync(
+        "openssl",
+        [
+          "req",
+          "-x509",
+          "-newkey",
+          "ec",
+          "-pkeyopt",
+          "ec_paramgen_curve:prime256v1",
+          "-days",
+          "2",
+          "-nodes",
+          "-subj",
+          "/CN=localhost",
+          "-addext",
+          "subjectAltName=DNS:localhost,IP:127.0.0.1",
+          "-keyout",
+          join(dir, "key.pem"),
+          "-out",
+          join(dir, "cert.pem"),
+        ],
+        { stdio: "ignore" },
+      );
+      key = readFileSync(join(dir, "key.pem"));
+      cert = readFileSync(join(dir, "cert.pem"));
+    } catch {
+      // No openssl to make a certificate with: the tests below skip.
+    }
+  });
+
+  afterAll(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("times the handshake of a certificate check", async (context) => {
+    if (!key || !cert) return context.skip();
+    const server = tls.createServer({ key, cert }, (socket) => socket.end());
+    const port = await listen(server);
+    try {
+      const outcome = await runCheck({
+        type: "certificate",
+        url: "127.0.0.1",
+        port,
+      });
+      // Self-signed, so not trusted; the handshake still happened.
+      expect(outcome.ok).toBe(false);
+      expect(outcome.error).toMatch(/certificate invalid/);
+      expect(outcome.timing).toMatchObject({ dnsMs: null, firstByteMs: null });
+      expect(outcome.timing?.connectMs).toBeGreaterThanOrEqual(0);
+      expect(outcome.timing?.tlsMs).toBeGreaterThanOrEqual(0);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("splits an HTTPS reading into the connection, the handshake and the first byte", async (context) => {
+    if (!key || !cert) return context.skip();
+    const https = createHttpsServer({ key, cert }, (_req, res) =>
+      setTimeout(() => res.end("ok"), 100),
+    );
+    const port = await listen(https);
+    const url = `https://localhost:${port}/`;
+    let untrust: (() => void) | null = null;
+    try {
+      // An untrusted certificate fails the handshake: no TLS time.
+      const untrusted = await runCheck({ url });
+      expect(untrusted.ok).toBe(false);
+      expect(untrusted.error).toMatch(/SELF_SIGNED/);
+      expect(untrusted.timing?.connectMs).toBeGreaterThanOrEqual(0);
+      expect(untrusted.timing?.tlsMs).toBeNull();
+      // Trusted, the handshake has its own time.
+      untrust = trust(cert);
+      const trusted = await runCheck({ url });
+      expect(trusted.ok).toBe(true);
+      expect(trusted.timing?.dnsMs).toBeGreaterThanOrEqual(0);
+      expect(trusted.timing?.tlsMs).toBeGreaterThanOrEqual(0);
+      expect(trusted.timing?.firstByteMs).toBeGreaterThanOrEqual(90);
+      expect(stepsSum(trusted)).toBe(trusted.latencyMs);
+    } finally {
+      untrust?.();
+      https.close();
+    }
   });
 });

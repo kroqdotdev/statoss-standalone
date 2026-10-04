@@ -10,7 +10,7 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 ## Features
 
 - **Every failed check is visible.** Each monitor has a strip of bars. Bar height is response time. A mark at the top of a bar shows the failed checks in that time slot: amber for a timeout, red for any other failure. One failed check out of 1,440 in a day still gets a visible mark.
-- **Four views.** The last 24 hours in 5-minute slots, 7 days in 1-hour slots, and 90 days or a year in 1-day slots. Point at a bar, or use the arrow keys, to read the numbers for one slot and the incidents that touched it. Click a bar, or press Enter, to list the checks behind it.
+- **Four views.** The last 24 hours in 5-minute slots, 7 days in 1-hour slots, and 90 days or a year in 1-day slots. Point at a bar, or use the arrow keys, to read the numbers for one slot and the incidents that touched it. Click a bar, or press Enter, to list the checks behind it and where each one's time went: the DNS lookup, the connection, the TLS handshake and the first byte.
 - **An error budget.** Give a site an uptime target and the page says how much of the month's allowance of downtime is spent.
 - **Failed checks are listed.** Consecutive failures are grouped into runs. Each run shows the reason (timeout, HTTP status, keyword, or connection error), when it started, and how long the monitor did not respond.
 - **Seven kinds of monitor.** HTTP, TCP port, DNS, ping, certificate expiry, domain expiry, and a heartbeat that a scheduled job pings.
@@ -35,6 +35,7 @@ The checker runs inside the server process:
 
 1. Every `checkIntervalSeconds`, it runs every monitor that is due, with a 10-second timeout. After a restart a monitor is due when its interval has passed since its last check, not at once. A monitor whose last check is still waiting on its timeout is left to finish; the others go ahead. A monitor with `intervalSeconds` runs less often. The checks of one round are spread over the first three quarters of the interval (45 seconds at most) so that they do not slow each other down.
 2. An HTTP check passes on a 2xx response, or on the exact `expectStatus` if you set one, and, with a `keyword`, only when the body contains it (or does not, with `keywordMode: absent`). Bodies are read up to 1 MB.
+   HTTP, TCP and certificate checks open a connection of their own each time and time each step: the DNS lookup, the TCP connection, the TLS handshake and, for HTTP, the wait for the first byte of the response. A host's addresses are tried side by side, the next one starting a quarter second after the last, and the first to answer is used. The list of checks behind a bar shows the steps; a check that timed out says where it stopped.
 3. A monitor becomes **down** after 2 failed checks in a row and **up** again after 1 successful check. With a `slowThresholdMs`, it becomes **slow** after 2 successful checks over the threshold and back to normal after 1 under it. Each change of state sends one alert to every destination of the site. With `repeatMinutes`, a monitor that stays down sends a "still down" notice at that interval.
 4. A monitor going down opens an incident on the page; the first success after it resolves the incident.
 5. Checks made inside a maintenance window are stored with a flag. The page shows them in grey and leaves them out of every total, and they change no state and send no alert.
@@ -492,11 +493,13 @@ Next to every page, on the same hostname:
 | `/feed.xml`        | An RSS feed of the incidents and maintenance of the last 30 days. Each entry links to the incident's page and carries the window's times, every update with its status word, and the post-mortem.                                                        |
 | `/feed.atom`       | The same as an Atom feed.                                                                                                                                                                                                                                |
 | `/maintenance.ics` | The site's maintenance as an iCalendar feed for calendar apps: the last 30 days, every window written for later, and the repeats of the next 90 days. See Maintenance windows.                                                                           |
-| `/checks`          | The checks behind one bar, which the page asks for when a bar is opened: `?monitor=<name>&from=<ms>&to=<ms>`, a day at most. Failures are given in the page's words ("Timed out", "HTTP 503"), never the stored error.                                   |
+| `/checks`          | The checks behind one bar, which the page asks for when a bar is opened: `?monitor=<name>&from=<ms>&to=<ms>`, a day at most. Failures are given in the page's words ("Timed out", "HTTP 503"), never the stored error. Each check has `timing`.          |
 | `/deploys`         | Deploy markers of the last 90 days. `POST` adds one; see Deploy markers.                                                                                                                                                                                 |
 | `/mcp`             | A Model Context Protocol endpoint (Streamable HTTP: JSON-RPC by `POST`) with three tools that read: `get_status`, `list_incidents` and `get_error_budget`. Up to 120 messages a minute for each site.                                                    |
 | `/llms.txt`        | Where a program should read the site from, and how to read `status.json`.                                                                                                                                                                                |
 | `/widget.js`       | A script that draws a status dot and a link where it is placed: `<script src="https://status.example.com/widget.js"></script>`. Override the words with `data-operational`, `data-degraded`, `data-partial`, `data-major` and `data-unknown` attributes. |
+
+A check in `/checks` has `timing`, where its time went: `dnsMs`, `connectMs`, `tlsMs` and `firstByteMs`, each null for a step the check did not have or did not finish. `timing` is null for DNS, ping, domain and heartbeat checks, and for checks stored before timings were kept.
 
 The JSON and badge endpoints allow cross-origin requests.
 

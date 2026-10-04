@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { CheckTiming } from "./checker";
 import { describeError } from "./format";
 import { rollupSummary } from "./queries";
 
@@ -27,6 +28,13 @@ export interface DetailCheck {
    * public page does not show.
    */
   problem: string | null;
+  /**
+   * Where its time went: the lookup, the connection, the TLS handshake and
+   * the wait for the first byte. A step the check does not have, or did
+   * not finish, is null. Null as a whole for the kinds of check that do
+   * not measure it, and for checks stored before they were measured.
+   */
+  timing: CheckTiming | null;
 }
 
 export interface CheckDetail {
@@ -57,6 +65,10 @@ interface Row {
   latencyMs: number | null;
   error: string | null;
   maintenance: 0 | 1;
+  dnsMs: number | null;
+  connectMs: number | null;
+  tlsMs: number | null;
+  firstByteMs: number | null;
 }
 
 export function checkDetail(
@@ -102,7 +114,9 @@ export function checkDetail(
   const tooMany = totals.kept > DETAIL_ROWS;
   const rows = db
     .prepare(
-      `SELECT ts, ok, status_code AS statusCode, latency_ms AS latencyMs, error, maintenance
+      `SELECT ts, ok, status_code AS statusCode, latency_ms AS latencyMs, error, maintenance,
+              dns_ms AS dnsMs, connect_ms AS connectMs, tls_ms AS tlsMs,
+              first_byte_ms AS firstByteMs
        FROM checks WHERE ${where}
        ${tooMany ? "AND (ok = 0 OR maintenance = 1 OR (? IS NOT NULL AND latency_ms > ?))" : ""}
        ORDER BY ts DESC LIMIT ${DETAIL_ROWS}`,
@@ -157,6 +171,7 @@ export function checkDetail(
       statusCode: row.statusCode,
       latencyMs: row.latencyMs,
       problem: row.ok === 1 ? null : describeError(row.error),
+      timing: timingOf(row),
     })),
     listed:
       totals.kept === 0 && had > 0
@@ -167,4 +182,12 @@ export function checkDetail(
             ? "trouble"
             : "all",
   };
+}
+
+/** A row's timing, or null when it has none. */
+function timingOf(row: Row): CheckTiming | null {
+  const { dnsMs, connectMs, tlsMs, firstByteMs } = row;
+  return [dnsMs, connectMs, tlsMs, firstByteMs].every((ms) => ms === null)
+    ? null
+    : { dnsMs, connectMs, tlsMs, firstByteMs };
 }

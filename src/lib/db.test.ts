@@ -59,6 +59,39 @@ describe("checks", () => {
     expect(rows[1].maintenance).toBe(1);
   });
 
+  it("keeps where a check's time went, and nothing for a check without", () => {
+    const db = memDb();
+    insertCheck(db, {
+      site: "s",
+      monitor: "c",
+      ts: 1000,
+      ok: 1,
+      statusCode: 200,
+      latencyMs: 120,
+      error: null,
+      timing: { dnsMs: 4, connectMs: 20, tlsMs: 31, firstByteMs: 65 },
+    });
+    insertCheck(db, {
+      site: "s",
+      monitor: "c",
+      ts: 2000,
+      ok: 1,
+      statusCode: null,
+      latencyMs: 9,
+      error: null,
+    });
+    expect(
+      db
+        .prepare(
+          "SELECT dns_ms, connect_ms, tls_ms, first_byte_ms FROM checks ORDER BY ts",
+        )
+        .all(),
+    ).toEqual([
+      { dns_ms: 4, connect_ms: 20, tls_ms: 31, first_byte_ms: 65 },
+      { dns_ms: null, connect_ms: null, tls_ms: null, first_byte_ms: null },
+    ]);
+  });
+
   it("prunes only rows older than the cutoff", () => {
     const db = memDb();
     for (const ts of [100, 200, 300]) {
@@ -172,6 +205,61 @@ describe("migration", () => {
     // Opening it again must not try to rename or add anything twice.
     openDb(path).close();
     migrated.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("gives a 0.3 database's checks room for their timings, and keeps the old ones", () => {
+    const dir = mkdtempSync(join(tmpdir(), "statoss-"));
+    const path = join(dir, "old.db");
+    const old = new Database(path);
+    old.exec(`
+      CREATE TABLE checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, site TEXT NOT NULL,
+        monitor TEXT NOT NULL, ts INTEGER NOT NULL, ok INTEGER NOT NULL,
+        status_code INTEGER, latency_ms INTEGER, error TEXT,
+        maintenance INTEGER NOT NULL DEFAULT 0);
+      INSERT INTO checks (site, monitor, ts, ok, latency_ms)
+        VALUES ('s', 'c', 1, 1, 80);
+    `);
+    old.close();
+    const migrated = openDb(path);
+    insertCheck(migrated, {
+      site: "s",
+      monitor: "c",
+      ts: 2,
+      ok: 1,
+      statusCode: 200,
+      latencyMs: 90,
+      error: null,
+      timing: { dnsMs: null, connectMs: 10, tlsMs: null, firstByteMs: 80 },
+    });
+    expect(
+      migrated
+        .prepare(
+          "SELECT ts, latency_ms, dns_ms, connect_ms, tls_ms, first_byte_ms FROM checks ORDER BY ts",
+        )
+        .all(),
+    ).toEqual([
+      {
+        ts: 1,
+        latency_ms: 80,
+        dns_ms: null,
+        connect_ms: null,
+        tls_ms: null,
+        first_byte_ms: null,
+      },
+      {
+        ts: 2,
+        latency_ms: 90,
+        dns_ms: null,
+        connect_ms: 10,
+        tls_ms: null,
+        first_byte_ms: 80,
+      },
+    ]);
+    migrated.close();
+    // Opened again, nothing is added twice.
+    openDb(path).close();
     rmSync(dir, { recursive: true, force: true });
   });
 

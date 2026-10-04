@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { promises as dns } from "node:dns";
-import { createConnection } from "node:net";
+import { isIP } from "node:net";
 import { connect as tlsConnect } from "node:tls";
 import {
   DEFAULT_CERTIFICATE_WARN_DAYS,
@@ -8,6 +8,16 @@ import {
   DEFAULT_TIMEOUT_MS,
   type MonitorConfig,
 } from "./config";
+import {
+  lookupAll,
+  raceConnect,
+  racingConnector,
+  since,
+  undiciAgent,
+  type Address,
+  type ConnectTiming,
+  type Raced,
+} from "./connect";
 
 export { DEFAULT_TIMEOUT_MS };
 
@@ -42,6 +52,23 @@ export interface CheckSpec {
   timeoutMs?: number;
 }
 
+/**
+ * Where a check's time went, in ms. Each part is null where the check has
+ * no such step (no lookup for an IP address, no TLS over plain HTTP) or
+ * did not get that far. A check across redirects to other hosts adds up
+ * the lookups and connections it made.
+ */
+export interface CheckTiming {
+  /** Looking the host up. */
+  dnsMs: number | null;
+  /** Opening the TCP connection, the race between addresses included. */
+  connectMs: number | null;
+  /** The TLS handshake. */
+  tlsMs: number | null;
+  /** http: the rest, until the response headers. */
+  firstByteMs: number | null;
+}
+
 export interface CheckOutcome {
   ok: boolean;
   statusCode: number | null;
@@ -50,6 +77,8 @@ export interface CheckOutcome {
   error: string | null;
   /** certificate and domain: when it expires, whenever it was read. */
   expiresAt?: number | null;
+  /** http, tcp and certificate. The other kinds have no steps to tell apart. */
+  timing?: CheckTiming | null;
 }
 
 /** Bodies are read up to this much when a keyword is set. */
@@ -95,6 +124,14 @@ export function monitorSpec(cp: MonitorConfig): CheckSpec {
         keywordMode: cp.keywordMode,
       };
   }
+}
+
+/** The code on the error behind a failed fetch, when it has one. */
+function causeCode(err: unknown): unknown {
+  const cause = (err as { cause?: unknown } | null)?.cause;
+  return cause instanceof Error
+    ? (cause as { code?: unknown }).code
+    : undefined;
 }
 
 /**
@@ -167,7 +204,28 @@ async function httpCheck(spec: CheckSpec): Promise<CheckOutcome> {
   const expectsRedirect =
     expectStatus !== undefined && expectStatus >= 300 && expectStatus < 400;
   const keyword = spec.keyword ? spec.keyword : null;
-  const start = Date.now();
+  // Connections of its own, timed step by step and closed after. Shared
+  // with other checks, a connection would carry one check's lookup and
+  // handshake into another's reading, or leave a reading with none.
+  const phases: ConnectTiming = { dnsMs: null, connectMs: null, tlsMs: null };
+  const agent = undiciAgent({ connect: racingConnector(phases, timeoutMs) });
+  const start = performance.now();
+  /**
+   * The outcome with where its time went: the wait for the headers is
+   * whatever the lookups, connections and handshakes did not take.
+   */
+  const timed = (outcome: CheckOutcome, answered: boolean): CheckOutcome => {
+    if (agent === null) return outcome;
+    const before =
+      (phases.dnsMs ?? 0) + (phases.connectMs ?? 0) + (phases.tlsMs ?? 0);
+    return {
+      ...outcome,
+      timing: {
+        ...phases,
+        firstByteMs: answered ? Math.max(0, outcome.latencyMs - before) : null,
+      },
+    };
+  };
   try {
     const res = await fetch(spec.url, {
       method,
@@ -179,88 +237,137 @@ async function httpCheck(spec: CheckSpec): Promise<CheckOutcome> {
       signal: AbortSignal.timeout(timeoutMs),
       redirect: expectsRedirect ? "manual" : "follow",
       cache: "no-store",
-    });
-    const latencyMs = Date.now() - start;
+      ...(agent ? { dispatcher: agent } : {}),
+    } as RequestInit);
+    const latencyMs = since(start);
     const statusOk =
       expectStatus !== undefined
         ? res.status === expectStatus
         : res.status >= 200 && res.status < 300;
     if (!statusOk) {
       void res.body?.cancel().catch(() => {});
-      return {
-        ok: false,
-        statusCode: res.status,
-        latencyMs,
-        error: `unexpected status ${res.status}`,
-      };
+      return timed(
+        {
+          ok: false,
+          statusCode: res.status,
+          latencyMs,
+          error: `unexpected status ${res.status}`,
+        },
+        true,
+      );
     }
     if (keyword === null) {
-      // Cancel the body to release the socket back to the keep-alive pool.
       void res.body?.cancel().catch(() => {});
-      return { ok: true, statusCode: res.status, latencyMs, error: null };
+      return timed(
+        { ok: true, statusCode: res.status, latencyMs, error: null },
+        true,
+      );
     }
     const found = (await readBody(res)).includes(keyword);
     const wantFound = (spec.keywordMode ?? "present") === "present";
-    if (found === wantFound)
-      return { ok: true, statusCode: res.status, latencyMs, error: null };
-    return {
-      ok: false,
-      statusCode: res.status,
-      latencyMs,
-      error: wantFound ? "keyword missing" : "keyword present",
-    };
+    return timed(
+      found === wantFound
+        ? { ok: true, statusCode: res.status, latencyMs, error: null }
+        : {
+            ok: false,
+            statusCode: res.status,
+            latencyMs,
+            error: wantFound ? "keyword missing" : "keyword present",
+          },
+      true,
+    );
   } catch (err) {
-    const latencyMs = Date.now() - start;
+    const latencyMs = since(start);
     const isTimeout =
       err instanceof Error &&
-      (err.name === "TimeoutError" || err.name === "AbortError");
+      (err.name === "TimeoutError" ||
+        err.name === "AbortError" ||
+        causeCode(err) === "ETIMEDOUT");
     const message = isTimeout ? "timeout" : describeFailure(err);
-    return { ok: false, statusCode: null, latencyMs, error: message };
+    return timed(
+      { ok: false, statusCode: null, latencyMs, error: message },
+      false,
+    );
+  } finally {
+    // Closes what the check opened, a connection still racing included.
+    void agent?.destroy().catch(() => {});
   }
 }
 
 const failed = (start: number, error: string): CheckOutcome => ({
   ok: false,
   statusCode: null,
-  latencyMs: Date.now() - start,
+  latencyMs: since(start),
   error,
 });
+
+/** A reading that got no further than the lookup. */
+const lookedUp = (dnsMs: number | null): CheckTiming => ({
+  dnsMs,
+  connectMs: null,
+  tlsMs: null,
+  firstByteMs: null,
+});
+
+/** A connection, or how far the attempt got and why it stopped. */
+type Opened =
+  | { won: Raced; dnsMs: number | null }
+  | { error: string; dnsMs: number | null };
+
+/**
+ * Looks a host up and races a connection to its addresses, within
+ * `timeoutMs` of `start`. Running out of time is "timeout"; any other
+ * failure is the lookup's or the socket's code.
+ */
+async function open(
+  host: string,
+  port: number,
+  timeoutMs: number,
+  start: number,
+): Promise<Opened> {
+  const literal = isIP(host.replace(/^\[|\]$/g, "")) !== 0;
+  let addresses: Address[];
+  try {
+    addresses = await lookupAll(host, timeoutMs);
+  } catch (err) {
+    const code = errorCode(err);
+    return code === "ETIMEDOUT"
+      ? { error: "timeout", dnsMs: null }
+      : { error: code, dnsMs: since(start) };
+  }
+  const dnsMs = literal ? null : since(start);
+  try {
+    const won = await raceConnect(addresses, port, {
+      timeoutMs: Math.max(1, timeoutMs - since(start)),
+    });
+    return { won, dnsMs };
+  } catch (err) {
+    const code = errorCode(err);
+    return { error: code === "ETIMEDOUT" ? "timeout" : code, dnsMs };
+  }
+}
 
 /**
  * Opens a TCP connection and closes it again. Passes when the connection
  * is accepted in time.
  */
-function tcpCheck(spec: CheckSpec): Promise<CheckOutcome> {
+async function tcpCheck(spec: CheckSpec): Promise<CheckOutcome> {
   const timeoutMs = spec.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const port = spec.port ?? 0;
-  const start = Date.now();
   if (!port)
-    return Promise.resolve({
-      ok: false,
-      statusCode: null,
-      latencyMs: 0,
-      error: "no port",
-    });
-  return new Promise((resolve) => {
-    const socket = createConnection({ host: spec.url, port });
-    let done = false;
-    const finish = (outcome: CheckOutcome) => {
-      if (done) return;
-      done = true;
-      socket.destroy();
-      resolve(outcome);
-    };
-    socket.setTimeout(timeoutMs, () => finish(failed(start, "timeout")));
-    socket.once("connect", () =>
-      finish({
-        ok: true,
-        statusCode: null,
-        latencyMs: Date.now() - start,
-        error: null,
-      }),
-    );
-    socket.once("error", (err) => finish(failed(start, errorCode(err))));
-  });
+    return { ok: false, statusCode: null, latencyMs: 0, error: "no port" };
+  const start = performance.now();
+  const opened = await open(spec.url, port, timeoutMs, start);
+  if ("error" in opened)
+    return { ...failed(start, opened.error), timing: lookedUp(opened.dnsMs) };
+  opened.won.socket.destroy();
+  return {
+    ok: true,
+    statusCode: null,
+    latencyMs: since(start),
+    error: null,
+    timing: { ...lookedUp(opened.dnsMs), connectMs: opened.won.connectMs },
+  };
 }
 
 /**
@@ -271,7 +378,7 @@ async function dnsCheck(spec: CheckSpec): Promise<CheckOutcome> {
   const timeoutMs = spec.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const type = (spec.dnsType ?? "A").toUpperCase();
   const resolver = new dns.Resolver({ timeout: timeoutMs, tries: 1 });
-  const start = Date.now();
+  const start = performance.now();
   try {
     let answers: string[];
     switch (type) {
@@ -293,7 +400,7 @@ async function dnsCheck(spec: CheckSpec): Promise<CheckOutcome> {
       default:
         answers = await resolver.resolve4(spec.url);
     }
-    const latencyMs = Date.now() - start;
+    const latencyMs = since(start);
     if (answers.length === 0)
       return { ok: false, statusCode: null, latencyMs, error: "no records" };
     const expect = spec.dnsExpect ? spec.dnsExpect.trim().toLowerCase() : "";
@@ -331,7 +438,7 @@ function pingArgs(host: string): string[] {
  */
 function pingCheck(spec: CheckSpec): Promise<CheckOutcome> {
   const timeoutMs = spec.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const start = Date.now();
+  const start = performance.now();
   return new Promise((resolve) => {
     let out = "";
     let settled = false;
@@ -367,7 +474,7 @@ function pingCheck(spec: CheckSpec): Promise<CheckOutcome> {
     });
     child.once("close", (code) => {
       clearTimeout(timer);
-      const elapsed = Date.now() - start;
+      const elapsed = since(start);
       const match = /time[=<]\s*([\d.]+)\s*ms/i.exec(out);
       const latencyMs = match ? Math.round(Number(match[1])) : elapsed;
       if (code === 0)
@@ -392,47 +499,65 @@ function pingCheck(spec: CheckSpec): Promise<CheckOutcome> {
  * A TLS handshake with the server, then a look at the certificate it sent:
  * it has to be valid for the hostname and not expire within `warnDays`.
  */
-function certificateCheck(spec: CheckSpec): Promise<CheckOutcome> {
+async function certificateCheck(spec: CheckSpec): Promise<CheckOutcome> {
   const timeoutMs = spec.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const port = spec.port ?? 443;
   const warnDays = spec.warnDays ?? DEFAULT_CERTIFICATE_WARN_DAYS;
-  const start = Date.now();
+  const host = spec.url.replace(/^\[|\]$/g, "");
+  const start = performance.now();
+  const opened = await open(host, port, timeoutMs, start);
+  if ("error" in opened)
+    return { ...failed(start, opened.error), timing: lookedUp(opened.dnsMs) };
+  const { won, dnsMs } = opened;
+  const tlsStart = performance.now();
   return new Promise((resolve) => {
     let done = false;
-    const finish = (outcome: CheckOutcome) => {
+    /** `tlsMs` is null when the handshake did not finish. */
+    const finish = (outcome: CheckOutcome, tlsMs: number | null) => {
       if (done) return;
       done = true;
       socket.destroy();
-      resolve(outcome);
+      won.socket.destroy();
+      resolve({
+        ...outcome,
+        timing: { ...lookedUp(dnsMs), connectMs: won.connectMs, tlsMs },
+      });
     };
     // Verification is not switched off: the socket still checks the chain
     // and the hostname and reports the result in `authorized`. Rejecting
     // would end the handshake with a bare socket error; reading the verdict
     // instead lets the check say why the certificate is bad.
     const socket = tlsConnect({
-      host: spec.url,
-      port,
-      servername: spec.url,
+      socket: won.socket,
+      host,
+      // A name is sent; an IP address has none to send.
+      ...(isIP(host) ? {} : { servername: host }),
       rejectUnauthorized: false,
     });
-    socket.setTimeout(timeoutMs, () => finish(failed(start, "timeout")));
-    socket.once("error", (err) => finish(failed(start, errorCode(err))));
+    socket.setTimeout(Math.max(1, timeoutMs - since(start)), () =>
+      finish(failed(start, "timeout"), null),
+    );
+    socket.once("error", (err) => finish(failed(start, errorCode(err)), null));
     socket.once("secureConnect", () => {
-      const latencyMs = Date.now() - start;
+      const latencyMs = since(start);
+      const tlsMs = since(tlsStart);
       // The date is read whether or not the certificate is trusted, so an
       // expired one still says when it expired.
       const validTo = Date.parse(socket.getPeerCertificate()?.valid_to ?? "");
       if (!socket.authorized) {
         const reason: unknown = socket.authorizationError;
-        return finish({
-          ok: false,
-          statusCode: null,
-          latencyMs,
-          error: `certificate invalid (${
-            reason instanceof Error ? errorCode(reason) : String(reason)
-          })`,
-          expiresAt: Number.isNaN(validTo) ? null : validTo,
-        });
+        return finish(
+          {
+            ok: false,
+            statusCode: null,
+            latencyMs,
+            error: `certificate invalid (${
+              reason instanceof Error ? errorCode(reason) : String(reason)
+            })`,
+            expiresAt: Number.isNaN(validTo) ? null : validTo,
+          },
+          tlsMs,
+        );
       }
       finish(
         Number.isNaN(validTo)
@@ -443,6 +568,7 @@ function certificateCheck(spec: CheckSpec): Promise<CheckOutcome> {
               error: "certificate invalid (no expiry date)",
             }
           : expiryOutcome("certificate", validTo, warnDays, null, latencyMs),
+        tlsMs,
       );
     });
   });
@@ -474,7 +600,7 @@ export function expiryOutcome(
 async function domainCheck(spec: CheckSpec): Promise<CheckOutcome> {
   const timeoutMs = spec.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const warnDays = spec.warnDays ?? DEFAULT_DOMAIN_WARN_DAYS;
-  const start = Date.now();
+  const start = performance.now();
   try {
     const res = await fetch(
       `https://rdap.org/domain/${encodeURIComponent(spec.url)}`,
@@ -489,7 +615,7 @@ async function domainCheck(spec: CheckSpec): Promise<CheckOutcome> {
         cache: "no-store",
       },
     );
-    const latencyMs = Date.now() - start;
+    const latencyMs = since(start);
     if (!res.ok) {
       void res.body?.cancel().catch(() => {});
       return {

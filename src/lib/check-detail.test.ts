@@ -56,6 +56,38 @@ describe("checkDetail", () => {
     expect(JSON.stringify(detail)).not.toContain("10.0.0.7");
   });
 
+  it("says where each check's time went, and nothing for older checks", () => {
+    const db = openDb(":memory:");
+    // From before checks were timed.
+    seed(db, T + 1000, 1, 100);
+    insertCheck(db, {
+      site: "s",
+      monitor: "m",
+      ts: T + 2000,
+      ok: 1,
+      statusCode: 200,
+      latencyMs: 120,
+      error: null,
+      timing: { dnsMs: 4, connectMs: 20, tlsMs: 31, firstByteMs: 65 },
+    });
+    insertCheck(db, {
+      site: "s",
+      monitor: "m",
+      ts: T + 3000,
+      ok: 0,
+      statusCode: null,
+      latencyMs: 10_000,
+      error: "timeout",
+      timing: { dnsMs: 4, connectMs: 20, tlsMs: null, firstByteMs: null },
+    });
+    const detail = checkDetail(db, "s", "m", null, T, T + HOUR);
+    expect(detail.checks.map((c) => c.timing)).toEqual([
+      { dnsMs: 4, connectMs: 20, tlsMs: null, firstByteMs: null },
+      { dnsMs: 4, connectMs: 20, tlsMs: 31, firstByteMs: 65 },
+      null,
+    ]);
+  });
+
   it("lists only the trouble when there are too many", () => {
     const db = openDb(":memory:");
     for (let i = 0; i < DETAIL_ROWS + 50; i++) seed(db, T + i * 1000, 1, 40);

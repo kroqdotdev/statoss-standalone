@@ -36,11 +36,15 @@ WORKDIR /app
 # Everything the app keeps lives in /data: the configuration it reads
 # (/data/config.yaml), the incident files (/data/incidents) and the SQLite
 # database (/data/status.db).
+# Host lookups share libuv's thread pool, four threads unless told. A few
+# names that hang would hold up every other check's lookup and add to its
+# time, so the pool is larger.
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     CONFIG_PATH=/data/config.yaml \
-    DB_PATH=/data/status.db
+    DB_PATH=/data/status.db \
+    UV_THREADPOOL_SIZE=32
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public

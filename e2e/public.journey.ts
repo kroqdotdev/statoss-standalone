@@ -68,9 +68,16 @@ test.describe("the status page", () => {
     await page.keyboard.press("Enter");
     const panel = page.getByRole("region", { name: /^Checks for Website/ });
     await expect(panel).toContainText("HTTP 503");
+    await expect(panel).toContainText(
+      "DNS 1 ms, connect 2 ms, TLS 4 ms, first byte 5 ms",
+    );
     await fits("an open bar");
     await panel.getByRole("button", { name: "Close" }).click();
     await expect(panel).toHaveCount(0);
+    // A finger lifts after a tap; the test's pointer stays where Close was.
+    // As the readout wraps, the strip can move under it and read out the
+    // bar there instead of the one the keys reached.
+    await page.mouse.move(0, 0);
 
     await expect(page.getByText("deploy", { exact: true })).toBeVisible();
     // Three hours back, where the release went out.
