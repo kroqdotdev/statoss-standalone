@@ -5,6 +5,8 @@
 
 A self-hosted status page in one container. It checks your URLs, ports, DNS records, certificates, domains and scheduled jobs every minute, stores every result in SQLite, and serves a public page for each site on its own hostname, with incidents, maintenance windows, components, alerts to email, Slack, Discord, PagerDuty, Opsgenie, ntfy and webhooks, and a JSON, badge, RSS, Atom, calendar and widget endpoint next to every page.
 
+A live demo runs at [statoss.com/standalone-demo](https://statoss.com/standalone-demo).
+
 ![The status page for one site with two monitors](docs/screenshot.png)
 
 ## Features
