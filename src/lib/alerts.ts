@@ -467,6 +467,7 @@ export function opsgeniePayload(message: Message): Record<string, unknown> {
 /** Cuts text to at most `max` characters, ending in "…" when it was longer. */
 export function clip(text: string, max: number): string {
   if (text.length <= max) return text;
+  if (max < 1) return "";
   let end = max - 1;
   // Never half a surrogate pair, which would not be valid text.
   const last = text.charCodeAt(end - 1);
@@ -497,11 +498,13 @@ export function telegramPayload(
   message: Message,
   chat: string,
 ): Record<string, unknown> {
+  // The subject and the page are bounded too, so the lines always have
+  // room and the whole message stays under the limit.
   const subject = clip(message.subject, 256);
-  const page = `Status page: ${message.pageUrl}`;
+  const page = clip(`Status page: ${message.pageUrl}`, 1024);
   const body = clip(
     message.lines.join("\n"),
-    Math.max(0, TELEGRAM_MAX - subject.length - page.length - 2),
+    TELEGRAM_MAX - subject.length - page.length - 2,
   );
   return {
     chat_id: chat,
@@ -519,7 +522,8 @@ export function telegramPayload(
 
 /**
  * Pushover's messages API, as form fields. Its limits: a title of 250
- * characters, a message of 1,024.
+ * characters, a message of 1,024, a link of 512. A page address longer
+ * than that is left out rather than cut, which would break it.
  */
 export function pushoverPayload(
   message: Message,
@@ -531,8 +535,9 @@ export function pushoverPayload(
     user: d.pushover,
     title: clip(message.subject, 250),
     message: clip(message.lines.join("\n") || message.subject, 1024),
-    url: message.pageUrl,
-    url_title: "Status page",
+    ...(message.pageUrl.length <= 512
+      ? { url: message.pageUrl, url_title: "Status page" }
+      : {}),
     priority: emergency ? "2" : String(message.pushover.priority),
     // Repeated every minute until acknowledged, for three hours at most.
     ...(emergency ? { retry: "60", expire: "10800" } : {}),

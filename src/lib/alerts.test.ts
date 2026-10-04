@@ -903,6 +903,17 @@ describe("Telegram, Pushover and Teams", () => {
     expect(message.endsWith("…")).toBe(true);
   });
 
+  it("stays inside the limits when the page's address is very long", async () => {
+    const pageUrl = `https://status.example.com/${"p".repeat(5000)}`;
+    await sendAlerts(TO.slice(0, 2), { ...DOWN, pageUrl }, deps());
+    const text: string = JSON.parse(received[0].body).text;
+    expect(text.replace(/<\/?b>/g, "").length).toBeLessThanOrEqual(4096);
+    expect(text).toContain("is failing.");
+    const form = new URLSearchParams(received[1].body);
+    expect(form.has("url")).toBe(false);
+    expect(form.has("url_title")).toBe(false);
+  });
+
   it.each([
     [
       { telegram: "-404", token: BOT },
@@ -1022,6 +1033,9 @@ describe("clip", () => {
   it("keeps short text and cuts long text without halving a character", () => {
     expect(clip("short", 10)).toBe("short");
     expect(clip("abcdef", 4)).toBe("abc…");
+    expect(clip("abcdef", 1)).toBe("…");
+    expect(clip("abcdef", 0)).toBe("");
+    expect(clip("abcdef", -5)).toBe("");
     const cut = clip(`ab${"😀".repeat(3)}`, 4);
     expect(cut).toBe("ab…");
     expect(alertMessage(DOWN).pushover).toEqual({
