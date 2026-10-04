@@ -3,7 +3,7 @@
 [![CI](https://github.com/kroqdotdev/statoss-standalone/actions/workflows/ci.yml/badge.svg)](https://github.com/kroqdotdev/statoss-standalone/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A self-hosted status page in one container. It checks your URLs, ports, DNS records, certificates, domains and scheduled jobs every minute, stores every result in SQLite, and serves a public page for each site on its own hostname, with incidents, maintenance windows, components, alerts to email, Slack, Discord, PagerDuty, Opsgenie, ntfy and webhooks, and a JSON, badge, RSS, Atom and widget endpoint next to every page.
+A self-hosted status page in one container. It checks your URLs, ports, DNS records, certificates, domains and scheduled jobs every minute, stores every result in SQLite, and serves a public page for each site on its own hostname, with incidents, maintenance windows, components, alerts to email, Slack, Discord, PagerDuty, Opsgenie, ntfy and webhooks, and a JSON, badge, RSS, Atom, calendar and widget endpoint next to every page.
 
 ![The status page for one site with two monitors](docs/screenshot.png)
 
@@ -18,9 +18,9 @@ A self-hosted status page in one container. It checks your URLs, ports, DNS reco
 - **Slow is a state.** Give a monitor a threshold and it turns slow after two slow responses and back after one fast one. Slow buckets are drawn in indigo under a dashed line at the threshold.
 - **Groups.** Monitors with the same group name are shown together under one heading with a one-line summary.
 - **Components.** A part of the product with no check, such as a mobile app, shown with a state you set or an incident sets.
-- **Incidents and maintenance.** Write incidents as Markdown or YAML files in a folder; the page picks them up without a restart. Every incident and window has a page of its own, and older ones are listed by month under Incident history. Plan maintenance windows in the configuration: checks during a window are shown but not counted, and no alert goes out. A monitor that goes down opens an incident by itself and resolves it on recovery.
+- **Incidents and maintenance.** Write incidents as Markdown or YAML files in a folder; the page picks them up without a restart. Every incident and window has a page of its own, and older ones are listed by month under Incident history. Plan maintenance windows in the configuration, once or every week or month: checks during a window are shown but not counted, and no alert goes out. A monitor that goes down opens an incident by itself and resolves it on recovery.
 - **Alerts where you are.** Email, Slack, Discord, PagerDuty, Opsgenie, ntfy and a signed webhook, per site or for all of them, with an optional repeat while a monitor stays down. Incident updates and maintenance notices go the same way, and a vendor's outage goes to email, Slack, Discord and ntfy.
-- **Endpoints for machines.** `status.json`, `badge.svg` and `badge.json` for shields.io, `feed.xml` and `feed.atom`, and `widget.js` to embed a live status dot anywhere.
+- **Endpoints for machines.** `status.json`, `badge.svg` and `badge.json` for shields.io, `feed.xml` and `feed.atom`, `maintenance.ics` for calendar apps, and `widget.js` to embed a live status dot anywhere.
 - **Your look.** A logo, a favicon, an accent colour, a fixed light or dark theme, a description and a support link, per site.
 - **Times where the visitor is.** Every time on the page is written in the visitor's own time zone.
 - **Password pages.** A site can ask for a password, which locks its endpoints too, with a key for embeds.
@@ -174,7 +174,7 @@ Open `https://status.example.com` to see the page.
 | `sites[].accent`                     | no       |                  | The colour of links, focus rings and buttons, as `"#rrggbb"`.                                                |
 | `sites[].theme`                      | no       | `auto`           | `light` or `dark` to fix it; `auto` follows the visitor's system.                                            |
 | `sites[].supportUrl`                 | no       |                  | Where "Contact support" goes: an http(s) or `mailto:` address.                                               |
-| `sites[].timezone`                   | no       | `UTC`            | The zone times are written in until the browser says its own, and the one the history follows.               |
+| `sites[].timezone`                   | no       | `UTC`            | The zone times are written in until the browser says its own, and the one the history and repeats follow.    |
 | `sites[].noindex`                    | no       | `false`          | `true` asks search engines to leave the page out.                                                            |
 | `sites[].defaultRange`               | no       | `24h`            | The view the page opens on: `24h`, `7d`, `90d` or `1y`.                                                      |
 | `sites[].foldGroups`                 | no       | `false`          | `true` folds away the groups in which everything is up.                                                      |
@@ -201,6 +201,8 @@ Open `https://status.example.com` to see the page.
 | `sites[].maintenance[].start`, `end` | yes      |                  | ISO 8601. A date and time without a zone is read as UTC.                                                     |
 | `sites[].maintenance[].monitors`     | no       | all              | Names of the monitors the window covers.                                                                     |
 | `sites[].maintenance[].notes`        | no       |                  | A sentence or two, shown under the title.                                                                    |
+| `sites[].maintenance[].repeat`       | no       |                  | `weekly`, `monthly` or `monthly-weekday`. See Maintenance windows.                                           |
+| `sites[].maintenance[].until`        | no       |                  | With `repeat`, the last day a repeat may start on, like `2027-03-31`.                                        |
 
 A configuration written for 0.1 that says `checkpoints` where this one says `monitors` still works.
 
@@ -269,7 +271,7 @@ The webhook receives a JSON body with `event` (`went-down`, `recovered`, `went-s
 The same destinations get what you write, not only what the checks find:
 
 - every update on an incident file, once, when it is saved with a time in the last hour (an incident with no updates counts as one);
-- a maintenance window when it is first seen in the configuration, when it starts, and when it is over.
+- a maintenance window when it is first seen in the configuration, when it starts, and when it is over. Each repeat of a window is first seen a week before it starts.
 
 An update dated more than an hour ago is not sent, so an incident written up afterwards tells nobody. An update dated ahead is sent when its time comes. What has gone out is kept in the database, so a restart repeats nothing. PagerDuty and Opsgenie get none of these: they page people, and an update is not an outage. `updates: false` under `alerts`, or under a site's `alerts`, keeps them on the page only.
 
@@ -341,6 +343,38 @@ In a post-mortem, a line that starts with `#` is a heading; blank lines separate
 **Where incidents show.** Open incidents and planned or running maintenance are cards under the headline: what you wrote first, the worst impact first, then the outages the checker opened, which share one card when there are several, then maintenance. The status page lists the resolved ones of the last 7 days. Every incident and window has a page of its own at `/incidents/<id>`, where the id is the file's name without its ending, and `/history` lists them all by month, three months a page, back to the oldest. An incident with a start in the future is not shown until then.
 
 **Templates.** `incidents.example/templates/` holds three files to start from: an outage, a degradation, and a write-up after the fact with a post-mortem. Copy one into the incidents folder and fill it in. A folder inside the incidents folder is not read, so your own templates can live in `incidents/templates/`.
+
+### Maintenance windows
+
+A window is planned work, written under a site's `maintenance`. Checks made during it are shown in grey and not counted, change no state and send no alert, and the rows it covers say "Under maintenance" while it runs. It is on the page from a week before it starts, and has a page of its own at `/incidents/<id>`, where the id is made from its start and its title, like `maintenance-2026-10-04-0000-backups`.
+
+```yaml
+maintenance:
+  - title: Database upgrade
+    start: 2026-09-20T01:00:00Z
+    end: 2026-09-20T03:00:00Z
+    monitors: [API health] # omit for the whole site
+    notes: The API answers with 503 for a few minutes.
+  - title: Backups
+    start: 2026-10-04T02:00:00+02:00
+    end: 2026-10-04T02:30:00+02:00
+    repeat: weekly
+    until: 2027-03-31 # optional
+```
+
+With `repeat`, the window comes back at the same time of day in the site's `timezone`, so 02:00 in Copenhagen stays 02:00 on both sides of daylight saving:
+
+| `repeat`          | Comes back                                                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `weekly`          | Every week on the same weekday.                                                                                              |
+| `monthly`         | Every month on the same date, or on the last day of a shorter month.                                                         |
+| `monthly-weekday` | Every month on the same weekday of the month, like the second Tuesday. A start on the 29th or later repeats on the last one. |
+
+Each repeat is planned a week before it starts. From then on it is shown, announced to the alert destinations and given a page like a window written by hand, with an id made the same way from its own start. A weekly window has to be shorter than a week, a monthly one shorter than four weeks. Repeats stay in the history for 400 days.
+
+`until` is the last day a repeat may start on, in the site's zone. Set it to stop a window repeating: the repeats before it stay in the history, which they do not when `repeat` is taken away. A window you write with the same title as a repeat, starting in the same minute, takes its place, for example to give one week more time.
+
+`/maintenance.ics` is the site's maintenance as a calendar: the last 30 days, every window written for later, and the repeats of the next 90 days. Get updates on the page links to it for calendar apps. A window keeps its UID from before it is planned to after it is over, so a calendar app updates it in place.
 
 ### Components
 
@@ -428,7 +462,7 @@ sites:
 
 The accent colours the links, the focus ring, the selection, the line under the current view and the button on the password form. Links take a shade of it that reads on the background in each theme, so a yellow accent is darkened on paper and a navy one lightened on charcoal. The colours of the strips (green, amber, red, indigo) mean check results and do not change.
 
-Under the headline the page says when it was updated and offers Get updates, which leads to the RSS and Atom feeds, and Contact support when there is a `supportUrl`.
+Under the headline the page says when it was updated and offers Get updates, which leads to the RSS and Atom feeds and the maintenance calendar, and Contact support when there is a `supportUrl`.
 
 **Times.** Every time on the page is written in the visitor's own time zone, and the foot of the page names it. Until the browser has said which zone that is, which is a moment, times are in the site's `timezone`. The bars of the 90-day and 1-year views are UTC days whoever looks at them. Alerts, feeds and `status.json` stay in UTC.
 
@@ -444,24 +478,25 @@ sites:
 
 A site with a `password` shows a form instead of the page. The right password opens the page, its incident pages and the history on that browser for 30 days. The cookie does not hold the password, and changing the password locks every browser out again. Ten wrong passwords in a minute from one address, as the reverse proxy forwards it in `X-Forwarded-For`, pause the form for that address, and a hundred a minute from all addresses pause it for everyone.
 
-`status.json`, the badges, the feeds, the widget, `/checks`, `/deploys`, `/mcp` and `/llms.txt` are locked too and answer 401. An embed has no cookie, so give it the `embedKey`: `/badge.svg?key=...`, `/status.json?key=...`, `<script src="https://status.internal.example/widget.js?key=..."></script>`. Anyone who can read the page that embeds it can read the key, so it is a lesser secret than the password. A password page is never offered to search engines. Heartbeat pings and posted deploy markers need no password; their tokens are the secret.
+`status.json`, the badges, the feeds, the calendar, the widget, `/checks`, `/deploys`, `/mcp` and `/llms.txt` are locked too and answer 401. An embed or a calendar app has no cookie, so give it the `embedKey`: `/badge.svg?key=...`, `/status.json?key=...`, `/maintenance.ics?key=...`, `<script src="https://status.internal.example/widget.js?key=..."></script>`. Anyone who can read the page that embeds it can read the key, so it is a lesser secret than the password. A password page is never offered to search engines. Heartbeat pings and posted deploy markers need no password; their tokens are the secret.
 
 ### Endpoints
 
 Next to every page, on the same hostname:
 
-| Path           | What it is                                                                                                                                                                                                                                               |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/status.json` | The site's state, every monitor with its status, when it was last checked, uptime and mean response time over the last day (also listed as `checkpoints`, their name in 0.1), the components, the error budget, and current incidents.                   |
-| `/badge.svg`   | A badge in the shields.io style. Add `?label=api` to change the left half.                                                                                                                                                                               |
-| `/badge.json`  | The same in the [shields.io endpoint format](https://shields.io/badges/endpoint-badge), for a badge shields.io draws.                                                                                                                                    |
-| `/feed.xml`    | An RSS feed of the incidents and maintenance of the last 30 days. Each entry links to the incident's page and carries the window's times, every update with its status word, and the post-mortem.                                                        |
-| `/feed.atom`   | The same as an Atom feed.                                                                                                                                                                                                                                |
-| `/checks`      | The checks behind one bar, which the page asks for when a bar is opened: `?monitor=<name>&from=<ms>&to=<ms>`, a day at most. Failures are given in the page's words ("Timed out", "HTTP 503"), never the stored error.                                   |
-| `/deploys`     | Deploy markers of the last 90 days. `POST` adds one; see Deploy markers.                                                                                                                                                                                 |
-| `/mcp`         | A Model Context Protocol endpoint (Streamable HTTP: JSON-RPC by `POST`) with three tools that read: `get_status`, `list_incidents` and `get_error_budget`. Up to 120 messages a minute for each site.                                                    |
-| `/llms.txt`    | Where a program should read the site from, and how to read `status.json`.                                                                                                                                                                                |
-| `/widget.js`   | A script that draws a status dot and a link where it is placed: `<script src="https://status.example.com/widget.js"></script>`. Override the words with `data-operational`, `data-degraded`, `data-partial`, `data-major` and `data-unknown` attributes. |
+| Path               | What it is                                                                                                                                                                                                                                               |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/status.json`     | The site's state, every monitor with its status, when it was last checked, uptime and mean response time over the last day (also listed as `checkpoints`, their name in 0.1), the components, the error budget, and current incidents.                   |
+| `/badge.svg`       | A badge in the shields.io style. Add `?label=api` to change the left half.                                                                                                                                                                               |
+| `/badge.json`      | The same in the [shields.io endpoint format](https://shields.io/badges/endpoint-badge), for a badge shields.io draws.                                                                                                                                    |
+| `/feed.xml`        | An RSS feed of the incidents and maintenance of the last 30 days. Each entry links to the incident's page and carries the window's times, every update with its status word, and the post-mortem.                                                        |
+| `/feed.atom`       | The same as an Atom feed.                                                                                                                                                                                                                                |
+| `/maintenance.ics` | The site's maintenance as an iCalendar feed for calendar apps: the last 30 days, every window written for later, and the repeats of the next 90 days. See Maintenance windows.                                                                           |
+| `/checks`          | The checks behind one bar, which the page asks for when a bar is opened: `?monitor=<name>&from=<ms>&to=<ms>`, a day at most. Failures are given in the page's words ("Timed out", "HTTP 503"), never the stored error.                                   |
+| `/deploys`         | Deploy markers of the last 90 days. `POST` adds one; see Deploy markers.                                                                                                                                                                                 |
+| `/mcp`             | A Model Context Protocol endpoint (Streamable HTTP: JSON-RPC by `POST`) with three tools that read: `get_status`, `list_incidents` and `get_error_budget`. Up to 120 messages a minute for each site.                                                    |
+| `/llms.txt`        | Where a program should read the site from, and how to read `status.json`.                                                                                                                                                                                |
+| `/widget.js`       | A script that draws a status dot and a link where it is placed: `<script src="https://status.example.com/widget.js"></script>`. Override the words with `data-operational`, `data-degraded`, `data-partial`, `data-major` and `data-unknown` attributes. |
 
 The JSON and badge endpoints allow cross-origin requests.
 

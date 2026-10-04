@@ -137,7 +137,10 @@ export function SitePage({
   foldGroups = false,
   defaultRange,
   deploys = [],
+  calendar = "/maintenance.ics",
 }: {
+  /** Where a calendar app subscribes to the site's maintenance. */
+  calendar?: string;
   /** Deploy markers inside the range, for the strips. */
   deploys?: StripMark[];
   name: string;
@@ -341,6 +344,9 @@ export function SitePage({
           </a>
           <a href="/feed.atom" className="page-link">
             Atom
+          </a>
+          <a href={calendar} className="page-link">
+            Calendar
           </a>
         </p>
         <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">

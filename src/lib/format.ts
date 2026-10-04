@@ -22,7 +22,7 @@ function pad(n: number): string {
   return n.toString().padStart(2, "0");
 }
 
-interface Parts {
+export interface Parts {
   year: number;
   month: number;
   day: number;
@@ -34,7 +34,7 @@ interface Parts {
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
 /** The calendar fields of a moment in a time zone. UTC needs no lookup. */
-function parts(ts: number, zone: string): Parts {
+export function clockParts(ts: number, zone: string): Parts {
   if (zone === "UTC") {
     const d = new Date(ts);
     return {
@@ -73,6 +73,12 @@ function parts(ts: number, zone: string): Parts {
   };
 }
 
+/** The day a moment falls on in a zone: "2027-03-31". */
+export function localDate(ts: number, zone: string): string {
+  const p = clockParts(ts, zone);
+  return `${p.year}-${pad(p.month + 1)}-${pad(p.day)}`;
+}
+
 /** Whether a name is a time zone this runtime knows. */
 export function isTimeZone(zone: string): boolean {
   try {
@@ -102,7 +108,7 @@ export function zoneAbbreviation(ts: number, zone: string): string {
 
 /** "14:32". */
 export function formatUtcClock(ts: number, zone = "UTC"): string {
-  const p = parts(ts, zone);
+  const p = clockParts(ts, zone);
   return `${pad(p.hour)}:${pad(p.minute)}`;
 }
 
@@ -114,13 +120,13 @@ export function formatUtcClockSeconds(ts: number, zone = "UTC"): string {
 
 /** "2023-11-14 22:13 UTC". */
 export function formatUtcStamp(ts: number, zone = "UTC"): string {
-  const p = parts(ts, zone);
+  const p = clockParts(ts, zone);
   return `${p.year}-${pad(p.month + 1)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)} ${zoneAbbreviation(ts, zone)}`;
 }
 
 /** "12 Aug 2026". */
 export function formatUtcDate(ts: number, zone = "UTC"): string {
-  const p = parts(ts, zone);
+  const p = clockParts(ts, zone);
   return `${p.day} ${MONTHS[p.month]} ${p.year}`;
 }
 
@@ -129,15 +135,17 @@ export function formatUtcDate(ts: number, zone = "UTC"): string {
  * "12 Aug 2025".
  */
 export function formatUtcDay(ts: number, zone = "UTC", now?: number): string {
-  const p = parts(ts, zone);
+  const p = clockParts(ts, zone);
   const year =
-    now !== undefined && parts(now, zone).year !== p.year ? ` ${p.year}` : "";
+    now !== undefined && clockParts(now, zone).year !== p.year
+      ? ` ${p.year}`
+      : "";
   return `${p.day} ${MONTHS[p.month]}${year}`;
 }
 
 /** "Tue 14:00". */
 export function formatUtcWeekdayClock(ts: number, zone = "UTC"): string {
-  const p = parts(ts, zone);
+  const p = clockParts(ts, zone);
   return `${WEEKDAYS[p.weekday]} ${pad(p.hour)}:${pad(p.minute)}`;
 }
 
@@ -147,8 +155,8 @@ export function formatUtcDateTime(
   now: number,
   zone = "UTC",
 ): string {
-  const p = parts(ts, zone);
-  const n = parts(now, zone);
+  const p = clockParts(ts, zone);
+  const n = clockParts(now, zone);
   const clock = `${pad(p.hour)}:${pad(p.minute)}`;
   // Days apart on the calendar, whatever the hours in each.
   const daysApart = Math.round(

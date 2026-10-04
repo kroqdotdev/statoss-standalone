@@ -46,7 +46,7 @@ import {
 } from "./component-history";
 import { bumpDataVersion } from "./data-version";
 import { readIncidentFiles } from "./incident-files";
-import { inMaintenance, maintenanceView } from "./incidents";
+import { inMaintenance, siteMaintenanceViews } from "./maintenance";
 import { dueNotices } from "./notices";
 import { applyResult, lateAfterMs, type CheckVerdict } from "./state";
 import {
@@ -79,6 +79,8 @@ export interface Job {
   repeatMinutes: number;
   /** The site's maintenance windows. */
   maintenance: MaintenanceConfig[];
+  /** The zone the site's windows repeat in. */
+  timezone: string;
 }
 
 export function loadJobs(config: AppConfig): Job[] {
@@ -104,6 +106,7 @@ export function loadJobs(config: AppConfig): Job[] {
       destinations,
       repeatMinutes,
       maintenance: site.maintenance,
+      timezone: site.timezone,
     }));
   });
 }
@@ -180,7 +183,7 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
     latencyMs: LATENCY_TYPES.has(job.type) ? outcome.latencyMs : null,
     error: outcome.error,
   } as const;
-  if (inMaintenance(job.maintenance, job.monitor, ts)) {
+  if (inMaintenance(job.maintenance, job.monitor, ts, job.timezone)) {
     insertCheck(db, { ...row, maintenance: 1 });
     touchChecked(db, job.site, job.monitor, ts);
     return;
@@ -362,7 +365,8 @@ export function sendDueNotices(
   for (const site of config.sites) {
     const views = [
       ...(files.get(site.name) ?? []),
-      ...site.maintenance.map((window) => maintenanceView(window)),
+      // What ended over a day ago is long past telling.
+      ...siteMaintenanceViews(site, now, now - DAY_MS),
     ];
     const due = dueNotices(db, site, views, now);
     if (!siteSendsUpdates(config, site)) continue;

@@ -8,6 +8,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 - Vendor components follow pages on Instatus, Better Stack, status.io (GitLab, Neon) and Sorry (Postmark), and Slack's, Heroku's and Stripe's status. A page's platform is found by asking each in turn, and the one that answered is asked first after that. A feed's address in `vendor` is taken as its page's.
 - A component that follows a vendor alerts email, Slack, Discord and ntfy destinations when the vendor reports an outage, trouble, or things working again, with up to three of its open incidents. PagerDuty, Opsgenie and webhooks get none. The first reading sends nothing, and a restart repeats nothing. `vendors: false` under `alerts`, or under a site's `alerts`, turns them off.
+- Maintenance that repeats: `repeat: weekly`, `monthly` or `monthly-weekday` on a window, and `until` for the last day one may start. A repeat keeps the window's time of day in the site's `timezone`, is planned a week before it starts, and is then shown, announced to the alert destinations (planned, started, over, once each) and given a page like a window written by hand, with an id made from its own start and title.
+- A calendar of each site's maintenance at `/maintenance.ics`: the last 30 days, every window written for later and the repeats of the next 90 days, each under one UID from planned to over. Get updates on the page links to it.
 
 ### Fixed
 

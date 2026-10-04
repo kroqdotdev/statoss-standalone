@@ -156,3 +156,12 @@ sites:
     #     end: 2026-09-20T03:00:00Z
     #     monitors: [API health] # omit for the whole site
     #     notes: The API answers with 503 for a few minutes.
+    #   # A window can repeat at the same time of day in the site's
+    #   # timezone: weekly, monthly (the same date) or monthly-weekday (the
+    #   # same weekday of the month, like the second Tuesday). Each repeat is
+    #   # planned and announced a week before it starts.
+    #   - title: Backups
+    #     start: 2026-10-04T02:00:00+02:00
+    #     end: 2026-10-04T02:30:00+02:00
+    #     repeat: weekly
+    #     until: 2027-03-31 # Optional. The last day a repeat may start on.

@@ -8,6 +8,7 @@ import {
   heartbeatOutcome,
   loadJobs,
   sendVendorAlerts,
+  sendDueNotices,
   spreadMs,
   tick,
   type Job,
@@ -261,6 +262,36 @@ sites:
     expect(state(deps)).toBeUndefined();
     expect(deps.alertSpy).not.toHaveBeenCalled();
     expect(autoIncidents(deps.db, "webhooks.cc", 0)).toEqual([]);
+  });
+
+  it("keeps checks during a repeat of a window as maintenance too", async () => {
+    const deps = makeDeps([{ ok: false }]);
+    const WEEK = 7 * 24 * 60 * 60_000;
+    // Written a week before the test clock starts; its repeat covers it.
+    deps.jobs = [
+      {
+        ...deps.jobs[0],
+        timezone: "Europe/Copenhagen",
+        maintenance: [
+          {
+            title: "Work",
+            start: -WEEK,
+            end: -WEEK + 10_000,
+            repeat: "weekly",
+          },
+        ],
+      },
+    ];
+    await tick(deps); // 2 s
+    await tick(deps); // 3 s
+    const rows = deps.db
+      .prepare("SELECT ok, maintenance FROM checks ORDER BY ts")
+      .all();
+    expect(rows).toEqual([
+      { ok: 0, maintenance: 1 },
+      { ok: 0, maintenance: 1 },
+    ]);
+    expect(deps.alertSpy).not.toHaveBeenCalled();
   });
 
   it("does not alert when the site has no destinations", async () => {
@@ -609,5 +640,50 @@ sites:
     await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled());
     errorSpy.mockRestore();
     logSpy.mockRestore();
+  });
+});
+
+describe("sendDueNotices", () => {
+  it("sends each repeat of a window to the destinations once, a week ahead", () => {
+    vi.stubEnv("INCIDENTS_DIR", "/nonexistent/statoss-incidents");
+    const config = parseConfig(`
+alerts:
+  to:
+    - slack: https://hooks.slack.com/services/T/B/X
+sites:
+  - name: webhooks.cc
+    host: status.webhooks.cc
+    monitors:
+      - name: Main site
+        url: https://webhooks.cc
+    maintenance:
+      - title: Backups
+        start: 2026-10-04T00:00:00Z
+        end: 2026-10-04T01:00:00Z
+        repeat: weekly
+`);
+    const db = openDb(":memory:");
+    const send = vi.fn().mockResolvedValue(undefined);
+    const FIRST = Date.parse("2026-10-04T00:00:00Z");
+    const DAY = 24 * 60 * 60_000;
+    const told = () =>
+      send.mock.calls.map(([to, event]) => [to, event.kind, event.id]);
+    sendDueNotices(config, db, send, FIRST + 2 * DAY);
+    sendDueNotices(config, db, send, FIRST + 2 * DAY + 60_000);
+    expect(told()).toEqual([
+      [
+        [{ slack: "https://hooks.slack.com/services/T/B/X" }],
+        "maintenance-scheduled",
+        "maintenance-2026-10-11-0000-backups",
+      ],
+    ]);
+    send.mockClear();
+    sendDueNotices(config, db, send, FIRST + 7 * DAY);
+    sendDueNotices(config, db, send, FIRST + 7 * DAY + 60_000);
+    expect(told().map(([, kind, id]) => `${kind} ${id}`)).toEqual([
+      "maintenance-started maintenance-2026-10-11-0000-backups",
+      "maintenance-scheduled maintenance-2026-10-18-0000-backups",
+    ]);
+    vi.unstubAllEnvs();
   });
 });

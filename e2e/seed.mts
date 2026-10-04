@@ -69,6 +69,7 @@ sites:
       - title: Router swap
         start: ${iso(now - 10 * DAY)}
         end: ${iso(now - 10 * DAY + 2 * HOUR)}
+        repeat: monthly
   - name: Internal tools
     host: 127.0.0.1
     password: journey-password

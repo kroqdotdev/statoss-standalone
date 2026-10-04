@@ -3,12 +3,15 @@ import type { ErrorBudget } from "./budget";
 import { siteUrl, type ComponentState, type SiteConfig } from "./config";
 import { getState, type DeployRow } from "./db";
 import { formatUtcStamp } from "./format";
+import { icsCalendar, type IcsEvent } from "./ics";
 import {
+  maintenanceId,
   openImpacts,
   STATUS_LABELS,
   type IncidentView,
   type SiteIncidents,
 } from "./incidents";
+import { maintenanceWindows, PLAN_AHEAD_MS } from "./maintenance";
 import { windowSummary } from "./queries";
 import { pageOverall, type MonitorStatus, type Overall } from "./state";
 import { componentStatus, statedByName, statusWithStated } from "./stated";
@@ -322,6 +325,46 @@ export function feedAtom(
 <updated>${new Date(now).toISOString()}</updated>
 ${entries}
 </feed>`;
+}
+
+/** How far back and ahead the maintenance calendar reaches. */
+export const CALENDAR_BACK_MS = 30 * DAY_MS;
+export const CALENDAR_AHEAD_MS = 90 * DAY_MS;
+
+/**
+ * The site's maintenance as an iCalendar feed: the windows of the last 30
+ * days, every window written for later, and the repeats of the next 90
+ * days. A window keeps its UID from before it is planned to after it
+ * ends, so a calendar updates it rather than adding another.
+ */
+export function maintenanceIcs(site: SiteConfig, now: number): string {
+  const url = siteUrl(site);
+  const events: IcsEvent[] = maintenanceWindows(
+    site.maintenance,
+    site.timezone,
+    now,
+    { from: now - CALENDAR_BACK_MS, ahead: CALENDAR_AHEAD_MS },
+  ).map((window) => {
+    const id = maintenanceId(window);
+    const description = [
+      window.notes?.trim(),
+      window.monitors ? `Affects ${window.monitors.join(", ")}.` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    // A repeat has a page of its own once it is planned, a week ahead.
+    const planned = window.written || window.start <= now + PLAN_AHEAD_MS;
+    return {
+      uid: `${id}@${site.host.toLowerCase()}`,
+      start: window.start,
+      end: window.end,
+      stamp: now,
+      summary: `${site.name}: ${window.title}`,
+      ...(description ? { description } : {}),
+      url: planned ? incidentUrl(site, id) : url,
+    };
+  });
+  return icsCalendar(`${site.name} maintenance`, events, now);
 }
 
 /**
