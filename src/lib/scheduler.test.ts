@@ -52,6 +52,7 @@ function makeDeps(
         statusCode: outcome.ok ? 200 : 500,
         latencyMs: outcome.latencyMs ?? 50,
         error: outcome.ok ? null : "unexpected status 500",
+        timing: outcome.timing,
       });
     }),
     alert: alertSpy,
@@ -292,6 +293,31 @@ sites:
       { ok: 0, maintenance: 1 },
     ]);
     expect(deps.alertSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps where each check's time went, in a maintenance window too", async () => {
+    const timing = { dnsMs: 2, connectMs: 8, tlsMs: 15, firstByteMs: 25 };
+    const deps = makeDeps([{ ok: true, timing }]);
+    await tick(deps);
+    deps.jobs = [
+      {
+        ...deps.jobs[0],
+        maintenance: [
+          { title: "Work", start: 0, end: 10_000, monitors: undefined },
+        ],
+      },
+    ];
+    await tick(deps); // in the window
+    const columns =
+      "dns_ms AS dnsMs, connect_ms AS connectMs, tls_ms AS tlsMs, first_byte_ms AS firstByteMs";
+    expect(
+      deps.db
+        .prepare(`SELECT maintenance, ${columns} FROM checks ORDER BY ts`)
+        .all(),
+    ).toEqual([
+      { maintenance: 0, ...timing },
+      { maintenance: 1, ...timing },
+    ]);
   });
 
   it("does not alert when the site has no destinations", async () => {

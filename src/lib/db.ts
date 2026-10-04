@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
+import type { CheckTiming } from "./checker";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS checks (
@@ -12,7 +13,11 @@ CREATE TABLE IF NOT EXISTS checks (
   status_code INTEGER,
   latency_ms INTEGER,
   error TEXT,
-  maintenance INTEGER NOT NULL DEFAULT 0
+  maintenance INTEGER NOT NULL DEFAULT 0,
+  dns_ms INTEGER,
+  connect_ms INTEGER,
+  tls_ms INTEGER,
+  first_byte_ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_checks_site_cp_ts ON checks(site, monitor, ts);
 CREATE INDEX IF NOT EXISTS idx_checks_ts ON checks(ts);
@@ -95,6 +100,12 @@ CREATE TABLE IF NOT EXISTS vendor_state (
  */
 const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ["checks", "maintenance", "INTEGER NOT NULL DEFAULT 0"],
+  // Where each check's time went. Rows from before they were measured
+  // keep them null.
+  ["checks", "dns_ms", "INTEGER"],
+  ["checks", "connect_ms", "INTEGER"],
+  ["checks", "tls_ms", "INTEGER"],
+  ["checks", "first_byte_ms", "INTEGER"],
   ["monitor_state", "consecutive_slow", "INTEGER NOT NULL DEFAULT 0"],
   ["monitor_state", "last_alert_at", "INTEGER"],
   ["monitor_state", "checked_at", "INTEGER"],
@@ -150,6 +161,8 @@ export interface CheckRow {
   maintenance?: 0 | 1;
   /** A successful check over the monitor's slow threshold at the time. */
   slow?: boolean;
+  /** Where its time went, for the kinds of check that measure it. */
+  timing?: CheckTiming | null;
 }
 
 export interface StateRow {
@@ -227,10 +240,11 @@ export function insertCheck(db: Database.Database, row: CheckRow): void {
   const counted = maintenance === 0 ? 1 : 0;
   const passed = counted && row.ok ? 1 : 0;
   const timed = passed && row.latencyMs !== null ? 1 : 0;
+  const timing = row.timing ?? null;
   db.transaction(() => {
     db.prepare(
-      `INSERT INTO checks (site, monitor, ts, ok, status_code, latency_ms, error, maintenance)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO checks (site, monitor, ts, ok, status_code, latency_ms, error, maintenance, dns_ms, connect_ms, tls_ms, first_byte_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       row.site,
       row.monitor,
@@ -240,6 +254,10 @@ export function insertCheck(db: Database.Database, row: CheckRow): void {
       row.latencyMs,
       row.error,
       maintenance,
+      timing?.dnsMs ?? null,
+      timing?.connectMs ?? null,
+      timing?.tlsMs ?? null,
+      timing?.firstByteMs ?? null,
     );
     db.prepare(
       `INSERT INTO check_hour

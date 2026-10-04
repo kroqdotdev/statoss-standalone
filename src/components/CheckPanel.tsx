@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CheckDetail } from "@/lib/check-detail";
+import type { CheckDetail, DetailCheck } from "@/lib/check-detail";
 import {
+  describeTiming,
   failureSummary,
   formatCount,
   formatUtcClockSeconds,
@@ -12,8 +13,22 @@ import {
 import { useViewerZone } from "@/lib/viewer-zone";
 
 /**
+ * "DNS 3 ms, connect 12 ms, TLS 24 ms, first byte 61 ms", on a line of
+ * its own under a check that measured it.
+ */
+function Phases({ check }: { check: DetailCheck }) {
+  const line = describeTiming(check.timing, check.problem === "Timed out");
+  if (line === null) return null;
+  return (
+    <span className="col-span-2 col-start-3 text-[12px] text-muted tabular-nums">
+      {line}
+    </span>
+  );
+}
+
+/**
  * The checks behind one bar, listed under the strip: when each ran, what
- * it found, its status code and its response time.
+ * it found, its response time and where that time went.
  */
 export function CheckPanel({
   monitor,
@@ -159,6 +174,7 @@ export function CheckPanel({
                       ? `${formatCount(c.latencyMs)} ms`
                       : ""}
                   </span>
+                  <Phases check={c} />
                 </li>
               ))}
             </ol>
