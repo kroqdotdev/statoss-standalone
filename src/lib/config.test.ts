@@ -595,6 +595,106 @@ sites:
     expect(() => parseConfig(withTo(to))).toThrow(message);
   });
 
+  const BOT = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw";
+  const USER = "uQiRzpo4DXghDmr9QzzfQu27cmVRsG";
+  const APP = "azGDORePK8gMaC0QOYAMyEEuzJnyUi";
+  const FLOW =
+    "https://prod-12.westeurope.logic.azure.com:443/workflows/0a1b2c/triggers/manual/paths/invoke?api-version=2016-06-01&sig=s1g";
+  const PLATFORM =
+    "https://default0a1b.2c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/3d4e/triggers/manual/paths/invoke?api-version=1&sig=s1g";
+
+  it("reads Telegram, Pushover and Teams, with the tokens from the environment", () => {
+    const config = parseConfig(
+      withTo(`    - telegram: "-1001234567890"
+      token: \${TELEGRAM_BOT_TOKEN}
+    - telegram: -1001234567891
+      token: \${TELEGRAM_BOT_TOKEN}
+    - telegram: "@statoss_alerts"
+      token: \${TELEGRAM_BOT_TOKEN}
+    - pushover: ${USER}
+      token: \${PUSHOVER_APP_TOKEN}
+    - pushover: ${USER}
+      token: \${PUSHOVER_APP_TOKEN}
+      emergency: true
+    - teams: ${FLOW}
+    - teams: ${PLATFORM}`),
+      { TELEGRAM_BOT_TOKEN: BOT, PUSHOVER_APP_TOKEN: APP },
+    );
+    expect(config.alerts?.to).toEqual([
+      { telegram: "-1001234567890", token: BOT },
+      { telegram: "-1001234567891", token: BOT },
+      { telegram: "@statoss_alerts", token: BOT },
+      { pushover: USER, token: APP },
+      { pushover: USER, token: APP, emergency: true },
+      { teams: FLOW },
+      { teams: PLATFORM },
+    ]);
+  });
+
+  it.each([
+    [`    - telegram: "-100123"`, "telegram needs token: <bot token>"],
+    [`    - telegram: "-100123"\n      token: ""`, "telegram needs token"],
+    [
+      `    - telegram: my-chat\n      token: ${BOT}`,
+      "telegram must be a chat id",
+    ],
+    [`    - telegram: 1.5\n      token: ${BOT}`, "telegram must be a chat id"],
+    [
+      `    - telegram: "-100123"\n      token: abc`,
+      "telegram's token is not a bot token",
+    ],
+    [
+      `    - telegram: "-100123"\n      token: ${BOT}\n      emergency: true`,
+      "telegram takes a chat id and token",
+    ],
+    [`    - pushover: ${USER}`, "pushover needs token: <app token>"],
+    [
+      `    - pushover: short\n      token: ${APP}`,
+      "pushover must be your user key",
+    ],
+    [
+      `    - pushover: ${USER}\n      token: abc`,
+      "pushover's token is not an application token",
+    ],
+    [
+      `    - pushover: ${USER}\n      token: ${APP}\n      emergency: "yes"`,
+      "pushover takes a user key, token: <app token> and, optionally, emergency: true.",
+    ],
+    [
+      `    - teams: http://prod-12.westeurope.logic.azure.com/workflows/x`,
+      "teams must be the URL of a Teams workflow",
+    ],
+    [
+      `    - teams: https://example.com/workflows/x`,
+      "teams must be the URL of a Teams workflow",
+    ],
+    [
+      `    - teams: https://prod-12.westeurope.logic.azure.com/other`,
+      "teams must be the URL of a Teams workflow",
+    ],
+    [
+      `    - teams: https://u:p@prod-12.westeurope.logic.azure.com/workflows/x`,
+      "teams must be the URL of a Teams workflow",
+    ],
+    [
+      `    - teams: ${FLOW}\n      token: x`,
+      "teams must be the URL of a Teams workflow",
+    ],
+  ])("rejects %s, naming the destination", (to, message) => {
+    expect(() => parseConfig(withTo(to))).toThrow(`alerts.to.0: ${message}`);
+  });
+
+  it("refuses a token whose variable is set but empty", () => {
+    expect(() =>
+      parseConfig(
+        withTo(
+          `    - pushover: ${USER}\n      token: "\${PUSHOVER_APP_TOKEN}"`,
+        ),
+        { PUSHOVER_APP_TOKEN: "" },
+      ),
+    ).toThrow("pushover needs token");
+  });
+
   it("lets a site, or every site, keep updates to the page", () => {
     const config = parseConfig(`
 alerts:

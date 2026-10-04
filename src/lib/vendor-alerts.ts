@@ -27,7 +27,15 @@ import { vendorView } from "./vendors";
 
 /** The channels a person reads. A pager or a webhook is for your own outages. */
 export function toldOfVendors(d: Destination): boolean {
-  return "email" in d || "slack" in d || "discord" in d || "ntfy" in d;
+  return (
+    "email" in d ||
+    "slack" in d ||
+    "discord" in d ||
+    "ntfy" in d ||
+    "telegram" in d ||
+    "pushover" in d ||
+    "teams" in d
+  );
 }
 
 export interface VendorAlert {

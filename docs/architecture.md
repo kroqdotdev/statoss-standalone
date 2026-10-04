@@ -5,7 +5,7 @@ statoss-standalone is one Node.js process. It contains a Next.js server for the 
 ```
 config.yaml ──► scheduler ──► checker ──► checks + check_hour ──► queries ──► page, status.json, badges, /checks
                     │  │                        │
-                    │  ├──► monitor_state ──────┴──► alerts (email, Slack, Discord, PagerDuty, Opsgenie, ntfy, webhook)
+                    │  ├──► monitor_state ──────┴──► alerts (email, Slack, Discord, PagerDuty, Opsgenie, ntfy, Telegram, Pushover, Teams, webhook)
                     │  ├──► auto_incident ──┐
                     │  └──► vendors (memory)│
 incidents/*.md, *.yaml ─────────────────────┴──► incidents ──► page, incident pages, history, feeds, notices

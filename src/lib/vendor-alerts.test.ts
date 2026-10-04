@@ -60,6 +60,11 @@ const DESTINATIONS = `
     - slack: https://hooks.slack.com/x
     - discord: https://discord.com/api/webhooks/y
     - ntfy: https://ntfy.sh/ops
+    - telegram: "-1001234567890"
+      token: 123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw
+    - pushover: uQiRzpo4DXghDmr9QzzfQu27cmVRsG
+      token: azGDORePK8gMaC0QOYAMyEEuzJnyUi
+    - teams: https://prod-12.westeurope.logic.azure.com/workflows/0a1b2c/triggers/manual/paths/invoke?sig=s1g
     - webhook: https://example.com/hook
       secret: s3cret
     - pagerduty: R0UT1NG
@@ -105,7 +110,7 @@ describe("alerts when a vendor changes state", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
-  it("notes the first reading without a word, then tells a change to email, Slack, Discord and ntfy", async () => {
+  it("notes the first reading without a word, then tells a change to email, Slack, Discord, ntfy, Telegram, Pushover and Teams", async () => {
     await read(0, summary("partial_outage"));
     expect(vendorAlerts(CONFIG, db, 0)).toEqual([]);
     expect(getVendorState(db, "shop", "Acme API")).toMatchObject({
@@ -121,6 +126,18 @@ describe("alerts when a vendor changes state", () => {
       { slack: "https://hooks.slack.com/x" },
       { discord: "https://discord.com/api/webhooks/y" },
       { ntfy: "https://ntfy.sh/ops" },
+      {
+        telegram: "-1001234567890",
+        token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
+      },
+      {
+        pushover: "uQiRzpo4DXghDmr9QzzfQu27cmVRsG",
+        token: "azGDORePK8gMaC0QOYAMyEEuzJnyUi",
+      },
+      {
+        teams:
+          "https://prod-12.westeurope.logic.azure.com/workflows/0a1b2c/triggers/manual/paths/invoke?sig=s1g",
+      },
     ]);
     expect(alerts[0].event).toEqual({
       kind: "vendor-changed",

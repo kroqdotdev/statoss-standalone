@@ -309,6 +309,13 @@ export interface Message {
   webhook: Record<string, unknown> | null;
   ntfy: { priority: string; tags: string };
   /**
+   * Pushover's priority: 1 for a monitor that is down, which sounds through
+   * quiet hours, and 0 for the rest. `emergency` marks the alert that a
+   * destination with emergency: true gets at 2, repeated until someone
+   * acknowledges it.
+   */
+  pushover: { priority: 0 | 1; emergency: boolean };
+  /**
    * What PagerDuty and Opsgenie do with it: open an alert, close the one
    * opened under the same key, or nothing. Notices page nobody.
    */
@@ -341,6 +348,15 @@ const NTFY: Record<
   "vendor-changed": { priority: "3", tags: "cloud" },
 };
 
+const QUIET = { priority: 0, emergency: false } as const;
+
+/** A monitor going down is urgent; its repeat notice too, but it pages once. */
+function pushoverOf(kind: AlertKind): Message["pushover"] {
+  if (kind === "went-down") return { priority: 1, emergency: true };
+  if (kind === "still-down") return { priority: 1, emergency: false };
+  return QUIET;
+}
+
 export function alertMessage(event: AlertEvent): Message {
   const { subject, lines } = describeAlert(event);
   // Down and slow are two alerts on a pager, each closed by its own end;
@@ -356,6 +372,7 @@ export function alertMessage(event: AlertEvent): Message {
     pageUrl: event.pageUrl,
     webhook: webhookPayload(event),
     ntfy: NTFY[event.kind],
+    pushover: pushoverOf(event.kind),
     pager: {
       action:
         event.kind === "recovered" || event.kind === "back-to-normal"
@@ -383,13 +400,15 @@ export function noticeMessage(event: NoticeEvent): Message {
     pageUrl: event.pageUrl,
     webhook: noticeWebhookPayload(event),
     ntfy: NTFY[event.kind],
+    pushover: QUIET,
     pager: null,
   };
 }
 
 /**
  * A vendor's change goes to the channels a person reads: email, Slack,
- * Discord and ntfy. A pager or a webhook is for your own outages.
+ * Discord, ntfy, Telegram, Pushover and Teams. A pager or a webhook is for
+ * your own outages.
  */
 export function vendorMessage(event: VendorEvent): Message {
   const { subject, lines } = describeVendor(event);
@@ -400,6 +419,7 @@ export function vendorMessage(event: VendorEvent): Message {
     pageUrl: event.pageUrl,
     webhook: null,
     ntfy: NTFY[event.kind],
+    pushover: QUIET,
     pager: null,
   };
 }
@@ -441,6 +461,127 @@ export function opsgeniePayload(message: Message): Record<string, unknown> {
     source: "StatOSS",
     entity: message.pager?.group,
     details: message.webhook,
+  };
+}
+
+/** Cuts text to at most `max` characters, ending in "…" when it was longer. */
+export function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max - 1;
+  // Never half a surrogate pair, which would not be valid text.
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}…`;
+}
+
+/** Text for Telegram's HTML: the three characters it reads, and quotes. */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Telegram takes 4,096 characters of text in a message. */
+const TELEGRAM_MAX = 4096;
+
+/**
+ * Telegram's sendMessage: the subject in bold, the lines, and the page.
+ * Every value is escaped, so nothing in a monitor's name or an error is
+ * read as markup. The link is plain text, which Telegram makes a link
+ * when it can, and which an address it cannot link (localhost) does not
+ * make fail.
+ */
+export function telegramPayload(
+  message: Message,
+  chat: string,
+): Record<string, unknown> {
+  const subject = clip(message.subject, 256);
+  const page = `Status page: ${message.pageUrl}`;
+  const body = clip(
+    message.lines.join("\n"),
+    Math.max(0, TELEGRAM_MAX - subject.length - page.length - 2),
+  );
+  return {
+    chat_id: chat,
+    text: [
+      `<b>${escapeHtml(subject)}</b>`,
+      body && escapeHtml(body),
+      escapeHtml(page),
+    ]
+      .filter((part) => part !== "")
+      .join("\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+}
+
+/**
+ * Pushover's messages API, as form fields. Its limits: a title of 250
+ * characters, a message of 1,024.
+ */
+export function pushoverPayload(
+  message: Message,
+  d: { pushover: string; token: string; emergency?: boolean },
+): Record<string, string> {
+  const emergency = d.emergency === true && message.pushover.emergency;
+  return {
+    token: d.token,
+    user: d.pushover,
+    title: clip(message.subject, 250),
+    message: clip(message.lines.join("\n") || message.subject, 1024),
+    url: message.pageUrl,
+    url_title: "Status page",
+    priority: emergency ? "2" : String(message.pushover.priority),
+    // Repeated every minute until acknowledged, for three hours at most.
+    ...(emergency ? { retry: "60", expire: "10800" } : {}),
+  };
+}
+
+/**
+ * One Adaptive Card, the form a Teams workflow posts. Text runs, not text
+ * blocks: a text block reads Markdown, and the words are shown as written.
+ */
+export function teamsPayload(message: Message): Record<string, unknown> {
+  const paragraphs = message.lines.map((line) => clip(line, 4000));
+  return {
+    type: "message",
+    attachments: [
+      {
+        contentType: "application/vnd.microsoft.card.adaptive",
+        contentUrl: null,
+        content: {
+          $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+          type: "AdaptiveCard",
+          version: "1.4",
+          body: [
+            {
+              type: "RichTextBlock",
+              inlines: [
+                {
+                  type: "TextRun",
+                  text: message.subject,
+                  weight: "Bolder",
+                  size: "Medium",
+                },
+              ],
+            },
+            ...paragraphs.map((p) => ({
+              type: "RichTextBlock",
+              inlines: [{ type: "TextRun", text: p }],
+            })),
+          ],
+          actions: [
+            {
+              type: "Action.OpenUrl",
+              title: "Status page",
+              url: message.pageUrl,
+            },
+          ],
+        },
+      },
+    ],
   };
 }
 
@@ -489,7 +630,16 @@ async function post(
 }
 
 export type ChannelName =
-  "email" | "slack" | "discord" | "webhook" | "pagerduty" | "opsgenie" | "ntfy";
+  | "email"
+  | "slack"
+  | "discord"
+  | "webhook"
+  | "pagerduty"
+  | "opsgenie"
+  | "ntfy"
+  | "telegram"
+  | "pushover"
+  | "teams";
 
 export interface AlertResult {
   channel: ChannelName;
@@ -498,6 +648,106 @@ export interface AlertResult {
 }
 
 const PAGERDUTY_EVENTS = "https://events.pagerduty.com/v2/enqueue";
+const TELEGRAM_API = "https://api.telegram.org";
+const PUSHOVER_MESSAGES = "https://api.pushover.net/1/messages.json";
+
+/**
+ * A send refused for a reason that trying again cannot fix: a wrong token,
+ * a chat or a workflow that is gone, a bot that was blocked. It is logged
+ * with the reason and not retried.
+ */
+export class SetupError extends Error {}
+
+/** Whether a refusal is the setup's fault: a 4xx, but not 408 or 429. */
+export function isSetupStatus(status: number): boolean {
+  return status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * What an API's error body says: Telegram's description (and a group's
+ * new chat id, once it became a supergroup), Pushover's errors, a
+ * workflow's error message, or short plain text. Never an HTML page.
+ */
+export function refusalText(text: string): string {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    const plain = text.replace(/\s+/g, " ").trim();
+    return plain.startsWith("<") ? "" : clip(plain, 300);
+  }
+  if (!isRecord(body)) return "";
+  const error = isRecord(body.error) ? body.error : {};
+  let said =
+    typeof body.description === "string"
+      ? body.description
+      : Array.isArray(body.errors)
+        ? body.errors.filter((e) => typeof e === "string").join("; ")
+        : typeof error.message === "string"
+          ? error.message
+          : typeof body.message === "string"
+            ? body.message
+            : "";
+  const moved = isRecord(body.parameters)
+    ? body.parameters.migrate_to_chat_id
+    : undefined;
+  if (typeof moved === "number") said += `; the chat id is now ${moved}`;
+  return clip(said.replace(/\s+/g, " ").trim(), 300);
+}
+
+/** What to look at when a channel refuses a send for good. */
+const SETUP_HINTS: Record<
+  "telegram" | "pushover" | "teams",
+  (status: number) => string
+> = {
+  telegram: (status) =>
+    status === 401 || status === 404
+      ? "Check the bot token."
+      : status === 403
+        ? "Add the bot to the chat again, or unblock it."
+        : "Check the chat id, and that the bot is in the chat and may post there.",
+  pushover: () => "Check the user key and the application token.",
+  teams: () => "Check the workflow URL, and that the workflow is turned on.",
+};
+
+/**
+ * Posts to Telegram, Pushover or a Teams workflow. A refusal says what the
+ * service said; one that is the setup's fault is a SetupError, with what
+ * to check.
+ */
+async function postOrRefuse(
+  fetchFn: typeof fetch,
+  channel: keyof typeof SETUP_HINTS,
+  url: string,
+  body: string,
+  contentType: string,
+): Promise<void> {
+  const res = await fetchFn(url, {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body,
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (res.ok) {
+    void res.body?.cancel().catch(() => {});
+    return;
+  }
+  const said = refusalText(await res.text().catch(() => ""));
+  // The host only: Telegram's address holds the bot token.
+  const answer = `${new URL(url).host} answered ${res.status}`;
+  if (!isSetupStatus(res.status))
+    throw new Error(said ? `${answer}: ${said}` : answer);
+  const hint = SETUP_HINTS[channel](res.status);
+  throw new SetupError(
+    said
+      ? `${answer}: ${said.replace(/\.?$/, ".")} ${hint}`
+      : `${answer}. ${hint}`,
+  );
+}
 
 export function channelOf(d: Destination): ChannelName {
   if ("email" in d) return "email";
@@ -506,6 +756,9 @@ export function channelOf(d: Destination): ChannelName {
   if ("pagerduty" in d) return "pagerduty";
   if ("opsgenie" in d) return "opsgenie";
   if ("ntfy" in d) return "ntfy";
+  if ("telegram" in d) return "telegram";
+  if ("pushover" in d) return "pushover";
+  if ("teams" in d) return "teams";
   return "webhook";
 }
 
@@ -633,6 +886,30 @@ function deliver(
       },
       "text/plain; charset=utf-8",
     );
+  if ("telegram" in d)
+    return postOrRefuse(
+      deps.fetch,
+      "telegram",
+      `${TELEGRAM_API}/bot${d.token}/sendMessage`,
+      JSON.stringify(telegramPayload(message, d.telegram)),
+      "application/json",
+    );
+  if ("pushover" in d)
+    return postOrRefuse(
+      deps.fetch,
+      "pushover",
+      PUSHOVER_MESSAGES,
+      new URLSearchParams(pushoverPayload(message, d)).toString(),
+      "application/x-www-form-urlencoded",
+    );
+  if ("teams" in d)
+    return postOrRefuse(
+      deps.fetch,
+      "teams",
+      d.teams,
+      JSON.stringify(teamsPayload(message)),
+      "application/json",
+    );
   if (message.webhook === null) return null;
   const body = JSON.stringify(message.webhook);
   return post(deps.fetch, d.webhook, body, {
@@ -654,6 +931,27 @@ export function headerText(text: string): string {
 
 function reasonOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Logs a send that failed, and says whether to try it again: not when the
+ * destination is set up wrong, since the same send would fail the same way.
+ */
+function logFailure(
+  channel: ChannelName,
+  message: Message,
+  err: unknown,
+): boolean {
+  if (err instanceof SetupError) {
+    console.error(
+      `[alerts] ${channel} refused "${message.subject}", not trying again: ${err.message}`,
+    );
+    return false;
+  }
+  console.error(
+    `[alerts] ${channel} failed for "${message.subject}": ${reasonOf(err)}`,
+  );
+  return true;
 }
 
 /**
@@ -696,10 +994,8 @@ function retryLater(
           `[alerts] ${channel}: sent "${message.subject}" on attempt ${attempt + 2}`,
         ),
       (err: unknown) => {
-        console.error(
-          `[alerts] ${channel} failed for "${message.subject}": ${reasonOf(err)}`,
-        );
-        retryLater(d, message, deps, stillHolds, attempt + 1);
+        if (logFailure(channel, message, err))
+          retryLater(d, message, deps, stillHolds, attempt + 1);
       },
     );
   }, delay);
@@ -730,10 +1026,8 @@ export async function sendMessage(
       return { channel, ok: true };
     }
     const error = reasonOf(result.reason);
-    console.error(
-      `[alerts] ${channel} failed for "${message.subject}": ${error}`,
-    );
-    retryLater(d, message, deps, stillHolds, 0);
+    if (logFailure(channel, message, result.reason))
+      retryLater(d, message, deps, stillHolds, 0);
     return { channel, ok: false, error };
   });
 }

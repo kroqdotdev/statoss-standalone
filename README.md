@@ -3,7 +3,7 @@
 [![CI](https://github.com/kroqdotdev/statoss-standalone/actions/workflows/ci.yml/badge.svg)](https://github.com/kroqdotdev/statoss-standalone/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A self-hosted status page in one container. It checks your URLs, ports, DNS records, certificates, domains and scheduled jobs every minute, stores every result in SQLite, and serves a public page for each site on its own hostname, with incidents, maintenance windows, components, alerts to email, Slack, Discord, PagerDuty, Opsgenie, ntfy and webhooks, and a JSON, badge, RSS, Atom, calendar and widget endpoint next to every page.
+A self-hosted status page in one container. It checks your URLs, ports, DNS records, certificates, domains and scheduled jobs every minute, stores every result in SQLite, and serves a public page for each site on its own hostname, with incidents, maintenance windows, components, alerts to email, Slack, Discord, PagerDuty, Opsgenie, ntfy, Telegram, Pushover, Microsoft Teams and webhooks, and a JSON, badge, RSS, Atom, calendar and widget endpoint next to every page.
 
 A live demo runs at [statoss.com/standalone-demo](https://statoss.com/standalone-demo).
 
@@ -22,7 +22,7 @@ A live demo runs at [statoss.com/standalone-demo](https://statoss.com/standalone
 - **Groups.** Monitors with the same group name are shown together under one heading with a one-line summary.
 - **Components.** A part of the product with no check, such as a mobile app, shown with a state you set or an incident sets.
 - **Incidents and maintenance.** Write incidents as Markdown or YAML files in a folder; the page picks them up without a restart. Every incident and window has a page of its own, and older ones are listed by month under Incident history. Plan maintenance windows in the configuration, once or every week or month: checks during a window are shown but not counted, and no alert goes out. A monitor that goes down opens an incident by itself and resolves it on recovery.
-- **Alerts where you are.** Email, Slack, Discord, PagerDuty, Opsgenie, ntfy and a signed webhook, per site or for all of them, with an optional repeat while a monitor stays down. Incident updates and maintenance notices go the same way, and a vendor's outage goes to email, Slack, Discord and ntfy.
+- **Alerts where you are.** Email, Slack, Discord, PagerDuty, Opsgenie, ntfy, Telegram, Pushover, Microsoft Teams and a signed webhook, per site or for all of them, with an optional repeat while a monitor stays down. Incident updates and maintenance notices go the same way, and a vendor's outage goes to email, Slack, Discord, ntfy, Telegram, Pushover and Teams.
 - **Endpoints for machines.** `status.json`, `badge.svg` and `badge.json` for shields.io, `feed.xml` and `feed.atom`, `maintenance.ics` for calendar apps, and `widget.js` to embed a live status dot anywhere.
 - **Your look.** A logo, a favicon, an accent colour, a fixed light or dark theme, a description and a support link, per site.
 - **Times where the visitor is.** Every time on the page is written in the visitor's own time zone.
@@ -40,7 +40,7 @@ Checked on 29 September 2026. Both move fast, so read their docs too.
 | Configuration | One YAML file; incidents as Markdown or YAML files                                                                                                                            | A web interface with one admin account                                            | One YAML file                                                                          |
 | Monitor types | HTTP, TCP, DNS, ping, certificate, domain, heartbeat                                                                                                                          | About 30, among them Docker, databases, MQTT, gRPC and a real browser             | HTTP, TCP, UDP, ping, DNS, SSH, TLS, WebSocket, gRPC, domain expiry and pushed results |
 | Status page   | Response-time bars with a mark for every failed check, failures with their reason, incidents with post-mortems, maintenance that can repeat, an error budget, vendors' status | Heartbeat bars and 24-hour uptime per monitor, pinned incidents, maintenance, RSS | Results per endpoint, badges, announcements, maintenance                               |
-| Alerts        | Email, Slack, Discord, PagerDuty, Opsgenie, ntfy and signed webhooks                                                                                                          | More than 90 providers                                                            | More than 40 providers                                                                 |
+| Alerts        | Email, Slack, Discord, PagerDuty, Opsgenie, ntfy, Telegram, Pushover, Microsoft Teams and signed webhooks                                                                     | More than 90 providers                                                            | More than 40 providers                                                                 |
 | Storage       | One SQLite file                                                                                                                                                               | SQLite, or MariaDB on version 2                                                   | Memory, SQLite or PostgreSQL                                                           |
 | Licence       | MIT                                                                                                                                                                           | MIT                                                                               | Apache 2.0                                                                             |
 
@@ -273,55 +273,55 @@ Kuma 2 can keep its data in MariaDB instead. `import-kuma` reads SQLite only, an
 
 `config.yaml` is read once at startup. Restart the container after you change it. Write `${NAME}` anywhere in the file to use the environment variable `NAME`; an unset variable is an error.
 
-| Field                                | Required | Default          | Description                                                                                                  |
-| ------------------------------------ | -------- | ---------------- | ------------------------------------------------------------------------------------------------------------ |
-| `checkIntervalSeconds`               | no       | `60`             | Seconds between checks. Minimum 10.                                                                          |
-| `alerts.smtp.host`                   | no       |                  | SMTP server. Needed for email destinations.                                                                  |
-| `alerts.smtp.port`                   | no       |                  | `465` uses TLS from the start. Other ports require STARTTLS.                                                 |
-| `alerts.smtp.user`                   | no       |                  | SMTP login. The password comes from the `SMTP_PASS` variable.                                                |
-| `alerts.smtp.from`                   | no       |                  | Sender address.                                                                                              |
-| `alerts.smtp.to`                     | no       |                  | A shorthand for one email destination in `alerts.to`.                                                        |
-| `alerts.to[]`                        | no       | `[]`             | Destinations for every site without a list of its own. See below.                                            |
-| `alerts.repeatMinutes`               | no       | `0`              | Minutes between "still down" notices while a monitor stays down. `0` sends none.                             |
-| `alerts.updates`                     | no       | `true`           | `false` sends no incident updates or maintenance notices to the destinations.                                |
-| `alerts.vendors`                     | no       | `true`           | `false` sends nothing when a vendor a component follows changes state. See Vendor components.                |
-| `sites[].name`                       | yes      |                  | Shown in the headline, for example `example.com is up.`                                                      |
-| `sites[].host`                       | yes      |                  | Hostname that serves this site's page. Must be unique.                                                       |
-| `sites[].url`                        | no       | `https://<host>` | Where alerts and feeds link to. Under a path, the whole address. See Run under a path.                       |
-| `sites[].description`                | no       |                  | A sentence or two under the headline.                                                                        |
-| `sites[].logo`, `favicon`            | no       |                  | An image file next to the configuration, or an http(s) address. See The look of a page.                      |
-| `sites[].accent`                     | no       |                  | The colour of links, focus rings and buttons, as `"#rrggbb"`.                                                |
-| `sites[].theme`                      | no       | `auto`           | `light` or `dark` to fix it; `auto` follows the visitor's system.                                            |
-| `sites[].supportUrl`                 | no       |                  | Where "Contact support" goes: an http(s) or `mailto:` address.                                               |
-| `sites[].timezone`                   | no       | `UTC`            | The zone times are written in until the browser says its own, and the one the history and repeats follow.    |
-| `sites[].noindex`                    | no       | `false`          | `true` asks search engines to leave the page out.                                                            |
-| `sites[].defaultRange`               | no       | `24h`            | The view the page opens on: `24h`, `7d`, `90d` or `1y`.                                                      |
-| `sites[].foldGroups`                 | no       | `false`          | `true` folds away the groups in which everything is up.                                                      |
-| `sites[].password`                   | no       |                  | With a password, the page and its endpoints are locked. See Password pages.                                  |
-| `sites[].embedKey`                   | no       |                  | Lets embeds past the password with `?key=`. At least 8 letters, digits, dashes or underscores.               |
-| `sites[].uptimeTarget`               | no       |                  | Percent of checks that should pass each month, for example `99.9`. Shows the error budget.                   |
-| `sites[].alerts`                     | no       |                  | `false` to send no alerts for this site, or an object holding `to`, `repeatMinutes`, `updates` or `vendors`. |
-| `sites[].monitors[].name`            | yes      |                  | Shown above the strip. Must be unique within the site.                                                       |
-| `sites[].monitors[].type`            | no       | `http`           | `http`, `tcp`, `dns`, `ping`, `certificate`, `domain` or `heartbeat`. See Monitor types.                     |
-| `sites[].monitors[].url`             | for http |                  | The URL to request.                                                                                          |
-| `sites[].monitors[].intervalSeconds` | no       |                  | Seconds between this monitor's checks, when longer than `checkIntervalSeconds`.                              |
-| `sites[].monitors[].group`           | no       |                  | Monitors with the same group are shown together.                                                             |
-| `sites[].monitors[].method`          | no       | `GET`            | `GET`, `HEAD`, `POST`, `PUT`, `PATCH` or `DELETE`.                                                           |
-| `sites[].monitors[].headers`         | no       |                  | Request headers, as a map.                                                                                   |
-| `sites[].monitors[].body`            | no       |                  | Request body, sent as-is with every method but `GET` and `HEAD`.                                             |
-| `sites[].monitors[].expectStatus`    | no       | any 2xx          | The check passes only on this exact status. 3xx is not followed.                                             |
-| `sites[].monitors[].keyword`         | no       |                  | Text the response body must contain.                                                                         |
-| `sites[].monitors[].keywordMode`     | no       | `present`        | `absent` fails the check when the keyword is found.                                                          |
-| `sites[].monitors[].slowThresholdMs` | no       |                  | A successful response slower than this counts as slow. At most 9999. For http, tcp, dns and ping.            |
-| `sites[].components[].vendor`        | no       |                  | A vendor's status page to follow. See Vendor components.                                                     |
-| `sites[].components[].part`          | no       |                  | One component on the vendor's page, by its name there.                                                       |
-| `sites[].showDeploys`                | no       | `true`           | `false` keeps deploy markers off the strips.                                                                 |
-| `sites[].maintenance[].title`        | yes      |                  | Shown on the page while the window is planned, running, or in the last 30 days.                              |
-| `sites[].maintenance[].start`, `end` | yes      |                  | ISO 8601. A date and time without a zone is read as UTC.                                                     |
-| `sites[].maintenance[].monitors`     | no       | all              | Names of the monitors the window covers.                                                                     |
-| `sites[].maintenance[].notes`        | no       |                  | A sentence or two, shown under the title.                                                                    |
-| `sites[].maintenance[].repeat`       | no       |                  | `weekly`, `monthly` or `monthly-weekday`. See Maintenance windows.                                           |
-| `sites[].maintenance[].until`        | no       |                  | With `repeat`, the last day a repeat may start on, like `2027-03-31`.                                        |
+| Field                                | Required | Default          | Description                                                                                                                                                                   |
+| ------------------------------------ | -------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checkIntervalSeconds`               | no       | `60`             | Seconds between checks. Minimum 10.                                                                                                                                           |
+| `alerts.smtp.host`                   | no       |                  | SMTP server. Needed for email destinations.                                                                                                                                   |
+| `alerts.smtp.port`                   | no       |                  | `465` uses TLS from the start. Other ports require STARTTLS.                                                                                                                  |
+| `alerts.smtp.user`                   | no       |                  | SMTP login. The password comes from the `SMTP_PASS` variable.                                                                                                                 |
+| `alerts.smtp.from`                   | no       |                  | Sender address.                                                                                                                                                               |
+| `alerts.smtp.to`                     | no       |                  | A shorthand for one email destination in `alerts.to`.                                                                                                                         |
+| `alerts.to[]`                        | no       | `[]`             | Destinations for every site without a list of its own: `email`, `slack`, `discord`, `webhook`, `pagerduty`, `opsgenie`, `ntfy`, `telegram`, `pushover` or `teams`. See below. |
+| `alerts.repeatMinutes`               | no       | `0`              | Minutes between "still down" notices while a monitor stays down. `0` sends none.                                                                                              |
+| `alerts.updates`                     | no       | `true`           | `false` sends no incident updates or maintenance notices to the destinations.                                                                                                 |
+| `alerts.vendors`                     | no       | `true`           | `false` sends nothing when a vendor a component follows changes state. See Vendor components.                                                                                 |
+| `sites[].name`                       | yes      |                  | Shown in the headline, for example `example.com is up.`                                                                                                                       |
+| `sites[].host`                       | yes      |                  | Hostname that serves this site's page. Must be unique.                                                                                                                        |
+| `sites[].url`                        | no       | `https://<host>` | Where alerts and feeds link to. Under a path, the whole address. See Run under a path.                                                                                        |
+| `sites[].description`                | no       |                  | A sentence or two under the headline.                                                                                                                                         |
+| `sites[].logo`, `favicon`            | no       |                  | An image file next to the configuration, or an http(s) address. See The look of a page.                                                                                       |
+| `sites[].accent`                     | no       |                  | The colour of links, focus rings and buttons, as `"#rrggbb"`.                                                                                                                 |
+| `sites[].theme`                      | no       | `auto`           | `light` or `dark` to fix it; `auto` follows the visitor's system.                                                                                                             |
+| `sites[].supportUrl`                 | no       |                  | Where "Contact support" goes: an http(s) or `mailto:` address.                                                                                                                |
+| `sites[].timezone`                   | no       | `UTC`            | The zone times are written in until the browser says its own, and the one the history and repeats follow.                                                                     |
+| `sites[].noindex`                    | no       | `false`          | `true` asks search engines to leave the page out.                                                                                                                             |
+| `sites[].defaultRange`               | no       | `24h`            | The view the page opens on: `24h`, `7d`, `90d` or `1y`.                                                                                                                       |
+| `sites[].foldGroups`                 | no       | `false`          | `true` folds away the groups in which everything is up.                                                                                                                       |
+| `sites[].password`                   | no       |                  | With a password, the page and its endpoints are locked. See Password pages.                                                                                                   |
+| `sites[].embedKey`                   | no       |                  | Lets embeds past the password with `?key=`. At least 8 letters, digits, dashes or underscores.                                                                                |
+| `sites[].uptimeTarget`               | no       |                  | Percent of checks that should pass each month, for example `99.9`. Shows the error budget.                                                                                    |
+| `sites[].alerts`                     | no       |                  | `false` to send no alerts for this site, or an object holding `to`, `repeatMinutes`, `updates` or `vendors`.                                                                  |
+| `sites[].monitors[].name`            | yes      |                  | Shown above the strip. Must be unique within the site.                                                                                                                        |
+| `sites[].monitors[].type`            | no       | `http`           | `http`, `tcp`, `dns`, `ping`, `certificate`, `domain` or `heartbeat`. See Monitor types.                                                                                      |
+| `sites[].monitors[].url`             | for http |                  | The URL to request.                                                                                                                                                           |
+| `sites[].monitors[].intervalSeconds` | no       |                  | Seconds between this monitor's checks, when longer than `checkIntervalSeconds`.                                                                                               |
+| `sites[].monitors[].group`           | no       |                  | Monitors with the same group are shown together.                                                                                                                              |
+| `sites[].monitors[].method`          | no       | `GET`            | `GET`, `HEAD`, `POST`, `PUT`, `PATCH` or `DELETE`.                                                                                                                            |
+| `sites[].monitors[].headers`         | no       |                  | Request headers, as a map.                                                                                                                                                    |
+| `sites[].monitors[].body`            | no       |                  | Request body, sent as-is with every method but `GET` and `HEAD`.                                                                                                              |
+| `sites[].monitors[].expectStatus`    | no       | any 2xx          | The check passes only on this exact status. 3xx is not followed.                                                                                                              |
+| `sites[].monitors[].keyword`         | no       |                  | Text the response body must contain.                                                                                                                                          |
+| `sites[].monitors[].keywordMode`     | no       | `present`        | `absent` fails the check when the keyword is found.                                                                                                                           |
+| `sites[].monitors[].slowThresholdMs` | no       |                  | A successful response slower than this counts as slow. At most 9999. For http, tcp, dns and ping.                                                                             |
+| `sites[].components[].vendor`        | no       |                  | A vendor's status page to follow. See Vendor components.                                                                                                                      |
+| `sites[].components[].part`          | no       |                  | One component on the vendor's page, by its name there.                                                                                                                        |
+| `sites[].showDeploys`                | no       | `true`           | `false` keeps deploy markers off the strips.                                                                                                                                  |
+| `sites[].maintenance[].title`        | yes      |                  | Shown on the page while the window is planned, running, or in the last 30 days.                                                                                               |
+| `sites[].maintenance[].start`, `end` | yes      |                  | ISO 8601. A date and time without a zone is read as UTC.                                                                                                                      |
+| `sites[].maintenance[].monitors`     | no       | all              | Names of the monitors the window covers.                                                                                                                                      |
+| `sites[].maintenance[].notes`        | no       |                  | A sentence or two, shown under the title.                                                                                                                                     |
+| `sites[].maintenance[].repeat`       | no       |                  | `weekly`, `monthly` or `monthly-weekday`. See Maintenance windows.                                                                                                            |
+| `sites[].maintenance[].until`        | no       |                  | With `repeat`, the last day a repeat may start on, like `2027-03-31`.                                                                                                         |
 
 A configuration written for 0.1 that says `checkpoints` where this one says `monitors` still works.
 
@@ -377,11 +377,25 @@ A destination is one entry in a `to` list, of one of these shapes:
   region: eu # optional, for an account on api.eu.opsgenie.com
 - ntfy: https://ntfy.sh/my-topic
   token: ${NTFY_TOKEN} # optional, for a protected topic
+- telegram: "-1001234567890" # a chat id, or a public channel's @name
+  token: ${TELEGRAM_BOT_TOKEN}
+- pushover: ${PUSHOVER_USER_KEY} # your user key, or a group key
+  token: ${PUSHOVER_APP_TOKEN}
+  emergency: true # optional, see below
+- teams: ${TEAMS_WORKFLOW_URL}
 ```
 
 On PagerDuty and Opsgenie a monitor going down opens an alert and its recovery closes the same one; slowness opens a second, lower one (warning, P3) that ends when the monitor is back to normal speed, or when it goes down. ntfy gets the message as text with a title, a priority and a link to the page.
 
+**Telegram** posts through your own bot. Make one with [@BotFather](https://t.me/BotFather) and keep its token in the environment. Add the bot to the group or channel, or start a chat with it. To find the chat id, send a message there and open `https://api.telegram.org/bot<token>/getUpdates`: it is `chat.id`, and a group's starts with `-`. A public channel can be given by its `@name`. The message has the subject in bold, the same lines as the other channels, and the page's address.
+
+**Pushover** needs your user key, or a group key, and the API token of an application you register on pushover.net. A monitor going down, and its repeat notice, go at high priority (1), which sounds through quiet hours. Everything else goes at normal priority (0). With `emergency: true` a monitor going down goes at emergency priority (2) instead: Pushover repeats it every minute until someone acknowledges it, for three hours at most.
+
+**Microsoft Teams** posts through a workflow. In the channel, open Workflows and pick "Post to a channel when a webhook request is received", then copy the URL it gives you. It must be a workflow's address on `logic.azure.com` or `powerplatform.com`, or an older connector's on `webhook.office.com`; any other is refused at start. The URL holds a signature, so keep it in the environment. Each message is one Adaptive Card with a button to the page.
+
 A down alert says when the first failed check was. A send that does not get through is tried again after one, five and fifteen minutes, and dropped if the monitor has changed state in the meantime, even if it has since come back to the same state. Every send, failure and retry is written to the log with `[alerts]` in front, which is the record of what was delivered.
+
+When Telegram, Pushover or Teams refuses a send because the setup is wrong, such as a bad token, a chat it cannot find, a blocked bot or a deleted workflow, the send is not tried again. The log says what the service answered and what to check. Too many requests (429) and server errors are tried again as above.
 
 The webhook receives a JSON body with `event` (`went-down`, `recovered`, `went-slow`, `back-to-normal` or `still-down`), `site`, `monitor` (also sent as `checkpoint`, its name in 0.1), `url` (what the monitor points at: the URL, `host:port`, or the host), `pageUrl`, `error`, `downSince`, `failingSince`, `latencyMs`, `thresholdMs` and `at`, an `X-StatOSS-Event` header, and an `X-StatOSS-Signature` header holding `sha256=` and the hex HMAC-SHA256 of the raw body under the secret.
 
@@ -548,7 +562,7 @@ Vendor components sit in their own section, Third-party services, one row each: 
 
 A vendor that cannot be read keeps its last reading for 30 minutes; after that the component shows the `state` from the configuration (`operational` unless you set one) and the row says the page could not be read. The reason is logged with `[vendors]` in front.
 
-**Alerts.** When the vendor reports an outage, trouble, or things working again, the site's email, Slack, Discord and ntfy destinations are told, with up to three of the vendor's open incidents: "shop: GitHub Actions reports an outage". PagerDuty, Opsgenie and webhooks get none: they are for your own outages. The first reading after you add a component sends nothing, and neither does a vendor that cannot be read; the next reading is compared with the last one that said something. What each component was last told is kept in the database, so a restart repeats nothing. `vendors: false` under `alerts`, or under a site's `alerts`, keeps them on the page only.
+**Alerts.** When the vendor reports an outage, trouble, or things working again, the site's email, Slack, Discord, ntfy, Telegram, Pushover and Teams destinations are told, with up to three of the vendor's open incidents: "shop: GitHub Actions reports an outage". PagerDuty, Opsgenie and webhooks get none: they are for your own outages. The first reading after you add a component sends nothing, and neither does a vendor that cannot be read; the next reading is compared with the last one that said something. What each component was last told is kept in the database, so a restart repeats nothing. `vendors: false` under `alerts`, or under a site's `alerts`, keeps them on the page only.
 
 ### Deploy markers
 
