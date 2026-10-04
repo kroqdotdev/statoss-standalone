@@ -59,6 +59,24 @@ describe("medians and percentiles", () => {
     expect(periodQuantile([{ n: 0, p50: 100, p95: 100 }], 0.5)).toBeNull();
   });
 
+  it("keeps the tail of an hour whose median was 0 ms", () => {
+    const lan = [{ n: 60, p50: 0, p95: 1 }];
+    expect(Math.round(periodQuantile(lan, 0.5) ?? -1)).toBe(0);
+    expect(periodQuantile(lan, 0.95)).toBeCloseTo(1, 1);
+    const week = rollupResponseTimes(
+      Array.from({ length: 168 }, (_, i) => ({
+        ts: START + i * HOUR,
+        n: 60,
+        p50: 0,
+        p95: 3,
+      })),
+      { start: START, bucketMs: HOUR, buckets: 168 },
+    );
+    expect(week.buckets.every((ms) => ms === 0)).toBe(true);
+    expect(week.medianMs).toBe(0);
+    expect(week.p95Ms).toBe(3);
+  });
+
   it("takes an hour whose readings were all alike as exactly that", () => {
     expect(periodQuantile([{ n: 60, p50: 0, p95: 0 }], 0.5)).toBe(0);
     expect(periodQuantile([{ n: 60, p50: 80, p95: 80 }], 0.95)).toBe(80);

@@ -89,6 +89,13 @@ function normalShare(z: number): number {
 
 /** How far the 95th percentile sits above the median, in standard deviations. */
 const Z95 = 1.6448536;
+/**
+ * What an hour's median of 0 ms stands for when its 95th percentile is
+ * above it: readings are whole milliseconds, so 0 was under 1, and a
+ * log-normal needs a median above 0 to carry the tail. Under half a
+ * millisecond, so it still rounds to 0.
+ */
+const ZERO_MS = 0.4;
 
 /**
  * The value under which a share `q` of the readings fall, from hours that
@@ -103,12 +110,17 @@ export function periodQuantile(
 ): number | null {
   const kept = periods
     .filter((p) => p.n > 0)
-    .map((p) => ({
-      n: p.n,
-      p50: p.p50,
-      mu: Math.log(Math.max(p.p50, 1e-6)),
-      sigma: p.p95 > p.p50 && p.p50 > 0 ? Math.log(p.p95 / p.p50) / Z95 : 0,
-    }));
+    .map((p) => {
+      // A LAN ping or a DNS lookup can read 0 ms most of the time and 1 ms
+      // or more now and then; its tail is kept.
+      const p50 = p.p50 <= 0 && p.p95 > ZERO_MS ? ZERO_MS : p.p50;
+      return {
+        n: p.n,
+        p50,
+        mu: Math.log(Math.max(p50, 1e-6)),
+        sigma: p.p95 > p50 && p50 > 0 ? Math.log(p.p95 / p50) / Z95 : 0,
+      };
+    });
   if (kept.length === 0) return null;
   const total = kept.reduce((s, p) => s + p.n, 0);
   const under = (ms: number) => {
