@@ -15,7 +15,7 @@
 
 ## Plain Node, no build
 
-The image runs the importer with Node's own TypeScript support (Node 22.18 or newer), from its sources. So the files are `.mts`, import each other with the extension, and use only types that can be stripped. They depend on Node and `better-sqlite3` and nothing else: the image's `node_modules` holds what the server needs, and `yaml` and `zod` are inside the server's bundle, not there. That is why the importer writes its own YAML and repeats a few of the loader's rules (hostnames, methods, record types, token shape, name anchors) instead of importing them. The tests hold the two together.
+The image runs the importer with Node's own TypeScript support, which is on by default from Node 22.18, from its sources. `pnpm import-kuma` turns it on with `--experimental-strip-types`, so a clone needs Node 22.6. So the files are `.mts`, import each other with the extension, and use only types that can be stripped. They depend on Node and `better-sqlite3` and nothing else: the image's `node_modules` holds what the server needs, and `yaml` and `zod` are inside the server's bundle, not there. That is why the importer writes its own YAML and repeats a few of the loader's rules (hostnames, methods, record types, token shape, name anchors) instead of importing them. The tests hold the two together.
 
 The Dockerfile copies the four `.mts` files, puts an `import-kuma` script on the path, and gives `better-sqlite3` a plain name beside the hashed one Next uses. `next.config.ts` keeps `src/lib/kuma` out of the server's traced files.
 

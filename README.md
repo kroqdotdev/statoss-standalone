@@ -173,11 +173,11 @@ Open `https://status.example.com` to see the page.
    docker run --rm -v uptime-kuma:/kuma:ro ghcr.io/kroqdotdev/statoss-standalone import-kuma --env /kuma > .env
    ```
 
-   Keep `.env` private. Pass it with `--env-file .env` to `docker run`, or with `env_file: .env` in Compose.
+   Keep `.env` private. Each value in it is written as it is, which is how `docker run --env-file .env` reads it. In Compose, give it to the service as `env_file: [{ path: .env, format: raw }]`, which reads it the same way.
 
 4. Set each site's `host`, where the importer could not tell it, and start the container as in [Quick start](#quick-start).
 
-From a clone, after `pnpm install`: `pnpm import-kuma path/to/kuma.db > config.yaml`. For a Kuma 1 backup, give the `.json` file instead.
+From a clone, after `pnpm install`, with Node 22.6 or newer: `pnpm import-kuma path/to/kuma.db > config.yaml`. For a Kuma 1 backup, give the `.json` file instead.
 
 | In Uptime Kuma                                                     | Here                                                                                                                                                                                   |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -188,7 +188,7 @@ From a clone, after `pnpm install`: `pnpm import-kuma path/to/kuma.db > config.y
 | Certificate expiry notification                                    | a `certificate` monitor for the host, failing at the largest of Kuma's notify days                                                                                                     |
 | Domain expiry notification (Kuma 2)                                | a `domain` monitor for the domain                                                                                                                                                      |
 | Manual monitor (Kuma 2)                                            | a component in the same state                                                                                                                                                          |
-| Status page                                                        | a site, with its title, description, theme, a logo given as an address, and its first custom domain as `host`                                                                          |
+| Status page                                                        | a site, with its title, description, theme, a logo given as an address, and its first custom domain as `host` if Kuma published it                                                     |
 | A group on a status page                                           | `group` on its monitors. A Kuma group monitor on a page brings the monitors in it.                                                                                                     |
 | Monitors on no status page                                         | one more site, Other monitors, kept out of search engines                                                                                                                              |
 | Email (SMTP), Slack, Discord, webhook, PagerDuty, Opsgenie, ntfy   | alert destinations of the sites whose monitors used them                                                                                                                               |

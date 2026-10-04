@@ -435,6 +435,8 @@ export function convertKuma(
   const secretNames = new Map<string, string>();
   const envNames = new Set<string>(["SMTP_PASS"]);
   const attention: string[] = [];
+  /** Notes that belong to no one line of the file, written at its top. */
+  const general: string[] = [];
   const skipped: string[] = [];
   const skippedIds = new Set<number>();
   const paused: string[] = [];
@@ -1207,9 +1209,11 @@ export function convertKuma(
   const sites: Site[] = [];
   const onPage = new Set<number>();
   for (const page of data.statusPages) {
+    // A page Kuma has not published answers 404 there. Its domain is not
+    // made its host, so it stays private until someone gives it one.
     const site = newSite(
       page.title || page.slug || "Status",
-      page.domains[0] ?? "",
+      page.published ? (page.domains[0] ?? "") : "",
       `${/^[a-z0-9-]+$/.test(page.slug) ? page.slug : "status"}.example.com`,
       page.id,
     );
@@ -1234,6 +1238,12 @@ export function convertKuma(
     if (page.theme === "light" || page.theme === "dark")
       site.theme = page.theme;
     if (!page.searchEngineIndex) site.noindex = true;
+    if (!page.published) {
+      site.noindex = true;
+      site.notes.push(
+        "Kuma had not published this page. It is public here once it has a host: give it a password if it is not for everyone.",
+      );
+    }
     for (const group of page.groups) {
       for (const id of group.monitorIds) {
         const m = monitors.get(id);
@@ -1252,6 +1262,8 @@ export function convertKuma(
     (m) => !onPage.has(m.id) && m.type !== "group",
   );
   const restActive = rest.filter((m) => !isPaused(m));
+  // With no active monitor left over there is no site for them; the paused
+  // ones are still listed as paused.
   if (sites.length > 0 && restActive.length === 0)
     for (const m of rest) addMonitor(sites[0], m, undefined);
   if (sites.length === 0 || restActive.length > 0) {
@@ -1362,7 +1374,7 @@ export function convertKuma(
   }
   const used = new Set(sites.flatMap((s) => s.notificationIds));
   for (const d of destinations.values()) {
-    if (used.has(d.id)) attention.push(...d.notes);
+    if (used.has(d.id)) general.push(...d.notes);
     else skipped.push(`notification "${d.name}": no imported monitor uses it`);
   }
 
@@ -1521,21 +1533,33 @@ export function convertKuma(
     if (!placed)
       skipped.push(`${label}: it covers no monitor that was imported`);
     else
-      attention.push(
+      general.push(
         ...[...new Set(notes)].map((n) => `Maintenance "${m.title}": ${n}`),
       );
   }
 
   if (data.pinnedIncidents > 0)
-    attention.push(
+    general.push(
       `Kuma had ${plural(data.pinnedIncidents, "incident")} pinned to a status page. Write the ones you want as incident files (see Incidents in the README).`,
     );
   const resending = data.monitors.filter(
     (m) => m.resendInterval > 0 && !isPaused(m),
   );
   if (resending.length > 0)
-    attention.push(
+    general.push(
       `Kuma repeated alerts for ${plural(resending.length, "monitor")} while down. Set alerts.repeatMinutes if you want that here.`,
+    );
+  // Every check here times out after 10 seconds; Kuma's default was 48.
+  const waited = new Set(
+    sites
+      .flatMap((site) => site.entries)
+      .filter((e) => TIMED_TYPES.has(e.type) && e.kumaId !== null)
+      .map((e) => monitors.get(e.kumaId as number))
+      .filter((m): m is KumaMonitor => m !== undefined && m.timeout > 10),
+  );
+  if (waited.size > 0)
+    general.push(
+      `Kuma waited up to ${Math.max(...[...waited].map((m) => m.timeout))} seconds for an answer from ${plural(waited.size, "monitor")}; here a check that takes longer than 10 seconds fails.`,
     );
 
   // The configuration -------------------------------------------------------
@@ -1616,6 +1640,7 @@ export function convertKuma(
     docPairs.push({ key: "alerts", value: { pairs: alertPairs }, blank: true });
   docPairs.push({ key: "sites", value: siteMaps, blank: true });
 
+  attention.push(...general);
   for (const site of sites) {
     attention.push(...site.notes.map((n) => `${site.name}: ${n}`));
     for (const e of [...site.entries, ...site.components])
@@ -1638,6 +1663,7 @@ export function convertKuma(
           "run import-kuma again with --env to print them, with their values, for .env.",
         ]
       : []),
+    ...(general.length > 0 ? ["", ...general.map((n) => `check: ${n}`)] : []),
   ];
   const footer = [
     ...(skipped.length > 0
@@ -1655,6 +1681,7 @@ export function convertKuma(
 
   const env = [
     "# Secrets for the configuration import-kuma wrote. Keep this file private.",
+    "# Each value is as it is: use docker run --env-file, or env_file with format: raw in Compose.",
     ...usedSecrets.flatMap((s) => [
       `# ${s.about.replace(/[\r\n]+/g, " ")}`,
       envLine(s.name, s.value),
@@ -1736,10 +1763,11 @@ export function convertKuma(
   };
 }
 
-/** NAME=value for .env: bare when safe, quoted the way Docker Compose reads it. */
+/**
+ * NAME=value for .env, the value as it is: docker run --env-file takes it
+ * that way, and so does Compose's env_file with format: raw. A line break
+ * cannot be written, and becomes a space.
+ */
 function envLine(name: string, value: string): string {
-  if (/^[A-Za-z0-9_./:@+=,%?&~-]*$/.test(value)) return `${name}=${value}`;
-  if (!value.includes("'") && !/[\r\n]/.test(value))
-    return `${name}='${value}'`;
-  return `${name}="${value.replace(/[\\"$`]/g, "\\$&").replace(/\r?\n/g, "\\n")}"`;
+  return `${name}=${value.replace(/\r?\n/g, " ")}`;
 }

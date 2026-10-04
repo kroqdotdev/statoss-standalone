@@ -60,6 +60,8 @@ export interface KumaMonitor {
   expectedTlsAlert: string;
   manualStatus: number | null;
   resendInterval: number;
+  /** Seconds Kuma waited for an answer; 0 for its old default. */
+  timeout: number;
   notificationIds: number[];
 }
 
@@ -79,6 +81,8 @@ export interface KumaStatusPage {
   icon: string;
   theme: string;
   searchEngineIndex: boolean;
+  /** Kuma answers 404 for a page that is not published. */
+  published: boolean;
   domains: string[];
   /** Footer, CSS and analytics that have no place here. */
   extras: string[];
@@ -210,6 +214,7 @@ function monitorFrom(row: Row, notificationIds: number[]): KumaMonitor {
     expectedTlsAlert: text(pick("expected_tls_alert", "expectedTlsAlert")),
     manualStatus: int(pick("manual_status", "manualStatus")),
     resendInterval: int(pick("resend_interval", "resendInterval")) ?? 0,
+    timeout: Number(pick("timeout")) || 0,
     notificationIds,
   };
 }
@@ -296,6 +301,7 @@ export function readKumaDatabase(db: Database.Database): KumaData {
       description: text(row.description).trim(),
       icon: text(row.icon),
       theme: text(row.theme),
+      published: row.published === undefined ? true : bool(row.published),
       searchEngineIndex:
         row.search_engine_index === undefined
           ? true

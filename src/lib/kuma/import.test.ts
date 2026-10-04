@@ -308,6 +308,23 @@ describe("a database from Uptime Kuma", () => {
         expect(result.yaml).toContain("slack: ${SLACK_TEAM}");
       });
 
+      it("says at the top what concerns no one line", () => {
+        const result = convert(fixtureDb(version));
+        const top = result.yaml.split("\ncheckIntervalSeconds")[0];
+        expect(top).toContain(
+          '# check: Alerts, "n8n hook": the receiver gets StatOSS\'s JSON body',
+        );
+        // Kuma's default timeout is 48 seconds.
+        expect(top).toMatch(
+          /# check: Kuma waited up to 48 seconds for an answer from \d+ monitors; here a check that takes longer than 10 seconds fails\./,
+        );
+        expect(result.attention).toEqual(
+          expect.arrayContaining([
+            expect.stringMatching(/^Kuma waited up to 48/),
+          ]),
+        );
+      });
+
       it("brings maintenance over, in UTC, and the weekly one as a repeat", () => {
         const config = load(convert(fixtureDb(version)));
         expect(site(config, "Example").maintenance).toEqual([
@@ -888,7 +905,8 @@ describe("monitors", () => {
     expect(monitor(config.sites[0], "Spaced").headers).toEqual({
       Authorization: "Bearer a b: c #d",
     });
-    expect(result.env).toContain("AUTH_SPACED='a b: c #d'");
+    // As docker run --env-file reads it: the value as it is.
+    expect(result.env).toContain("\nAUTH_SPACED=a b: c #d\n");
     expect(monitor(config.sites[0], "Quoted").headers).toEqual({
       "X-Api-Key": 'say "hi" \\ there',
     });
@@ -918,10 +936,12 @@ describe("sites", () => {
           custom_css: "a{}",
         }),
         page(3, "Bad Slug!", { title: "Third" }),
+        page(4, "draft", { title: "Draft", published: 0 }),
       ],
       status_page_cname: [
         { status_page_id: 1, domain: "Status.Example.com" },
         { status_page_id: 2, domain: "status.example.com" },
+        { status_page_id: 4, domain: "draft.example.org" },
       ],
       group: [
         { id: 1, name: "Second", status_page_id: 1, weight: 2, public: 1 },
@@ -948,9 +968,15 @@ describe("sites", () => {
     ]);
     expect(site(config, "Docs").host).toBe("docs.example.com");
     expect(site(config, "Third").host).toBe("status-2.example.com");
-    expect(config.sites).toHaveLength(3);
+    // Kuma answered 404 for a page it had not published: it gets no real host.
+    expect(site(config, "Draft")).toMatchObject({
+      host: "draft.example.com",
+      noindex: true,
+    });
+    expect(config.sites).toHaveLength(4);
     const notes = result.attention.join("\n");
     expect(notes).toContain("Main: the description was cut to 400 characters.");
+    expect(notes).toContain("Draft: Kuma had not published this page.");
     expect(notes).toContain(
       "Docs: the logo is upload/logo2.png in Kuma's data folder.",
     );
@@ -1430,10 +1456,7 @@ describe("the import-kuma command", () => {
         .filter((line) => /^[A-Z]/.test(line))
         .map((line) => {
           const at = line.indexOf("=");
-          return [
-            line.slice(0, at),
-            line.slice(at + 1).replace(/^'(.*)'$/, "$1"),
-          ];
+          return [line.slice(0, at), line.slice(at + 1)];
         }),
     );
     expect(parseConfig(yaml.stdout, env).sites).toHaveLength(3);

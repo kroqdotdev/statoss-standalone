@@ -4,11 +4,12 @@
 //   import-kuma <kuma.db | Kuma's data folder | backup.json> > config.yaml
 //   import-kuma --env <same file> > .env
 //
-// Runs under plain Node (22.18 or newer), which reads the TypeScript itself:
-// in the image as the import-kuma command, and from a clone as
-// `pnpm -s import-kuma`.
+// Runs under plain Node, which reads the TypeScript itself (by default from
+// 22.18; `pnpm import-kuma` turns it on from 22.6): in the image as the
+// import-kuma command, and from a clone as `pnpm import-kuma`.
 
-import { basename } from "node:path";
+import { statSync } from "node:fs";
+import { basename, join } from "node:path";
 import { convertKuma } from "../src/lib/kuma/convert.mts";
 import { readKuma } from "../src/lib/kuma/read.mts";
 
@@ -43,7 +44,14 @@ function main(argv: string[]): number {
   const [path] = args;
   let result;
   try {
-    result = convertKuma(readKuma(path), { file: basename(path) });
+    // The header names the file read: kuma.db in a folder that was given.
+    let file = basename(path);
+    try {
+      if (statSync(path).isDirectory()) file = join(file, "kuma.db");
+    } catch {
+      // readKuma says what is wrong with the path.
+    }
+    result = convertKuma(readKuma(path), { file });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`import-kuma: ${message}\n`);
