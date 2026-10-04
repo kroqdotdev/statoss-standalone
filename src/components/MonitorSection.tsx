@@ -151,6 +151,7 @@ export function MonitorSection({
         timed={monitor.timed}
         spans={monitor.spans}
         marks={marks}
+        now={now}
       />
       <FailureList runs={monitor.runs} now={now} />
     </section>

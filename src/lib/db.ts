@@ -401,11 +401,12 @@ export interface AutoIncidentRow {
 
 const AUTO_COLUMNS = `id, site, monitor, started_at AS startedAt, resolved_at AS resolvedAt, error`;
 
+/** Opens an outage that began at `startedAt`, its first failed check. */
 export function openAutoIncident(
   db: Database.Database,
   site: string,
   monitor: string,
-  now: number,
+  startedAt: number,
   error: string | null,
 ): AutoIncidentRow | null {
   const open = db
@@ -420,12 +421,12 @@ export function openAutoIncident(
       `INSERT INTO auto_incident (site, monitor, started_at, error)
        VALUES (?, ?, ?, ?)`,
     )
-    .run(site, monitor, now, error);
+    .run(site, monitor, startedAt, error);
   return {
     id: Number(result.lastInsertRowid),
     site,
     monitor,
-    startedAt: now,
+    startedAt,
     resolvedAt: null,
     error,
   };
@@ -492,22 +493,36 @@ export function markNotified(
   ).run(site, key, now);
 }
 
-/** The time of the first failed check since the monitor last passed one. */
+/**
+ * The time of the first failed check since the monitor last passed one, as
+ * the list of failures under its strip has it. A gap of more than
+ * `maxGapMs` between two failures, such as a server that was off, ends
+ * the search there: the outage is not dated from before it.
+ */
 export function failingSince(
   db: Database.Database,
   site: string,
   monitor: string,
+  maxGapMs = Infinity,
 ): number | null {
-  const row = db
+  const failed = db
     .prepare(
-      `SELECT MIN(ts) AS ts FROM checks
+      `SELECT ts FROM checks
        WHERE site = ? AND monitor = ? AND ok = 0 AND maintenance = 0
          AND ts > COALESCE(
            (SELECT MAX(ts) FROM checks
-            WHERE site = ? AND monitor = ? AND ok = 1 AND maintenance = 0), 0)`,
+            WHERE site = ? AND monitor = ? AND ok = 1 AND maintenance = 0), 0)
+       ORDER BY ts DESC LIMIT 1000`,
     )
-    .get(site, monitor, site, monitor) as { ts: number | null };
-  return row.ts;
+    .pluck()
+    .all(site, monitor, site, monitor) as number[];
+  if (failed.length === 0) return null;
+  let first = failed[0];
+  for (const at of failed.slice(1)) {
+    if (first - at > maxGapMs) break;
+    first = at;
+  }
+  return first;
 }
 
 // ---------------------------------------------------------------------------

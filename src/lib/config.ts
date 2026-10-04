@@ -91,6 +91,20 @@ export const MAX_SLOW_THRESHOLD_MS = DEFAULT_TIMEOUT_MS - 1;
 
 const HOSTNAME = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$|^[0-9A-Fa-f:]+$/;
 
+/** Whether a header name can be sent: letters, digits and dashes. */
+export function isHeaderName(name: string): boolean {
+  return /^[A-Za-z0-9-]+$/.test(name);
+}
+
+/**
+ * Whether a header value can be sent: tabs and bytes up to 255, no other
+ * controls. fetch refuses a character above U+00FF, such as a curly quote,
+ * and a line break would start a second header.
+ */
+export function isHeaderValue(value: string): boolean {
+  return /^[\t\x20-\x7e\x80-\xff]*$/.test(value);
+}
+
 /** Which fields each type reads, besides name, type, group and intervalSeconds. */
 const TYPE_FIELDS: Record<MonitorType, string[]> = {
   http: [
@@ -139,7 +153,9 @@ const monitorSchema = z
     /** Monitors with the same group are shown together on the page. */
     group: z.string().min(1).optional(),
     method: z.enum(METHODS).optional(),
-    headers: z.record(z.string().min(1), z.string()).optional(),
+    // Trimmed as fetch would trim it: a value written as a YAML block
+    // ends in a line break.
+    headers: z.record(z.string().min(1), z.string().trim()).optional(),
     body: z.string().optional(),
     expectStatus: z.number().int().min(100).max(599).optional(),
     /** Text the response body must contain, or must not (keywordMode). */
@@ -172,6 +188,18 @@ const monitorSchema = z
       fail("port", "a tcp monitor needs a port");
     if (m.type === "heartbeat" && m.token === undefined)
       fail("token", "a heartbeat monitor needs a token");
+    for (const [header, value] of Object.entries(m.headers ?? {})) {
+      if (!isHeaderName(header))
+        fail(
+          "headers",
+          `the header name "${header}" of monitor "${m.name}" can only have letters, digits and dashes`,
+        );
+      else if (!isHeaderValue(value))
+        fail(
+          "headers",
+          `the ${header} header of monitor "${m.name}" has a character a request cannot carry, such as a curly quote or a line break`,
+        );
+    }
   })
   .transform((m) => ({
     ...m,

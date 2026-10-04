@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import {
   autoIncidents,
+  failingSince,
   getState,
   insertCheck,
   listDeploys,
@@ -82,6 +83,49 @@ describe("checks", () => {
       ts: number;
     }>;
     expect(remaining.map((r) => r.ts)).toEqual([300]);
+  });
+});
+
+describe("failingSince", () => {
+  const check = (
+    db: Database.Database,
+    ts: number,
+    ok: 0 | 1,
+    maintenance: 0 | 1 = 0,
+  ) =>
+    insertCheck(db, {
+      site: "s",
+      monitor: "m",
+      ts,
+      ok,
+      statusCode: ok ? 200 : 500,
+      latencyMs: 50,
+      error: ok ? null : "unexpected status 500",
+      maintenance,
+    });
+
+  it("finds the first failed check since the last pass", () => {
+    const db = memDb();
+    expect(failingSince(db, "s", "m")).toBeNull();
+    check(db, 1000, 0);
+    check(db, 2000, 1);
+    check(db, 3000, 0);
+    check(db, 4000, 1, 1);
+    check(db, 5000, 0);
+    expect(failingSince(db, "s", "m")).toBe(3000);
+    check(db, 6000, 1);
+    expect(failingSince(db, "s", "m")).toBeNull();
+  });
+
+  it("stops at a gap between two failures longer than the one allowed", () => {
+    const db = memDb();
+    check(db, 1000, 1);
+    check(db, 2000, 0);
+    check(db, 100_000, 0);
+    check(db, 160_000, 0);
+    expect(failingSince(db, "s", "m", 60_000)).toBe(100_000);
+    expect(failingSince(db, "s", "m", 98_000)).toBe(2000);
+    expect(failingSince(db, "s", "m")).toBe(2000);
   });
 });
 

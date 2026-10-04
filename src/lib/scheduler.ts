@@ -46,7 +46,7 @@ import { bumpDataVersion } from "./data-version";
 import { readIncidentFiles } from "./incident-files";
 import { inMaintenance, maintenanceView } from "./incidents";
 import { dueNotices } from "./notices";
-import { applyResult, type CheckVerdict } from "./state";
+import { applyResult, lateAfterMs, type CheckVerdict } from "./state";
 import { refreshVendors } from "./vendors";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -184,6 +184,16 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
   const verdict: CheckVerdict = { ok: outcome.ok, slow };
   const prev = getState(db, job.site, job.monitor);
   const { next, transition } = applyResult(prev, verdict, ts);
+  // Down since the first failed check, as the list of failures has it, not
+  // the second, which is when it could be called.
+  if (transition === "went-down")
+    next.since =
+      failingSince(
+        db,
+        job.site,
+        job.monitor,
+        lateAfterMs(job.intervalSeconds),
+      ) ?? next.since;
   let lastAlertAt = prev?.lastAlertAt ?? null;
   const base = {
     site: job.site,
@@ -198,11 +208,10 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
       ...base,
       kind: transition,
       error: outcome.error,
-      downSince: prev?.since,
-      failingSince:
-        transition === "went-down"
-          ? failingSince(db, job.site, job.monitor)
-          : null,
+      // On the way down the outage's start; after it, when the state that
+      // ended began.
+      downSince: transition === "went-down" ? next.since : prev?.since,
+      failingSince: transition === "went-down" ? next.since : null,
       wasSlow: transition === "went-down" && prev?.status === "slow",
       stateSince: next.since,
       latencyMs: outcome.latencyMs,
@@ -232,7 +241,7 @@ export async function runJob(deps: SchedulerDeps, job: Job): Promise<void> {
   });
 
   if (transition === "went-down") {
-    openAutoIncident(db, job.site, job.monitor, ts, outcome.error);
+    openAutoIncident(db, job.site, job.monitor, next.since, outcome.error);
   } else if (transition === "recovered") {
     resolveAutoIncident(db, job.site, job.monitor, ts);
   }

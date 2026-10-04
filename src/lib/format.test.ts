@@ -44,6 +44,24 @@ describe("formatUtcDateTime", () => {
     expect(formatUtcDateTime(Date.UTC(2023, 11, 24, 8, 5), NOW)).toBe(
       "24 Dec 2023 08:05",
     );
+    expect(formatUtcDateTime(Date.UTC(2024, 0, 2, 8, 5), NOW)).toBe(
+      "2 Jan 08:05",
+    );
+  });
+});
+
+describe("formatUtcDay", () => {
+  it("gives a day its year only when it is not now's", () => {
+    expect(formatUtcDay(Date.UTC(2023, 7, 12), "UTC", NOW)).toBe("12 Aug 2023");
+    expect(formatUtcDay(Date.UTC(2024, 0, 2), "UTC", NOW)).toBe("2 Jan");
+    expect(formatUtcDay(Date.UTC(2023, 7, 12))).toBe("12 Aug");
+  });
+
+  it("reads the year in the zone it is given", () => {
+    // New Year's Eve in Los Angeles is already New Year's Day in UTC.
+    const eve = Date.UTC(2024, 0, 1, 5);
+    expect(formatUtcDay(eve, "America/Los_Angeles", NOW)).toBe("31 Dec 2023");
+    expect(formatUtcDay(eve, "UTC", NOW)).toBe("1 Jan");
   });
 });
 

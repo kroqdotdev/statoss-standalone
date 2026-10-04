@@ -124,10 +124,15 @@ export function formatUtcDate(ts: number, zone = "UTC"): string {
   return `${p.day} ${MONTHS[p.month]} ${p.year}`;
 }
 
-/** "12 Aug". */
-export function formatUtcDay(ts: number, zone = "UTC"): string {
+/**
+ * "12 Aug". With `now`, a day in another year than now's says which:
+ * "12 Aug 2025".
+ */
+export function formatUtcDay(ts: number, zone = "UTC", now?: number): string {
   const p = parts(ts, zone);
-  return `${p.day} ${MONTHS[p.month]}`;
+  const year =
+    now !== undefined && parts(now, zone).year !== p.year ? ` ${p.year}` : "";
+  return `${p.day} ${MONTHS[p.month]}${year}`;
 }
 
 /** "Tue 14:00". */

@@ -65,15 +65,26 @@ interface Props {
   spans?: StripSpan[];
   /** Deploys, drawn as dashed lines and named on their bars. */
   marks?: StripMark[];
+  /**
+   * When the page was read, so that a date from another year says which.
+   * The newest bar's start when left out.
+   */
+  now?: number;
 }
 
 /**
  * When a bucket is, in the visitor's zone. A day's bucket is a UTC day
- * whoever looks at it, so it is named by its UTC date.
+ * whoever looks at it, so it is named by its UTC date, with its year when
+ * that is not now's.
  */
-function bucketLabel(ts: number, range: RangeKey, zone: string): string {
+function bucketLabel(
+  ts: number,
+  range: RangeKey,
+  zone: string,
+  now: number,
+): string {
   const { bucketMs } = RANGES[range];
-  if (bucketMs === DAY_MS) return formatUtcDay(ts);
+  if (bucketMs === DAY_MS) return formatUtcDay(ts, "UTC", now);
   const end = formatUtcClock(ts + bucketMs, zone);
   return range === "7d"
     ? `${formatUtcWeekdayClock(ts, zone)} to ${end}`
@@ -128,9 +139,10 @@ function describeBucket(
   b: Bucket,
   range: RangeKey,
   zone: string,
+  now: number,
   kind: "checks" | "states",
 ): string {
-  const when = bucketLabel(b.ts, range, zone);
+  const when = bucketLabel(b.ts, range, zone, now);
   if (kind === "states") return `${when}: ${describeState(b)}`;
   if (b.total === 0 && b.maintenance === 0) return `${when}: no checks`;
   if (b.total === 0)
@@ -203,6 +215,7 @@ export function CheckStrip({
   kind = "checks",
   spans = [],
   marks = [],
+  now: givenNow,
 }: Props) {
   // The bar read out, by its time rather than its place: when the page
   // refreshes into a new slot the bars move one to the left, and the
@@ -223,6 +236,8 @@ export function CheckStrip({
   const stripRef = useRef<HTMLDivElement>(null);
   const zone = useViewerZone();
   const n = buckets.length;
+  // The newest bar holds now, so its UTC day is in now's UTC year.
+  const now = givenNow ?? buckets[n - 1]?.ts ?? 0;
   const { bucketMs } = RANGES[range];
   const scaleMax = Math.max(...buckets.map((b) => b.latencyMs ?? 0), 1);
   const ticks = axisTicks(buckets, range, zone);
@@ -283,7 +298,7 @@ export function CheckStrip({
   const readout =
     activeBucket === null
       ? windowLine
-      : `${describeBucket(activeBucket, range, zone, kind)}${
+      : `${describeBucket(activeBucket, range, zone, now, kind)}${
           activeBucket.total > 0 || activeBucket.maintenance > 0 ? "." : ""
         }${touching(spans, activeBucket, bucketMs)}${deployed(marks, activeBucket, bucketMs)}`;
   const openedIndex =
@@ -400,8 +415,9 @@ export function CheckStrip({
           monitor={name}
           from={opened}
           to={opened + bucketMs}
-          label={bucketLabel(opened, range, zone)}
+          label={bucketLabel(opened, range, zone, now)}
           dayLong={bucketMs >= DAY_MS}
+          now={now}
           timed={timed}
           onClose={() => {
             setOpened(null);
