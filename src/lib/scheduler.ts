@@ -45,6 +45,7 @@ import {
   recordComponentStates,
 } from "./component-history";
 import { bumpDataVersion } from "./data-version";
+import { finishHours } from "./hour-figures";
 import { readIncidentFiles } from "./incident-files";
 import { inMaintenance, siteMaintenanceViews } from "./maintenance";
 import { dueNotices } from "./notices";
@@ -56,7 +57,8 @@ import {
 } from "./vendor-alerts";
 import { refreshVendors } from "./vendors";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 const MINUTE_MS = 60_000;
 
 /** Everything one tick needs to know about a monitor. */
@@ -472,6 +474,9 @@ export function startScheduler(): void {
   };
 
   let lastPruneDay = "";
+  // Hours get their medians from here on once the ones from before a
+  // start are done: all of them, a batch a round, after an upgrade.
+  let finishFrom = 0;
   // Rounds may overlap: a round whose last checks are still waiting on a
   // timeout does not hold up the next, which starts what is due and not
   // running (see dueJobs).
@@ -496,6 +501,10 @@ export function startScheduler(): void {
           console.error("[vendors] refresh failed", err),
         );
       await tick(deps);
+      const finished = finishHours(db, jobs, Date.now(), {
+        since: finishFrom,
+      });
+      if (!finished.more) finishFrom = Date.now() - 3 * HOUR_MS;
       sendDueNotices(
         config,
         db,
@@ -505,9 +514,15 @@ export function startScheduler(): void {
       const day = new Date().toISOString().slice(0, 10);
       if (day !== lastPruneDay) {
         lastPruneDay = day;
+        const checksBefore = Date.now() - config.retentionDays * DAY_MS;
+        // Hours whose checks are about to go take their medians first.
+        finishHours(db, jobs, Date.now(), {
+          before: Math.ceil(checksBefore / HOUR_MS) * HOUR_MS,
+          limit: Infinity,
+        });
         const deleted = pruneOldChecks(
           db,
-          Date.now() - config.retentionDays * DAY_MS,
+          checksBefore,
           Date.now() - HISTORY_DAYS * DAY_MS,
         );
         pruneComponentStates(db, Date.now() - HISTORY_DAYS * DAY_MS);

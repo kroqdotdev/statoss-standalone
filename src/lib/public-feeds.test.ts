@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { clearCache } from "./cache";
 import { parseConfig } from "./config";
 import { insertCheck, openDb, setState } from "./db";
 import type { IncidentView, SiteIncidents } from "./incidents";
@@ -29,6 +30,9 @@ const NOW = Date.UTC(2026, 8, 12, 15);
 const NONE: SiteIncidents = { current: [], past: [] };
 
 describe("statusJson", () => {
+  // The day's response times are kept between calls, by site and monitor.
+  beforeEach(() => clearCache());
+
   it("reports each monitor's state and the last day's figures", () => {
     const db = openDb(":memory:");
     setState(db, {
@@ -75,7 +79,8 @@ describe("statusJson", () => {
         stale: false,
         expiresAt: null,
         uptime24h: 66.67,
-        latencyMs24h: 200,
+        // The median, by nearest rank: the lower of the two.
+        latencyMs24h: 100,
       },
       {
         name: "API",
@@ -92,6 +97,23 @@ describe("statusJson", () => {
     ]);
     expect(json.incidents).toEqual([]);
     expect(json.maintenance).toEqual([]);
+  });
+
+  it("gives the day's median response time, which one slow check does not move", () => {
+    const db = openDb(":memory:");
+    for (let i = 0; i < 60; i++)
+      insertCheck(db, {
+        site: SITE.name,
+        monitor: "API",
+        ts: NOW - (i + 1) * 60_000,
+        ok: 1,
+        statusCode: 200,
+        latencyMs: i === 30 ? 9000 : 120 + (i % 3),
+        error: null,
+      });
+    const api = statusJson(db, SITE, NONE, NOW).monitors[1];
+    expect(api.name).toBe("API");
+    expect(api.latencyMs24h).toBe(121);
   });
 
   it("lets an open incident set the headline", () => {

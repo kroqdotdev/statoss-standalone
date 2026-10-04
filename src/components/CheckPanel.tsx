@@ -88,8 +88,8 @@ export function CheckPanel({
         ...(detail.latency && timed
           ? [
               detail.latency.min !== null && detail.latency.max !== null
-                ? `${formatCount(detail.latency.min)} to ${formatCount(detail.latency.max)} ms, average ${formatCount(detail.latency.mean)} ms`
-                : `average ${formatCount(detail.latency.mean)} ms`,
+                ? `${formatCount(detail.latency.min)} to ${formatCount(detail.latency.max)} ms, median ${formatCount(detail.latency.median)} ms`
+                : `median ${formatCount(detail.latency.median)} ms`,
             ]
           : []),
       ].join(", ")

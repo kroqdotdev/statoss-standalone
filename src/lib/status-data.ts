@@ -26,13 +26,25 @@ import {
   type Bucket,
   bucketSeries,
   failureRuns,
+  hourPeriods,
+  passedReadings,
   rangeWindow,
   rollupSeries,
   rollupSummary,
+  type WindowSummary,
   windowSummary,
 } from "./queries";
 import { RANGE_TTL_MS, RANGES, type RangeKey } from "./ranges";
 import { siteMaintenanceViews } from "./maintenance";
+import {
+  rawResponseTimes,
+  rollupResponseTimes,
+  windowFigures,
+  type Figures,
+  type Grid,
+  type Reading,
+  type ResponseTimes,
+} from "./response-times";
 import { checkLate, type MonitorStatus } from "./state";
 import {
   componentState,
@@ -50,7 +62,8 @@ const DAY_MS = 24 * HOUR_MS;
  * from the hourly totals and kept for minutes, not ticks; their list of
  * failed runs comes from the checks, as far back as those are kept, and is
  * read again as soon as the monitor's state or its latest result changes,
- * so a run never reads as ongoing after the monitor is back.
+ * so a run never reads as ongoing after the monitor is back. Response
+ * times are medians (response-times.ts).
  */
 export function monitorView(
   db: Database.Database,
@@ -64,35 +77,66 @@ export function monitorView(
 ): MonitorView {
   const spec = RANGES[range];
   const { start, end } = rangeWindow(spec, now);
+  const grid: Grid = { start, bucketMs: spec.bucketMs, buckets: spec.buckets };
   const state = getState(db, site.name, cp.name);
   const threshold = cp.slowThresholdMs ?? null;
   const key = `${site.name}\0${cp.name}`;
+  // A heartbeat, a certificate or a domain has no response time to show.
+  const timed = LATENCY_TYPES.has(cp.type);
   const last24h = cached(`${key}\0day`, () =>
-    windowSummary(db, site.name, cp.name, now - DAY_MS, now + 1, threshold),
+    withFigures(
+      windowSummary(db, site.name, cp.name, now - DAY_MS, now + 1, threshold),
+      timed ? dayFigures(db, site.name, cp.name, now) : null,
+    ),
   );
   const runsSince = Math.max(start, now - retentionDays * DAY_MS);
   const data =
     RANGE_TTL_MS[range] === 0
-      ? cached(`${key}\0${range}`, () => ({
-          buckets: bucketSeries(db, site.name, cp.name, spec, now, threshold),
-          summary: windowSummary(db, site.name, cp.name, start, end, threshold),
-          runs: failureRuns(db, site.name, cp.name, start, end),
-        }))
+      ? cached(`${key}\0${range}`, () => {
+          const times = timed
+            ? rawResponseTimes(dayReadings(db, site.name, cp.name, now), grid)
+            : null;
+          return {
+            buckets: withTimes(
+              bucketSeries(db, site.name, cp.name, spec, now, threshold),
+              times,
+            ),
+            summary: withFigures(
+              windowSummary(db, site.name, cp.name, start, end, threshold),
+              times,
+            ),
+            runs: failureRuns(db, site.name, cp.name, start, end),
+          };
+        })
       : cachedFor(
           `${key}\0${range}`,
           `${end}\0${state?.status}\0${state?.since}\0${lastCheckOk(db, site.name, cp.name)}`,
           RANGE_TTL_MS[range],
-          () => ({
-            buckets: rollupSeries(db, site.name, cp.name, spec, now),
-            summary: rollupSummary(db, site.name, cp.name, start, end),
-            runs: failureRuns(db, site.name, cp.name, runsSince, end),
-          }),
+          () => {
+            const times = timed
+              ? rollupResponseTimes(
+                  hourPeriods(db, site.name, cp.name, start, end, now),
+                  grid,
+                )
+              : null;
+            return {
+              buckets: withTimes(
+                rollupSeries(db, site.name, cp.name, spec, now),
+                times,
+              ),
+              summary: withFigures(
+                rollupSummary(db, site.name, cp.name, start, end),
+                times,
+              ),
+              runs: failureRuns(db, site.name, cp.name, runsSince, end),
+            };
+          },
           now,
         );
   return {
     name: cp.name,
     type: cp.type,
-    timed: LATENCY_TYPES.has(cp.type),
+    timed,
     expiresAt: state?.expiresAt ?? null,
     group: cp.group ?? null,
     slowThresholdMs: threshold,
@@ -102,6 +146,66 @@ export function monitorView(
     last24h,
     spans: stripSpans(views, cp.name, start, end, now),
   };
+}
+
+/**
+ * A monitor's passed checks from an hour before the last 24 hours on, so
+ * the first bars have readings around them to take a median of. Read once
+ * per check.
+ */
+function dayReadings(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+  now: number,
+): Reading[] {
+  return cached(`${site}\0${monitor}\0readings`, () =>
+    passedReadings(
+      db,
+      site,
+      monitor,
+      now - DAY_MS - HOUR_MS,
+      Number.MAX_SAFE_INTEGER,
+    ),
+  );
+}
+
+/**
+ * A monitor's response time over the last 24 hours: the median of its
+ * checks and the 95th percentile. The same figure on the page and in
+ * status.json.
+ */
+export function dayFigures(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+  now: number,
+): Figures {
+  return cached(`${site}\0${monitor}\0figures`, () =>
+    windowFigures(dayReadings(db, site, monitor, now), now - DAY_MS, now + 1),
+  );
+}
+
+/** Bars with the response times the page shows, or with none. */
+export function withTimes(
+  buckets: Bucket[],
+  times: Pick<ResponseTimes, "buckets"> | null,
+): Bucket[] {
+  return buckets.map((b, i) => {
+    const ms = times?.buckets[i] ?? null;
+    // A bar whose checks all failed has no response time to show.
+    return { ...b, latencyMs: b.up > 0 ? ms : null };
+  });
+}
+
+/** A window's totals with its median and 95th percentile, or with none. */
+export function withFigures<T extends WindowSummary>(
+  summary: T,
+  figures: Figures | null,
+): T {
+  return figures === null || summary.up === 0
+    ? { ...summary, latencyMs: null, latencyP95: null }
+    : { ...summary, latencyMs: figures.medianMs, latencyP95: figures.p95Ms };
 }
 
 /** A site's error budget for the month so far, or null without a target. */

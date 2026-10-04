@@ -6,6 +6,7 @@ import {
   type RangeKey,
   type RangeSpec,
 } from "./ranges";
+import { hoursOf, type HourFigures, type Reading } from "./response-times";
 
 export { DEFAULT_RANGE, RANGES, parseRange, type RangeKey, type RangeSpec };
 
@@ -33,7 +34,11 @@ export interface Bucket {
   slow: number;
   /** Checks that ran inside a maintenance window: shown, not counted. */
   maintenance: number;
-  /** Mean response time of the successful checks, or null without any. */
+  /**
+   * The response time the bar shows, or null without one. The queries
+   * here give the mean; the page puts the median in its place
+   * (response-times.ts).
+   */
   latencyMs: number | null;
 }
 
@@ -94,7 +99,10 @@ export interface WindowSummary {
   timeouts: number;
   slow: number;
   maintenance: number;
+  /** The response time: the mean from the queries here, the median on the page. */
   latencyMs: number | null;
+  /** On the page: 95% of the checks came in under this. */
+  latencyP95?: number | null;
   /** How many readings the mean is over, when the totals came from hours. */
   latencyN?: number;
   /** How many hours had a check, when the totals came from hours. */
@@ -199,6 +207,81 @@ export function windowSummary(
       sinceMs,
       untilMs,
     ) as WindowSummary;
+}
+
+/**
+ * Every passed check with a response time in [since, until), oldest first.
+ * Checks made during maintenance are left out, as they are from the totals.
+ */
+export function passedReadings(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+  since: number,
+  until: number,
+): Reading[] {
+  return db
+    .prepare(
+      `SELECT ts, latency_ms AS ms FROM checks
+       WHERE site = ? AND monitor = ? AND ts >= ? AND ts < ?
+         AND ok = 1 AND maintenance = 0 AND latency_ms IS NOT NULL
+       ORDER BY ts`,
+    )
+    .all(site, monitor, since, until) as Reading[];
+}
+
+/**
+ * Each hour in [start, end) with response times: how many, their median
+ * and their 95th percentile. An hour not yet given those (finishHours) is
+ * read from the checks when it is this hour or the last; an older one,
+ * whose checks may be gone, stands in with its mean.
+ */
+export function hourPeriods(
+  db: Database.Database,
+  site: string,
+  monitor: string,
+  start: number,
+  end: number,
+  now = Date.now(),
+): HourFigures[] {
+  const rows = db
+    .prepare(
+      `SELECT ts, latency_n AS n, latency_sum AS sum,
+              latency_p50 AS p50, latency_p95 AS p95
+       FROM check_hour
+       WHERE site = ? AND monitor = ? AND ts >= ? AND ts < ? AND latency_n > 0`,
+    )
+    .all(site, monitor, start, end) as Array<{
+    ts: number;
+    n: number;
+    sum: number;
+    p50: number | null;
+    p95: number | null;
+  }>;
+  const recent = Math.floor(now / HOUR_MS) * HOUR_MS - HOUR_MS;
+  const open = rows.filter((r) => r.p50 === null && r.ts >= recent);
+  const read =
+    open.length === 0
+      ? new Map<number, HourFigures>()
+      : new Map(
+          hoursOf(
+            passedReadings(
+              db,
+              site,
+              monitor,
+              Math.min(...open.map((r) => r.ts)),
+              end,
+            ),
+          ).map((h) => [h.ts, h]),
+        );
+  return rows.map((r) => {
+    if (r.p50 !== null && r.p95 !== null)
+      return { ts: r.ts, n: r.n, p50: r.p50, p95: r.p95 };
+    const fresh = read.get(r.ts);
+    if (fresh) return fresh;
+    const mean = r.sum / r.n;
+    return { ts: r.ts, n: r.n, p50: mean, p95: mean };
+  });
 }
 
 export interface FailureRun {

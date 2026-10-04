@@ -16,6 +16,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 - A host's addresses are tried side by side, the next one starting a quarter second after the last, instead of each being dropped after a quarter second, so a far host with several addresses no longer reads a quarter second slower for each one. Every HTTP check opens its own connection, with a full TLS handshake, and times are read from a clock that a change to the system time does not move.
 - The image sets `UV_THREADPOOL_SIZE=32`, so a few host lookups that hang do not hold up the other checks' lookups.
+- Response times are medians. On the 24-hour view each bar is the median of the eleven checks around it, so one slow check makes no spike and the bars hold still, and above the strip are the median and the figure 95% of checks came in under, which also tops the scale. On the 7-day view a bar is its hour's median, and on the 90-day and 1-year views its day's.
+- Every hour keeps the median and 95th percentile of its response times, taken from its checks a few minutes after it ends. A 0.3 database has them taken for the hours whose checks it still keeps, a batch every round after the first start; older hours keep their mean.
+- `status.json`'s `latencyMs24h` is the median over the last 24 hours, the same figure as the page, instead of the mean.
+- The checks behind a bar give their median instead of their mean: `/checks` answers with `latency.median` in place of `latency.mean`.
+- A bar is drawn slow when half its checks or more were slow, even when its median is under the line.
 
 ### Fixed
 

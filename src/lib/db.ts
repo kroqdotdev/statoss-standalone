@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS check_hour (
   maintenance INTEGER NOT NULL DEFAULT 0,
   latency_sum INTEGER NOT NULL DEFAULT 0,
   latency_n INTEGER NOT NULL DEFAULT 0,
+  latency_p50 INTEGER,
+  latency_p95 INTEGER,
   PRIMARY KEY (site, monitor, ts)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS component_state (
@@ -110,6 +112,8 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ["monitor_state", "last_alert_at", "INTEGER"],
   ["monitor_state", "checked_at", "INTEGER"],
   ["monitor_state", "expires_at", "INTEGER"],
+  ["check_hour", "latency_p50", "INTEGER"],
+  ["check_hour", "latency_p95", "INTEGER"],
 ];
 
 /**
@@ -208,7 +212,8 @@ const HOUR_MS = 60 * 60 * 1000;
  * The hourly totals of a database that has checks but no totals yet: one
  * from before 0.3, on its first start. Slow counts start at zero, since the
  * threshold of the time is not known; the strips judge slowness by the
- * hour's mean response time anyway.
+ * hour's median response time anyway, which finishHours takes from the
+ * checks.
  */
 function backfillHours(db: Database.Database): void {
   if (db.prepare("SELECT 1 FROM check_hour LIMIT 1").get() !== undefined)
@@ -233,7 +238,8 @@ function backfillHours(db: Database.Database): void {
 /**
  * Stores one check and adds it to its hour's totals, together. The totals
  * are what the longer views and the error budget read, and they outlive
- * the rows themselves.
+ * the rows themselves. A response time that lands in an hour already given
+ * its median and 95th percentile clears them, for finishHours to take again.
  */
 export function insertCheck(db: Database.Database, row: CheckRow): void {
   const maintenance = row.maintenance ?? 0;
@@ -270,7 +276,9 @@ export function insertCheck(db: Database.Database, row: CheckRow): void {
          slow = slow + excluded.slow,
          maintenance = maintenance + excluded.maintenance,
          latency_sum = latency_sum + excluded.latency_sum,
-         latency_n = latency_n + excluded.latency_n`,
+         latency_n = latency_n + excluded.latency_n,
+         latency_p50 = CASE WHEN excluded.latency_n > 0 THEN NULL ELSE latency_p50 END,
+         latency_p95 = CASE WHEN excluded.latency_n > 0 THEN NULL ELSE latency_p95 END`,
     ).run(
       row.site,
       row.monitor,

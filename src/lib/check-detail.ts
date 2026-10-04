@@ -1,7 +1,8 @@
 import type Database from "better-sqlite3";
 import type { CheckTiming } from "./checker";
 import { describeError } from "./format";
-import { rollupSummary } from "./queries";
+import { hourPeriods, passedReadings, rollupSummary } from "./queries";
+import { median, periodQuantile } from "./response-times";
 
 /**
  * What a bar on a strip opens to: the checks behind it, one by one. Read
@@ -46,8 +47,12 @@ export interface CheckDetail {
   timeouts: number;
   slow: number;
   maintenance: number;
-  /** min and max are null when the figures come from the hours' totals, which keep a mean only. */
-  latency: { mean: number; min: number | null; max: number | null } | null;
+  /**
+   * The median response time, fastest and slowest. min and max are null
+   * when the figures come from the hours' totals, which keep the median
+   * and not the extremes.
+   */
+  latency: { median: number; min: number | null; max: number | null } | null;
   checks: DetailCheck[];
   /**
    * all: every check in the window is listed. trouble: there were too
@@ -88,7 +93,6 @@ export function checkDetail(
               COALESCE(SUM(ok = 0 AND maintenance = 0 AND error = 'timeout'), 0) AS timeouts,
               COALESCE(SUM(ok = 1 AND maintenance = 0 AND ? IS NOT NULL AND latency_ms > ?), 0) AS slow,
               COALESCE(SUM(maintenance = 1), 0) AS maintenance,
-              ROUND(AVG(CASE WHEN ok = 1 AND maintenance = 0 THEN latency_ms END)) AS mean,
               MIN(CASE WHEN ok = 1 AND maintenance = 0 THEN latency_ms END) AS min,
               MAX(CASE WHEN ok = 1 AND maintenance = 0 THEN latency_ms END) AS max,
               COUNT(*) AS kept
@@ -100,7 +104,6 @@ export function checkDetail(
     timeouts: number;
     slow: number;
     maintenance: number;
-    mean: number | null;
     min: number | null;
     max: number | null;
     kept: number;
@@ -128,6 +131,12 @@ export function checkDetail(
         : [site, monitor, from, to]),
     ) as Row[];
 
+  const hoursMedian = gone
+    ? periodQuantile(hourPeriods(db, site, monitor, from, to), 0.5)
+    : null;
+  const keptMedian = gone
+    ? null
+    : median(passedReadings(db, site, monitor, from, to).map((r) => r.ms));
   const figures =
     gone && hours
       ? {
@@ -137,9 +146,9 @@ export function checkDetail(
           slow: hours.slow,
           maintenance: hours.maintenance,
           latency:
-            hours.latencyMs === null
+            hoursMedian === null
               ? null
-              : { mean: hours.latencyMs, min: null, max: null },
+              : { median: Math.round(hoursMedian), min: null, max: null },
         }
       : {
           total: totals.total,
@@ -148,12 +157,12 @@ export function checkDetail(
           slow: totals.slow,
           maintenance: totals.maintenance,
           latency:
-            totals.mean === null
+            keptMedian === null
               ? null
               : {
-                  mean: totals.mean,
-                  min: totals.min ?? totals.mean,
-                  max: totals.max ?? totals.mean,
+                  median: keptMedian,
+                  min: totals.min ?? keptMedian,
+                  max: totals.max ?? keptMedian,
                 },
         };
   return {

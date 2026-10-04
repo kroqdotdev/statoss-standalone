@@ -37,6 +37,19 @@ describe("stripLayers", () => {
     expect(layers.fails).toBe("M1.12 0h.76v100h-.76zm1 0h.76v9h-.76z");
   });
 
+  it("colours a bucket slow when half its checks were, though its median is under the line", () => {
+    const layers = stripLayers(
+      [
+        bucket(0, { total: 5, up: 5, slow: 3, latencyMs: 200 }),
+        bucket(1, { total: 5, up: 5, slow: 2, latencyMs: 200 }),
+      ],
+      1000,
+      300,
+    );
+    expect(layers.slowBars).toBe("M.12 80h.76v20h-.76z");
+    expect(layers.bars).toBe("M1.12 80h.76v20h-.76z");
+  });
+
   it("marks a bucket of maintenance checks only, and leaves an empty one out", () => {
     const layers = stripLayers(
       [bucket(0, {}), bucket(1, { maintenance: 3 })],
