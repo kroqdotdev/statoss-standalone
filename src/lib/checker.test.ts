@@ -18,6 +18,8 @@ import { parseConfig } from "./config";
 
 let server: Server;
 let base: string;
+/** Connections the test server has accepted. */
+let connections = 0;
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -30,6 +32,20 @@ beforeAll(async () => {
         res.writeHead(500).end("boom");
       } else if (req.url === "/redirect") {
         res.writeHead(302, { Location: "/ok" }).end();
+      } else if (req.url === "/redirect-with-body") {
+        res.writeHead(301, { Location: "/ok" }).end("Moved to /ok");
+      } else if (req.url === "/redirect-stalls") {
+        // Says more body is coming than ever arrives.
+        res.writeHead(302, { Location: "/ok", "Content-Length": "100" });
+        res.write("Moved");
+      } else if (req.url === "/see-other") {
+        res.writeHead(303, { Location: "/echo" }).end();
+      } else if (req.url === "/headers") {
+        res
+          .writeHead(200)
+          .end(
+            `${req.headers["cache-control"] ?? "-"} ${req.headers.pragma ?? "-"}`,
+          );
       } else if (req.url === "/slow") {
         setTimeout(() => res.writeHead(200).end("late"), 500);
       } else if (req.url === "/health") {
@@ -43,6 +59,7 @@ beforeAll(async () => {
       }
     });
   });
+  server.on("connection", () => connections++);
   await new Promise<void>((resolve) => server.listen(0, resolve));
   const address = server.address();
   if (address === null || typeof address === "string")
@@ -80,6 +97,39 @@ describe("runCheck", () => {
     const outcome = await runCheck({ url: `${base}/redirect` });
     expect(outcome.ok).toBe(true);
     expect(outcome.statusCode).toBe(200);
+  });
+
+  it("follows a redirect to the same host over the same connection", async () => {
+    for (const path of ["/redirect", "/redirect-with-body"]) {
+      const before = connections;
+      const outcome = await runCheck({ url: `${base}${path}` });
+      expect(outcome).toMatchObject({ ok: true, statusCode: 200 });
+      expect(connections - before).toBe(1);
+    }
+  });
+
+  it("follows at once a redirect whose body stalls", async () => {
+    const outcome = await runCheck({
+      url: `${base}/redirect-stalls`,
+      timeoutMs: 3000,
+    });
+    expect(outcome).toMatchObject({ ok: true, statusCode: 200 });
+    expect(outcome.latencyMs).toBeLessThan(1500);
+  });
+
+  it("continues a POST as a GET without the body after a 303", async () => {
+    const outcome = await runCheck({
+      url: `${base}/see-other`,
+      method: "POST",
+      body: "payload",
+      keyword: "GET - -",
+    });
+    expect(outcome).toMatchObject({ ok: true, error: null });
+  });
+
+  it("asks for nothing special from caches in front of the site", async () => {
+    const outcome = await runCheck({ url: `${base}/headers`, keyword: "- -" });
+    expect(outcome).toMatchObject({ ok: true, error: null });
   });
 
   it("asserts the redirect itself when expectStatus is 3xx", async () => {
