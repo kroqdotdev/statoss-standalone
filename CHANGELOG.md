@@ -12,6 +12,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 - The image leaves out the app's TypeScript sources and their tests, which the server never read. `import-kuma` keeps its own.
 
+### Fixed
+
+- A redirect to the same host is followed over the same connection, as in a browser. Each hop opened a new connection and paid its TCP and TLS handshakes again, so a site whose address redirects read slower than it is.
+- HTTP checks no longer send `cache-control: no-cache` and `pragma: no-cache`. Some caches obey them and visitors never send them, so a site behind such a cache was measured on its uncached page. A monitor that should reach the server behind the cache can send the header in its `headers`.
+
 ## 0.5.0 - 2026-10-04
 
 ### Added

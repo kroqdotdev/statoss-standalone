@@ -86,6 +86,16 @@ export interface CheckOutcome {
 
 /** Bodies are read up to this much when a keyword is set. */
 const MAX_BODY_BYTES = 1024 * 1024;
+/** Redirect hops followed before the check gives up, as fetch's own limit. */
+const MAX_REDIRECTS = 20;
+/** A redirect's body is read up to this much, so its connection carries the next hop. */
+const MAX_REDIRECT_BODY_BYTES = 64 * 1024;
+/**
+ * How long a redirect's body may take to arrive. A browser follows at
+ * once and drains on the side; one whose body stalls is dropped after
+ * this, and the next hop opens its own connection.
+ */
+const REDIRECT_DRAIN_MS = 250;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The check a monitor's configuration describes. Heartbeats have none. */
@@ -173,6 +183,105 @@ async function readBody(res: Response): Promise<string> {
   return text + decoder.decode();
 }
 
+/**
+ * Reads a redirect's body to its end and drops it, as a browser does, so
+ * its connection is free for the next hop. A cancelled body takes the
+ * connection down with it, and fetch's own redirects did that: the next
+ * hop to the same host paid a new connection and handshake that a
+ * browser does not. A body over the limit, or one that has not ended
+ * within REDIRECT_DRAIN_MS, is cancelled after all.
+ */
+async function discardBody(res: Response): Promise<void> {
+  if (!res.body) return;
+  const reader = res.body.getReader();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), REDIRECT_DRAIN_MS);
+  });
+  let bytes = 0;
+  try {
+    for (;;) {
+      const next = await Promise.race([reader.read(), late]);
+      if (next === null) break;
+      if (next.done) {
+        // The connection goes back to the pool a turn of the event loop
+        // after the body ends; a hop sent sooner opens another.
+        await new Promise((resolve) => setImmediate(resolve));
+        return;
+      }
+      bytes += next.value.byteLength;
+      if (bytes > MAX_REDIRECT_BODY_BYTES) break;
+    }
+    void reader.cancel().catch(() => {});
+  } catch {
+    // A broken connection: the next hop opens its own, or times out.
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Fetches, following redirects by hand the way a browser does: a hop to
+ * a host already reached goes over the same connection, credentials stay
+ * with their own origin, and a 303 (or a 301 or 302 after a POST)
+ * continues as a GET without the body.
+ */
+async function fetchFollowing(
+  url: string,
+  init: RequestInit & { method: string },
+  follow: boolean,
+): Promise<Response> {
+  let target = url;
+  let method = init.method;
+  let body = init.body;
+  let headers = new Headers(init.headers);
+  for (let hop = 0; ; hop++) {
+    const res = await fetch(target, {
+      ...init,
+      headers,
+      method,
+      body,
+      redirect: "manual",
+    } as RequestInit);
+    const location = res.headers.get("location");
+    const redirect =
+      follow &&
+      location !== null &&
+      [301, 302, 303, 307, 308].includes(res.status);
+    if (!redirect) return res;
+    if (hop >= MAX_REDIRECTS) {
+      void res.body?.cancel().catch(() => {});
+      throw new Error("too many redirects");
+    }
+    await discardBody(res);
+    // Out of time while the body came: the next hop would fail anyway.
+    if (init.signal?.aborted) throw init.signal.reason;
+    const next = new URL(location, target);
+    if (next.origin !== new URL(target).origin) {
+      headers = new Headers(headers);
+      for (const name of ["authorization", "proxy-authorization", "cookie"])
+        headers.delete(name);
+    }
+    target = next.toString();
+    if (
+      (res.status === 303 && method !== "HEAD") ||
+      ((res.status === 301 || res.status === 302) && method === "POST")
+    ) {
+      method = "GET";
+      body = undefined;
+      headers = new Headers(headers);
+      for (const name of [
+        "content-type",
+        "content-length",
+        "content-encoding",
+        "content-language",
+        "content-location",
+      ])
+        headers.delete(name);
+    }
+  }
+}
+
 /** The code on a socket or DNS error, or its message. */
 function errorCode(err: unknown): string {
   if (err instanceof Error) {
@@ -241,18 +350,25 @@ async function httpCheck(spec: CheckSpec): Promise<CheckOutcome> {
     };
   };
   try {
-    const res = await fetch(spec.url, {
-      method,
-      headers: spec.headers ?? {},
-      body:
-        spec.body && method !== "GET" && method !== "HEAD"
-          ? spec.body
-          : undefined,
-      signal: AbortSignal.timeout(timeoutMs),
-      redirect: expectsRedirect ? "manual" : "follow",
-      cache: "no-store",
-      ...(agent ? { dispatcher: agent } : {}),
-    } as RequestInit);
+    const res = await fetchFollowing(
+      spec.url,
+      {
+        method,
+        headers: spec.headers ?? {},
+        body:
+          spec.body && method !== "GET" && method !== "HEAD"
+            ? spec.body
+            : undefined,
+        signal: AbortSignal.timeout(timeoutMs),
+        // No cache mode: Node's fetch keeps no cache, and "no-store" only
+        // adds `cache-control: no-cache` and `pragma: no-cache`, which some
+        // caches in front of a site obey and a visitor never sends, so the
+        // check read the uncached page. A monitor that wants that sends
+        // the header itself.
+        ...(agent ? { dispatcher: agent } : {}),
+      } as RequestInit & { method: string },
+      !expectsRedirect,
+    );
     const latencyMs = since(start);
     headersMs = latencyMs;
     const statusOk =
