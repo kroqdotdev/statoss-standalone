@@ -10,6 +10,9 @@ overrides:
   # GHSA-68fv-2mgg-jv7q (6 Oct 2026), reached through postcss under next
   # and vite.
   "source-map-js@<1.2.2": "1.2.2"
+  # GHSA-587h-7wmj-h5pm and five more (24 Oct 2026), vite 8.2.0 to 8.2.3
+  # under vitest; dev only.
+  "vite@>=8.2.0 <8.2.4": "8.2.4"
 auditConfig:
   ignoreGhsas:
     # braces <=3.0.3, no fixed release (3 Oct 2026). Reached only through
