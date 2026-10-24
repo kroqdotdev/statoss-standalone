@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+### Security
+
+- Next.js 16.4.2, for GHSA-2464-fhr4-w9xw (remote code execution through image optimization with a `sharp` older than 0.35.5), GHSA-673q-mjm6-r5xr (`use cache`) and GHSA-p3m5-59mp-jv5r (Server Actions). The 0.5.0 image already carries `sharp` 0.35.5, and the app uses neither `use cache` nor Server Actions. Also React 19.3.1 and nodemailer 10.1.7, and vite 8.2.4 under vitest for its development server's advisories.
+
 ### Changed
 
 - The image leaves out the app's TypeScript sources and their tests, which the server never read. `import-kuma` keeps its own.
