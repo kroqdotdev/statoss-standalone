@@ -19,3 +19,9 @@ auditConfig:
     # eslint-config-next's fast-glob, which expands our own lint patterns;
     # not in the production dependencies or the image.
     - GHSA-vfj7-8cjw-p6xm
+    # picomatch <=4.0.7, no fixed release (19 Oct 2026, failing CI from 18
+    # Nov). Needs an attacker's glob pattern, such as +(*). Reached only
+    # through dev tooling (eslint-config-next's fast-glob and tinyglobby,
+    # vitest and vite); `pnpm why picomatch --prod` is empty and the image
+    # holds only Next's standalone output. Remove once picomatch ships a fix.
+    - GHSA-fc5q-39xc-vjpf
